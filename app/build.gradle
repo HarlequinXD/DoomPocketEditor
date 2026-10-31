@@ -1,8 +1,3 @@
 plugins { id 'com.android.application' }
-android {
-    namespace 'com.retro.doomeditor'
-    compileSdk 35
-    defaultConfig { applicationId 'com.retro.doomeditor'; minSdk 24; targetSdk 28; versionCode 1; versionName '0.1.0' }
-    buildTypes { release { minifyEnabled false } }
-    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
-}
+android { namespace 'com.example.fsmstudio'; compileSdk 35
+ defaultConfig { applicationId 'com.example.fsmstudio'; minSdk 24; targetSdk 28; versionCode 1; versionName '1.0' } }
