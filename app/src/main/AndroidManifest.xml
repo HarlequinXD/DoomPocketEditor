@@ -11,6 +11,8 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name="com.retro.doomeditor.SpriteEditorActivity"
+            android:screenOrientation="landscape" android:exported="false" />
         <activity android:name="com.retro.doomeditor.FSMEditorActivity"
             android:screenOrientation="landscape" android:exported="false" />
     </application>

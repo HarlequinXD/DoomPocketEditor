@@ -21,20 +21,39 @@ import android.widget.Toast;
 public class MainActivity extends Activity implements UiHost {
     static final int DIALOG_THEME = android.R.style.Theme_DeviceDefault_Dialog_Alert;
     private EditorView editor;
+    private TitleView title;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         String crash = getSharedPreferences(DoomApp.CRASH_PREFS, 0).getString(DoomApp.CRASH_KEY, null);
         if (crash != null) { showCrash(crash); return; }
-        startEditor();
+        showTitle();
     }
-
-    private void startEditor() {
+    private void fullscreen() {
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         getWindow().getDecorView().setSystemUiVisibility(5894 | 1024 | 512);
+    }
+    /** Title screen and project manager. */
+    void showTitle() {
+        fullscreen();
+        if (editor != null) { editor.onPause(); editor = null; }
+        title = new TitleView(this);
+        title.host = this;
+        title.listener = this::openProject;
+        setContentView(title);
+    }
+    private void openProject(String id) {
+        try { Project p = Project.isOpen() ? Project.get(this) : null; if (p == null || !id.equals(p.id)) Project.open(this, id); }
+        catch (Exception e) { Toast.makeText(this, "Could not open that project", Toast.LENGTH_LONG).show(); if (title != null) title.refresh(); return; }
+        startEditor();
+    }
+    private void startEditor() {
+        fullscreen();
+        title = null;
         editor = new EditorView(this);
         editor.host = this;
+        editor.onExitToTitle = this::showTitle;
         setContentView(editor);
     }
     @Override protected void onPause() { super.onPause(); if (editor != null) editor.onPause(); }
@@ -42,6 +61,7 @@ public class MainActivity extends Activity implements UiHost {
         super.onResume();
         getWindow().getDecorView().setSystemUiVisibility(5894 | 1024 | 512);
         if (editor != null) editor.onResume();
+        if (title != null) title.refresh();
     }
 
     // ------------------------------------------------------------------ UiHost
@@ -80,6 +100,11 @@ public class MainActivity extends Activity implements UiHost {
         if (defId != null) i.putExtra("def", defId);
         startActivity(i);
     }
+    @Override public void openSprites(String defId) {
+        Intent i = new Intent(this, SpriteEditorActivity.class);
+        if (defId != null) i.putExtra("def", defId);
+        startActivity(i);
+    }
 
     /** Shows the last crash report with options to copy it, wipe saved data, or carry on. */
     private void showCrash(String report) {
@@ -95,7 +120,7 @@ public class MainActivity extends Activity implements UiHost {
         LinearLayout buttons = new LinearLayout(this);
         buttons.setOrientation(LinearLayout.HORIZONTAL);
         Button copy = new Button(this); copy.setText("Copy report");
-        Button reset = new Button(this); reset.setText("Reset project & continue");
+        Button reset = new Button(this); reset.setText("Back to project list");
         Button go = new Button(this); go.setText("Continue");
         buttons.addView(copy); buttons.addView(reset); buttons.addView(go);
         root.addView(buttons);
@@ -110,17 +135,16 @@ public class MainActivity extends Activity implements UiHost {
             Toast.makeText(this, "Crash report copied", Toast.LENGTH_SHORT).show();
         });
         reset.setOnClickListener(v -> {
-            String old = getSharedPreferences("project", 0).getString("project", null);
-            getSharedPreferences("project", 0).edit().clear().putString("project_backup", old == null ? "" : old).commit();
-            Project.reset(); clearCrash(); startEditor();
+            getSharedPreferences("app", 0).edit().remove("current").commit();
+            Project.reset(); clearCrash(); showTitle();
         });
-        go.setOnClickListener(v -> { clearCrash(); startEditor(); });
+        go.setOnClickListener(v -> { clearCrash(); showTitle(); });
         setContentView(root);
     }
     private void clearCrash() { getSharedPreferences(DoomApp.CRASH_PREFS, 0).edit().remove(DoomApp.CRASH_KEY).commit(); }
 
     @Override public void onBackPressed() {
-        if (editor != null && editor.exitPlay()) return;
+        if (editor != null) { if (editor.exitPlay()) return; editor.save(false); showTitle(); return; }
         super.onBackPressed();
     }
 }

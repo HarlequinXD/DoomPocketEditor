@@ -18,7 +18,7 @@ final class Icons {
             WALL_TEX=29,FLOOR_TEX=30,CEIL_TEX=31,NEXT_TEX=32,PREV_TEX=33,LAYERS=34,SUN=35,SUN_DIM=36,GRID=37,
             CROSSHAIR=38,HELP=39,SKULL=40,MEDKIT=41,CHECK=42,CHEVRON_UP=43,CHEVRON_DOWN=44,CHEVRON_LEFT=45,
             CHEVRON_RIGHT=46,ARROW_UP=47,ARROW_DOWN=48,INFO=49,HEART=50,ZAP=51,PLUS_SQUARE=52,LINK=53,FLAG=54,
-            STOP=55,ARROW_LEFT=56,FIT=57,LIST=58,TAG=59,PLUS=60,MINUS=61,LOGO=62,CLOCK=63,DOT_CIRCLE=64,CLOUD=65,SEARCH=66,FOLDER=67;
+            STOP=55,ARROW_LEFT=56,FIT=57,LIST=58,TAG=59,PLUS=60,MINUS=61,LOGO=62,CLOCK=63,DOT_CIRCLE=64,CLOUD=65,SEARCH=66,FOLDER=67,ERASER=68,BUCKET=69,DROPPER=70,LINE_TOOL=71,SQUARE=72,SQUARE_FILL=73,CIRCLE=74,CHECKER=75,MOON=76,MIRROR=77,SELECT_RECT=78,PALETTE=79,MORE=80,PIXEL=81,FILM=82,CHEVRONS=83;
 
     private static final Path path=new Path();
     private static final RectF oval=new RectF();
@@ -157,6 +157,30 @@ final class Icons {
             case SEARCH: c.drawCircle(10.5f,10.5f,6.5f,p);line(c,p,15.5f,15.5f,21,21);break;
             case FOLDER:
                 path.reset();path.moveTo(3,6);path.quadTo(3,4,5,4);path.lineTo(9.5f,4);path.lineTo(11.5f,6.5f);path.lineTo(19,6.5f);path.quadTo(21,6.5f,21,8.5f);path.lineTo(21,18);path.quadTo(21,20,19,20);path.lineTo(5,20);path.quadTo(3,20,3,18);path.close();c.drawPath(path,p);break;
+            case ERASER:
+                poly(c,p,true,8,20,3.5f,15.5f,13.5f,5.5f,20.5f,12.5f,13,20);line(c,p,9,10,16,17);line(c,p,8,20,20,20);break;
+            case BUCKET:
+                poly(c,p,true,4,11,11,4,18,11,11,18);line(c,p,4,11,18,11);
+                path.reset();path.moveTo(19.5f,14);path.cubicTo(18,16.5f,18,18.5f,19.5f,18.5f);path.cubicTo(21,18.5f,21,16.5f,19.5f,14);path.close();c.drawPath(path,p);break;
+            case DROPPER:
+                poly(c,p,false,14.5f,6.5f,4,17,4,20,7,20,17.5f,9.5f);rrect(c,p,13,3,21,11,2.5f);break;
+            case LINE_TOOL: line(c,p,5,19,19,5);dot(c,p,5,19,2);dot(c,p,19,5,2);break;
+            case SQUARE: rrect(c,p,4,4,20,20,1.5f);break;
+            case SQUARE_FILL: {Paint.Style st=p.getStyle();p.setStyle(Paint.Style.FILL);rrect(c,p,4,4,20,20,1.5f);p.setStyle(st);break;}
+            case CIRCLE: c.drawCircle(12,12,8.5f,p);break;
+            case CHECKER: {rrect(c,p,4,4,20,20,1.5f);Paint.Style st=p.getStyle();p.setStyle(Paint.Style.FILL);c.drawRect(4,4,12,12,p);c.drawRect(12,12,20,20,p);p.setStyle(st);break;}
+            case MOON: path.reset();path.moveTo(20,14.5f);path.cubicTo(18.8f,18.3f,15.2f,21,11,21);path.cubicTo(6,21,3,17,3,12);path.cubicTo(3,7.8f,5.7f,4.2f,9.5f,3);path.cubicTo(7.4f,9,12,16.5f,20,14.5f);path.close();c.drawPath(path,p);break;
+            case MIRROR: line(c,p,12,3,12,21);poly(c,p,true,9,7,3,17,9,17);poly(c,p,true,15,7,21,17,15,17);break;
+            case SELECT_RECT:
+                for(int i=0;i<4;i++){float a=4+i*4.5f;line(c,p,a,4,a+2,4);line(c,p,a,20,a+2,20);line(c,p,4,a,4,a+2);line(c,p,20,a,20,a+2);}break;
+            case PALETTE:
+                path.reset();path.moveTo(12,3);path.cubicTo(6.5f,3,3,7,3,12);path.cubicTo(3,17,7,21,12,21);path.cubicTo(13.5f,21,14,20,14,19);path.cubicTo(14,17.5f,13,17,13,16);
+                path.cubicTo(13,15,14,14,15,14);path.lineTo(17,14);path.cubicTo(19.5f,14,21,12.5f,21,10.5f);path.cubicTo(21,6.5f,17,3,12,3);path.close();c.drawPath(path,p);
+                dot(c,p,7.5f,11,1.4f);dot(c,p,10,7,1.4f);dot(c,p,15,7.5f,1.4f);break;
+            case MORE: dot(c,p,5,12,1.8f);dot(c,p,12,12,1.8f);dot(c,p,19,12,1.8f);break;
+            case PIXEL: {Paint.Style st=p.getStyle();p.setStyle(Paint.Style.FILL);c.drawRect(5,5,11,11,p);c.drawRect(13,13,19,19,p);p.setStyle(st);rrect(c,p,3,3,21,21,2);break;}
+            case FILM: rrect(c,p,3,5,21,19,2);line(c,p,7,5,7,19);line(c,p,17,5,17,19);line(c,p,3,12,7,12);line(c,p,17,12,21,12);break;
+            case CHEVRONS: poly(c,p,false,6,6,12,12,6,18);poly(c,p,false,12,6,18,12,12,18);break;
             case TAG:
                 poly(c,p,true,3,3,12,3,21,12,12,21,3,12);dot(c,p,8,8,1.5f);break;
         }

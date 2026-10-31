@@ -214,6 +214,8 @@ public class FSMGraphView extends View {
         }else ui.textMid(c,Math.round(zoom*100)+"%",R-dp(12),h-dp(14),11,Ui.TEXT_3,1,1);
     }
     private Bitmap thumb(int s){int i=Math.max(0,Math.min(Sprites.COUNT-1,s));if(thumbs[i]==null)thumbs[i]=Sprites.preview(i);return thumbs[i];}
+    private final java.util.HashMap<String,Bitmap> customThumbs=new java.util.HashMap<>();
+    private Bitmap thumb(EntityDef d){CustomSprite cs=project.sprite(d.customSprite);if(cs==null)return thumb(d.sprite);String key=cs.id+"#"+cs.version+"#"+cs.w;Bitmap b=customThumbs.get(key);if(b==null){b=cs.thumbnail();customThumbs.put(key,b);}return b;}
     private void drawEntityList(Canvas c){
         float pw=leftW(),pad=dp(10);
         ui.rect(c,0,toolbarH,pw,h,Ui.SURFACE);ui.vline(c,pw-dp(1),toolbarH,h,Ui.BORDER);
@@ -225,7 +227,7 @@ public class FSMGraphView extends View {
         for(int i=0;i<project.defs.size();i++){EntityDef d=project.defs.get(i);float y=top+i*rowH-defScroll;if(y+rowH<top||y>bottom)continue;
             boolean sel=d==def;
             if(sel){ui.round(c,dp(6),y+dp(2),pw-dp(6),y+rowH-dp(2),dp(8),Ui.ACCENT_SOFT);ui.outline(c,dp(6),y+dp(2),pw-dp(6),y+rowH-dp(2),dp(8),0x993d8bfd,dp(1));}
-            Bitmap b=thumb(d.sprite);float th=dp(26),tw=th*b.getWidth()/b.getHeight();if(tw>dp(28)){tw=dp(28);th=tw*b.getHeight()/b.getWidth();}
+            Bitmap b=thumb(d);float th=dp(26),tw=th*b.getWidth()/b.getHeight();if(tw>dp(28)){tw=dp(28);th=tw*b.getHeight()/b.getWidth();}
             r.set(dp(26)-tw*.5f,y+rowH*.5f-th*.5f,dp(26)+tw*.5f,y+rowH*.5f+th*.5f);c.drawBitmap(b,null,r,pixelPaint);
             ui.text(c,ui.ellipsize(d.name,12,1,pw-dp(56)),dp(46),y+dp(19),12,Ui.TEXT,1,-1);
             ui.text(c,d.fsm.nodes.size()+" states · "+EntityDef.KIND_NAMES[d.kind],dp(46),y+dp(34),10,Ui.TEXT_3);
@@ -283,7 +285,7 @@ public class FSMGraphView extends View {
         if(maxScroll>0){float vh=h-toolbarH,bar=vh*vh/(vh+maxScroll),by=toolbarH+(vh-bar)*inspScroll/maxScroll;ui.round(c,w-dp(5),by,w-dp(2),by+bar,dp(2),0x33ffffff);}
     }
     private void drawMachineInspector(Canvas c,float l,float rr){
-        Bitmap b=thumb(def.sprite);ui.round(c,l,iy,l+dp(48),iy+dp(48),dp(8),Ui.BG);
+        Bitmap b=thumb(def);ui.round(c,l,iy,l+dp(48),iy+dp(48),dp(8),Ui.BG);
         float th=dp(40),tw=th*b.getWidth()/b.getHeight();if(tw>dp(42)){tw=dp(42);th=tw*b.getHeight()/b.getWidth();}
         r.set(l+dp(24)-tw*.5f,iy+dp(24)-th*.5f,l+dp(24)+tw*.5f,iy+dp(24)+th*.5f);c.drawBitmap(b,null,r,pixelPaint);
         ui.text(c,ui.ellipsize(def.name,14,1,rr-l-dp(58)),l+dp(58),iy+dp(20),14,Ui.TEXT,1,-1);ui.text(c,EntityDef.KIND_NAMES[def.kind]+" FSM",l+dp(58),iy+dp(38),11,Ui.TEXT_3);

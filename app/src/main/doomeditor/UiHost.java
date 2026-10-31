@@ -6,4 +6,5 @@ interface UiHost {
     void choose(String title,String[] items,int checked,java.util.function.IntConsumer done);
     void confirm(String title,String message,String ok,Runnable yes);
     void openFsm(String defId);
+    default void openSprites(String defId){}
 }

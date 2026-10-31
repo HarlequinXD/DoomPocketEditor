@@ -8,28 +8,72 @@ import java.util.ArrayList;
 /** The whole editable project: the level plus all entity types. Shared by every screen. */
 final class Project {
     private static Project instance;
+    private static final java.util.concurrent.ExecutorService writer=java.util.concurrent.Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"ProjectSave");t.setDaemon(true);return t;});
+    String id,name="Untitled",template="";
+    long created;
     Level level;
     final ArrayList<EntityDef> defs=new ArrayList<>();
+    final ArrayList<CustomSprite> sprites=new ArrayList<>();
     String loadWarning;
 
-    static Project get(Context ctx){if(instance==null)instance=load(ctx);return instance;}
+    /** The open project; opens the last one used, or creates a starter project. */
+    static Project get(Context ctx){
+        if(instance!=null)return instance;
+        ProjectStore.migrate(ctx);
+        String id=ProjectStore.currentId(ctx);
+        if(id!=null){try{instance=ProjectStore.load(ctx,id);return instance;}catch(Exception e){/* fall through */}}
+        java.util.ArrayList<ProjectStore.Meta> all=ProjectStore.list(ctx);
+        for(ProjectStore.Meta m:all){try{instance=ProjectStore.load(ctx,m.id);ProjectStore.setCurrent(ctx,m.id);return instance;}catch(Exception ignored){}}
+        instance=ProjectStore.create(ctx,"My First Game",0);return instance;
+    }
+    static boolean isOpen(){return instance!=null;}
+    static Project open(Context ctx,String id)throws Exception{Project p=ProjectStore.load(ctx,id);instance=p;ProjectStore.setCurrent(ctx,id);return p;}
     static void reset(){instance=null;}
+    static void set(Project p){instance=p;}
 
     EntityDef def(String id){if(id==null)return null;for(EntityDef d:defs)if(d.id.equals(id))return d;return null;}
+    CustomSprite sprite(String id){if(id==null||id.isEmpty())return null;for(CustomSprite s:sprites)if(s.id.equals(id))return s;return null;}
     EntityDef playerDef(){for(EntityDef d:defs)if(d.kind==EntityDef.PLAYER)return d;EntityDef p=DefaultContent.player();defs.add(0,p);return p;}
-    String uniqueId(String base){String b=base.toLowerCase().replaceAll("[^a-z0-9]+","_");if(b.isEmpty())b="entity";String id=b;int n=2;while(def(id)!=null)id=b+"_"+(n++);return id;}
+    String uniqueId(String base){String b=base.toLowerCase().replaceAll("[^a-z0-9]+","_");if(b.isEmpty())b="entity";String id=b;int n=2;while(def(id)!=null||sprite(id)!=null)id=b+"_"+(n++);return id;}
     int countPlaced(String defId){int c=0;for(Level.Thing t:level.things)if(defId.equals(t.def))c++;return c;}
+    /** Sprite frame for an entity type, preferring its custom sprite. */
+    Sprites.Sprite spriteFor(EntityDef d,int builtin,int frame,float time,float deadTime){
+        if(d!=null&&builtin==d.sprite){CustomSprite cs=sprite(d.customSprite);if(cs!=null){Sprites.Sprite s=cs.frameFor(frame,time,deadTime);if(s!=null)return s;}}
+        return Sprites.get(builtin,frame);
+    }
 
     JSONObject toJson()throws Exception{
-        JSONObject o=new JSONObject();o.put("version",5);o.put("level",level.toJson());
-        JSONArray a=new JSONArray();for(EntityDef d:defs)a.put(d.toJson());o.put("entities",a);return o;
+        JSONObject o=new JSONObject();o.put("version",6);
+        JSONObject m=new JSONObject();m.put("name",name);m.put("template",template);m.put("created",(double)created);o.put("meta",m);
+        o.put("level",level.toJson());
+        JSONArray a=new JSONArray();for(EntityDef d:defs)a.put(d.toJson());o.put("entities",a);
+        JSONArray s=new JSONArray();for(CustomSprite cs:sprites)s.put(cs.toJson());o.put("sprites",s);
+        return o;
     }
+    static Project fromJson(JSONObject o)throws Exception{
+        Project p=new Project();
+        JSONObject m=o.optJSONObject("meta");if(m!=null){p.name=m.optString("name","Untitled");p.template=m.optString("template","");p.created=(long)m.optDouble("created",0);}
+        p.level=Level.fromJson(o.getJSONObject("level"));
+        JSONArray a=o.optJSONArray("entities");if(a!=null)for(int i=0;i<a.length();i++)p.defs.add(EntityDef.fromJson(a.getJSONObject(i)));
+        JSONArray s=o.optJSONArray("sprites");if(s!=null)for(int i=0;i<s.length();i++){try{p.sprites.add(CustomSprite.fromJson(s.getJSONObject(i)));}catch(Exception ignored){}}
+        if(!p.level.isConsistent())throw new IllegalStateException("inconsistent map");
+        p.fixUp();return p;
+    }
+    private void fixUp(){
+        playerDef();
+        if(defs.size()>1)for(Level.Thing t:level.things)if(def(t.def)==null)t.def=defs.get(1).id;
+        level.things.removeIf(t->def(t.def)==null);
+    }
+    /** Saves in the background so editing never stutters. */
     void save(Context ctx){
-        try{ctx.getSharedPreferences("project",0).edit().putString("project",toJson().toString()).apply();}catch(Exception ignored){}
+        if(id==null)return;
+        try{final String json=toJson().toString();final Context app=ctx.getApplicationContext()!=null?ctx.getApplicationContext():ctx;final String pid=id;
+            writer.execute(()->{try{ProjectStore.write(app,pid,json);}catch(Exception ignored){}});}catch(Exception ignored){}
     }
+    void saveNow(Context ctx){try{ProjectStore.write(ctx,id,toJson().toString());}catch(Exception ignored){}}
     static Project fresh(){Project p=new Project();p.level=new Level();p.defs.addAll(DefaultContent.all());return p;}
 
-    private static Project load(Context ctx){
+    static Project loadLegacy(Context ctx){
         android.content.SharedPreferences pref=ctx.getSharedPreferences("project",0);
         String saved=pref.getString("project",null);
         Project p=new Project();
