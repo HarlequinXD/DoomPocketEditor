@@ -220,7 +220,18 @@ public class EditorView extends View {
                 rectStartX=rectStartY=-1;}
         }else if(polygonTool==1){
             selectedSector=level.sectorAt(cursorX+.25f,cursorY+.25f);
-            hint(selectedSector<0?"No sector under cursor":"Sector "+(selectedSector+1)+" selected");
+            int nearest=-1;float best=.3f;
+            for(int i=0;i<level.vertices.size();i++){
+                Level.Vertex v=level.vertices.get(i);
+                float d=(float)Math.hypot(v.x-cursorX,v.y-cursorY);
+                if(d<best){best=d;nearest=i;}
+            }
+            if(nearest>=0){
+                dragVertex=nearest;
+                for(int k=0;k<level.sectors.size();k++)
+                    if(level.sectors.get(k).loop.contains(nearest)){selectedSector=k;break;}
+                hint("Vertex "+(nearest+1)+" selected");
+            }else hint(selectedSector<0?"No sector under cursor":"Sector "+(selectedSector+1)+" selected");
         }else if(polygonTool==0){
             float[] pt=sectorEditor.snapPoint(cursorX,cursorY,1f);
             if(pending.size()>=3&&Math.hypot(pt[0]-pending.get(0)[0],pt[1]-pending.get(0)[1])<.01){closeSector();return;}
@@ -503,7 +514,15 @@ public class EditorView extends View {
         c.drawLine(w*.5f-8,h*.5f,w*.5f+8,h*.5f,p);
         c.drawLine(w*.5f,h*.5f-8,w*.5f,h*.5f+8,p);
     }
-    private void save(){try{SharedPreferences pref=getContext().getSharedPreferences("project",0);pref.edit().putString("level",level.toJson().toString()).apply();hint("Saved on phone");}catch(Exception e){hint("Save failed");}}
+    private void save(){try{
+        SharedPreferences pref=getContext().getSharedPreferences("project",0);
+        String previous=pref.getString("level",null);
+        SharedPreferences.Editor edit=pref.edit();
+        if(previous!=null)edit.putString("level_backup",previous);
+        edit.putString("level",level.toJson().toString()).apply();
+        java.util.ArrayList<String> errors=MapValidator.check(level);
+        hint(errors.isEmpty()?"Saved and validated":"Saved: "+errors.size()+" map warning(s)");
+    }catch(Exception e){hint("Save failed");}}
     private void changeMode(int next){mode=next;pending.clear();moving=looking=false;moveX=moveY=0;activePointer=lookPointer=-1;joyVisible=false;last3DFrame=System.nanoTime();
         if(next==PLAY){camX=level.playerX;camY=level.playerY;camAngle=level.facing;health=100;ammo=30;kills=0;lastTime=System.nanoTime();}
         hint(next==PLAY?"Left stick move; right swipe look":next==POLY?"Tap points to draw a sector":"Polygon renderer active");}
