@@ -52,6 +52,21 @@ public class EditorView extends View {
         joyX=joyOriginX+dx*scale;joyY=joyOriginY+dy*scale;
         moveX=(joyX-joyOriginX)/limit;moveY=(joyY-joyOriginY)/limit;
     }
+    private void drawFloatingJoystick(Canvas c){
+        float alpha=joyVisible?1f:Math.max(0f,1f-(System.currentTimeMillis()-joyReleaseTime)/240f);
+        if(alpha<=0)return;
+        int a=(int)(alpha*255);
+        float radius=Math.min(100f,Math.max(65f,h*.22f));
+        color(((a/3)<<24)|0x90a6b9);
+        c.drawCircle(joyOriginX,joyOriginY,radius,p);
+        p.setColor((a<<24)|0x8fa9b9);
+        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(3);
+        c.drawCircle(joyOriginX,joyOriginY,radius,p);
+        p.setStyle(Paint.Style.FILL);
+        p.setColor((a<<24)|0x9bd9ce);
+        c.drawCircle(joyX,joyY,radius*.42f,p);
+        if(!joyVisible)postInvalidateDelayed(32);
+    }
     private void draw3DOverlay(Canvas c){
         float left=browserWidth();
         panel(c,0,toolbarH,left,h,0xee202a35);
@@ -68,14 +83,7 @@ public class EditorView extends View {
         }
         label(c,"Tap texture, then",9,h-39,Math.min(11,left*.095f),0xffcad9e1);
         label(c,"double-tap surface",9,h-24,Math.min(11,left*.095f),0xffcad9e1);
-        // Joystick is hidden by default; brief fade after finger release.
-        float alpha=joyVisible?1f:Math.max(0f,1f-(System.currentTimeMillis()-joyReleaseTime)/240f);
-        if(alpha>0f){
-            int a=(int)(alpha*255);float radius=Math.min(100f,Math.max(65f,h*.22f));
-            color((a/3<<24)|0x90a6b9);c.drawCircle(joyOriginX,joyOriginY,radius,p);
-            p.setColor((a<<24)|0x8fa9b9);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(3);c.drawCircle(joyOriginX,joyOriginY,radius,p);
-            p.setStyle(Paint.Style.FILL);p.setColor((a<<24)|0x9bd9ce);c.drawCircle(joyX,joyY,radius*.42f,p);
-        }
+        drawFloatingJoystick(c);
         if(selectedSector>=0&&selectedSurface>=0){
             String kind=selectedSurface==0?"WALL":selectedSurface==1?"FLOOR":"CEILING";
             round(c,left+12,h-43,Math.min(w-15,left+255),h-9,0xdd1a2530);
@@ -88,11 +96,35 @@ public class EditorView extends View {
                 label(c,"▼",bx+25,cy+70,47,Color.WHITE);
             }
         }
-        if(!joyVisible&&alpha>0)postInvalidateDelayed(32);
     }
     private boolean handle3DTouch(MotionEvent e){
         int action=e.getActionMasked(),index=e.getActionIndex(),id=e.getPointerId(index);
-        float x=e.getX(index),y=e.getY(index),left=browserWidth();
+        float x=e.getX(index),y=e.getY(index),left=mode==PLAY?0:browserWidth();
+        if(mode==PLAY){
+            if(action==MotionEvent.ACTION_DOWN||action==MotionEvent.ACTION_POINTER_DOWN){
+                if(y<toolbarH)return false;
+                // FIRE stays separate from the right-hand look area.
+                if(x>w-140&&y>h-150){fireDown=true;fire();fireDown=false;invalidate();return true;}
+                if(x<w*.5f){
+                    if(activePointer<0){activePointer=id;joyVisible=true;joyOriginX=joyX=x;joyOriginY=joyY=y;moveX=moveY=0;moving=true;}
+                }else if(lookPointer<0){lookPointer=id;lookLastX=x;lookLastY=y;}
+                invalidate();return true;
+            }
+            if(action==MotionEvent.ACTION_MOVE){
+                for(int i=0;i<e.getPointerCount();i++){
+                    int pid=e.getPointerId(i);
+                    if(pid==activePointer)moveJoystick(e.getX(i),e.getY(i));
+                    if(pid==lookPointer){camAngle+=(e.getX(i)-lookLastX)*.007f;lookLastX=e.getX(i);lookLastY=e.getY(i);}
+                }
+                invalidate();return true;
+            }
+            if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_POINTER_UP||action==MotionEvent.ACTION_CANCEL){
+                if(id==activePointer){activePointer=-1;joyVisible=false;joyReleaseTime=System.currentTimeMillis();moveX=moveY=0;moving=false;}
+                if(id==lookPointer)lookPointer=-1;
+                invalidate();return true;
+            }
+            return true;
+        }
         if(action==MotionEvent.ACTION_DOWN||action==MotionEvent.ACTION_POINTER_DOWN){
             if(y<toolbarH)return false;
             if(x<left){
@@ -369,11 +401,14 @@ public class EditorView extends View {
             label(c,"Swipe to look",x+10,toolbarH+158,12,0xff9caebc);
         }
     }
-    private void drawPlayControls(Canvas c){float cy=h-80,rad=Math.min(58,h*.12f);
-        color(0x997c91a5);c.drawCircle(80,cy,rad,p);color(0xff9ec6dc);c.drawCircle(80+moveX*rad*.55f,cy+moveY*rad*.55f,rad*.32f,p);
-        round(c,w-122,h-133,w-18,h-32,0xffa26335);label(c,"FIRE",w-97,h-77,19,Color.WHITE);
-        label(c,"HP "+health+"   AMMO "+ammo+"   KILLS "+kills,w*.36f,toolbarH+24,15,Color.WHITE);
-        p.setColor(Color.WHITE);p.setStrokeWidth(2);c.drawLine(w*.5f-8,h*.5f,w*.5f+8,h*.5f,p);c.drawLine(w*.5f,h*.5f-8,w*.5f,h*.5f+8,p);
+    private void drawPlayControls(Canvas c){
+        drawFloatingJoystick(c);
+        round(c,w-140,h-150,w-12,h-16,0xffa26335);
+        label(c,"FIRE",w-116,h-73,26,Color.WHITE);
+        label(c,"HP "+health+"   AMMO "+ammo+"   KILLS "+kills,w*.36f,toolbarH+28,19,Color.WHITE);
+        p.setColor(Color.WHITE);p.setStrokeWidth(2);
+        c.drawLine(w*.5f-8,h*.5f,w*.5f+8,h*.5f,p);
+        c.drawLine(w*.5f,h*.5f-8,w*.5f,h*.5f+8,p);
     }
     private void save(){try{SharedPreferences pref=getContext().getSharedPreferences("project",0);pref.edit().putString("level",level.toJson().toString()).apply();hint("Saved on phone");}catch(Exception e){hint("Save failed");}}
     private void changeMode(int next){mode=next;pending.clear();moving=looking=false;moveX=moveY=0;activePointer=lookPointer=-1;joyVisible=false;last3DFrame=System.nanoTime();
@@ -465,7 +500,7 @@ public class EditorView extends View {
             if(Math.abs(delta)<.15f&&dist<best){best=dist;target=t;}}
         if(target!=null){level.things.remove(target);kills++;hint("Enemy eliminated");}}
     @Override public boolean onTouchEvent(MotionEvent e){int action=e.getActionMasked(),idx=e.getActionIndex();float x=e.getX(idx),y=e.getY(idx);
-        if(in3DEdit()&&(y>=toolbarH||action==MotionEvent.ACTION_MOVE||action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_POINTER_UP||action==MotionEvent.ACTION_CANCEL))return handle3DTouch(e);
+        if((in3DEdit()||mode==PLAY)&&(y>=toolbarH||action==MotionEvent.ACTION_MOVE||action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_POINTER_UP||action==MotionEvent.ACTION_CANCEL))return handle3DTouch(e);
         if(action==MotionEvent.ACTION_POINTER_DOWN&&e.getPointerCount()==2&&(mode==POLY||mode==THINGS)){
             pinchDistance=(float)Math.hypot(e.getX(0)-e.getX(1),e.getY(0)-e.getY(1));lastX=(e.getX(0)+e.getX(1))*.5f;lastY=(e.getY(0)+e.getY(1))*.5f;dragging=true;return true;}
         if(action==MotionEvent.ACTION_DOWN){downX=lastX=x;downY=lastY=y;dragging=false;touchStartX=x;touchStartY=y;
