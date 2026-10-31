@@ -160,7 +160,7 @@ public final class PolygonRenderer {
             plane(level,s,s.floor,s.floorMaterial,ox,oy,cs,sn,.85f);
             plane(level,s,s.ceiling,s.ceilingMaterial,ox,oy,cs,sn,.65f);
         }
-        for(Level.LineDef line:level.linedefs()){
+        for(Level.LineDef line:PortalTopology.build(level)){
             if(line.from<0||line.to<0||line.from>=level.vertices.size()||line.to>=level.vertices.size()||line.front<0||line.front>=level.sectors.size())continue;
             Level.Vertex a=level.vertices.get(line.from),b=level.vertices.get(line.to);
             Level.Sector front=level.sectors.get(line.front);

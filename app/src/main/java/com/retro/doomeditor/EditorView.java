@@ -161,7 +161,7 @@ public class EditorView extends View {
             for(int j=0;j<s.loop.size();j++){Level.Vertex v=level.vertices.get(s.loop.get(j));float x=mapLeft+v.x*cell,y=mapTop+v.y*cell;if(j==0)path.moveTo(x,y);else path.lineTo(x,y);}path.close();
             color(k==selectedSector?0x996ab9aa:0x77657b98);c.drawPath(path,p);
         }
-        for(Level.LineDef line:level.linedefs()){
+        for(Level.LineDef line:PortalTopology.build(level)){
             Level.Vertex a=level.vertices.get(line.from),b=level.vertices.get(line.to);
             p.setColor(line.back>=0?0xff65e5a7:0xffffbd6e);p.setStrokeWidth(3);
             c.drawLine(mapLeft+a.x*cell,mapTop+a.y*cell,mapLeft+b.x*cell,mapTop+b.y*cell,p);
@@ -308,12 +308,12 @@ public class EditorView extends View {
         }}
     private void stick(float x,float y){float dx=x-80,dy=y-(h-80),r=Math.min(58,h*.12f),d=(float)Math.hypot(dx,dy);
         moveX=d>r?dx/d:dx/r;moveY=d>r?dy/d:dy/r;}
-    private boolean walkable(float x,float y){int si=level.sectorAt(x,y);if(si<0)return false;Level.Sector s=level.sectors.get(si);return s.ceiling-s.floor>=1.5f&&s.floor<=1.1f;}
+    private boolean walkable(float x,float y,float nx,float ny){return PortalTopology.canCross(level,x,y,nx,ny,.6f,1.5f);}
     private void updateGame(){long now=System.nanoTime();float dt=Math.min(.05f,(now-lastTime)*1e-9f);lastTime=now;
         if(moving){float f=-moveY*3f*dt,st=moveX*3f*dt;
             float nx=camX+(float)Math.cos(camAngle)*f-(float)Math.sin(camAngle)*st;
             float ny=camY+(float)Math.sin(camAngle)*f+(float)Math.cos(camAngle)*st;
-            if(walkable(nx,camY))camX=nx;if(walkable(camX,ny))camY=ny;}
+            if(walkable(camX,camY,nx,camY))camX=nx;if(walkable(camX,camY,camX,ny))camY=ny;}
         if(fireDown){fireDown=false;fire();}}
     private void fire(){if(ammo<=0){hint("No ammo");return;}ammo--;
         Level.Thing target=null;float best=15;
