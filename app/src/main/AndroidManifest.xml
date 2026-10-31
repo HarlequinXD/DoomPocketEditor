@@ -1,12 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application android:label="Doom Pocket Editor"
-        android:theme="@android:style/Theme.Material.NoActionBar"
-        android:usesCleartextTraffic="false">
-        <activity android:name="com.retro.doomeditor.FSMEditorActivity"
-            android:screenOrientation="landscape" android:exported="false" />
-        <activity android:name="com.retro.doomeditor.MainActivity"
-            android:screenOrientation="landscape" android:exported="true">
+    <application android:label="Doom Pocket Editor" android:theme="@android:style/Theme.Material.NoActionBar" android:usesCleartextTraffic="false">
+        <activity android:name="com.example.doomeditor.FsmEditorActivity" android:screenOrientation="landscape" android:exported="false" />
+        <activity android:name="com.example.doomeditor.DoomEditorActivity" android:screenOrientation="landscape" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
