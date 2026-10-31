@@ -1,0 +1,15 @@
+package com.example.doomeditor;
+import org.json.*;import java.util.*;
+public final class Model {
+ public static class State {public String id=UUID.randomUUID().toString(),name="State",description="";public float x,y;public int color=0xff334b63;public boolean start=false;public ArrayList<Action> actions=new ArrayList<>();}
+ public static class Action {public String type;public boolean enabled=true;public String argument="";public Action(String t){type=t;}}
+ public static class Edge {public String from,to,event="FINISHED";public Edge(String a,String b){from=a;to=b;}}
+ public final ArrayList<State> states=new ArrayList<>();public final ArrayList<Edge> edges=new ArrayList<>();public final HashMap<String,Object> variables=new HashMap<>();
+ public State get(String id){for(State s:states)if(s.id.equals(id))return s;return null;}
+ public State add(float x,float y){State s=new State();s.x=x;s.y=y;s.name="State "+(states.size()+1);s.start=states.isEmpty();states.add(s);return s;}
+ public void remove(State s){states.remove(s);edges.removeIf(e->e.from.equals(s.id)||e.to.equals(s.id));if(!states.isEmpty()&&!hasStart())states.get(0).start=true;}
+ public boolean hasStart(){for(State s:states)if(s.start)return true;return false;}
+ public void setStart(State s){for(State v:states)v.start=v==s;}
+ public JSONObject json()throws JSONException {JSONObject root=new JSONObject();JSONArray ns=new JSONArray(),es=new JSONArray();for(State s:states){JSONObject o=new JSONObject();o.put("id",s.id);o.put("name",s.name);o.put("description",s.description);o.put("x",s.x);o.put("y",s.y);o.put("color",s.color);o.put("start",s.start);JSONArray aa=new JSONArray();for(Action a:s.actions){JSONObject a0=new JSONObject();a0.put("type",a.type);a0.put("enabled",a.enabled);a0.put("argument",a.argument);aa.put(a0);}o.put("actions",aa);ns.put(o);}for(Edge e:edges){JSONObject o=new JSONObject();o.put("from",e.from);o.put("to",e.to);o.put("event",e.event);es.put(o);}root.put("states",ns);root.put("edges",es);return root;}
+ public static Model parse(String text)throws JSONException {JSONObject root=new JSONObject(text);Model m=new Model();JSONArray ns=root.optJSONArray("states");if(ns!=null)for(int i=0;i<ns.length();i++){JSONObject o=ns.getJSONObject(i);State s=new State();s.id=o.getString("id");s.name=o.optString("name","State");s.description=o.optString("description","");s.x=(float)o.optDouble("x");s.y=(float)o.optDouble("y");s.color=o.optInt("color",0xff334b63);s.start=o.optBoolean("start");JSONArray aa=o.optJSONArray("actions");if(aa!=null)for(int k=0;k<aa.length();k++){JSONObject a=aa.getJSONObject(k);Action ac=new Action(a.getString("type"));ac.enabled=a.optBoolean("enabled",true);ac.argument=a.optString("argument","");s.actions.add(ac);}m.states.add(s);}JSONArray es=root.optJSONArray("edges");if(es!=null)for(int i=0;i<es.length();i++){JSONObject o=es.getJSONObject(i);Edge e=new Edge(o.getString("from"),o.getString("to"));e.event=o.optString("event","FINISHED");if(m.get(e.from)!=null&&m.get(e.to)!=null)m.edges.add(e);}return m;}
+}
