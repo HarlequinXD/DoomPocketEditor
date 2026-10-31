@@ -15,6 +15,22 @@ public final class PolygonRenderer {
     private static final float NEAR=.08f,FOCAL=225f,EYE=1.35f;
     private static final int[] pixels=new int[W*H];
     private static final float[] zbuffer=new float[W*H];
+    private static final int[] surfaceBuffer=new int[W*H];
+    private static int currentSurface=-1,highlightSurface=-1;
+    // IDs: sector*3 + 0 wall, +1 floor, +2 ceiling.
+    public static int pick(float x,float y,float left,float top,float right,float bottom){
+        if(x<left||x>=right||y<top||y>=bottom)return -1;
+        int px=Math.max(0,Math.min(W-1,(int)((x-left)/(right-left)*W)));
+        int py=Math.max(0,Math.min(H-1,(int)((y-top)/(bottom-top)*H)));
+        return surfaceBuffer[py*W+px];
+    }
+    public static void setHighlight(int sector,int surface){highlightSurface=sector<0?-1:sector*3+surface;}
+    public static int textureCount(){return textures.length;}
+    public static Bitmap texturePreview(int material){
+        int m=Math.max(0,Math.min(textures.length-1,material));
+        Bitmap b=Bitmap.createBitmap(T,T,Bitmap.Config.ARGB_8888);
+        b.setPixels(textures[m],0,T,0,0,T,T);return b;
+    }
     private static final int[][] textures=new int[6][T*T];
     private static final int[] BASE={0xff657482,0xff8e7861,0xff747c85,0xff937c68,0xff88749b,0xff9e8a57};
     private static final Paint screenPaint=new Paint();
@@ -77,7 +93,9 @@ public final class PolygonRenderer {
             float v=(wa*a.vz+wb*b.vz+wc*c.vz)/iz;
             int tx=((int)Math.floor(u*T))&(T-1),ty=((int)Math.floor(v*T))&(T-1);
             float fog=Math.max(.34f,1f-(1f/iz)*.022f);
-            pixels[pos]=shade(tex[ty*T+tx],light*fog);
+            int shaded=shade(tex[ty*T+tx],light*fog);
+            if(currentSurface==highlightSurface)shaded=Color.rgb(Math.min(255,Color.red(shaded)/2+40),Math.min(255,Color.green(shaded)/2+140),Math.min(255,Color.blue(shaded)/2+65));
+            pixels[pos]=shaded;surfaceBuffer[pos]=currentSurface;
             zbuffer[pos]=iz;
         }
     }
@@ -152,18 +170,20 @@ public final class PolygonRenderer {
     }
     public static void render(Canvas output,Level level,float left,float top,float right,float bottom,float ox,float oy,float angle){
         if(right<=left||bottom<=top)return;
-        Arrays.fill(zbuffer,0f);
+        Arrays.fill(zbuffer,0f);Arrays.fill(surfaceBuffer,-1);
         for(int y=0;y<H;y++)Arrays.fill(pixels,y*W,(y+1)*W,y<H/2?0xff39455b:0xff4b463d);
         float cs=(float)Math.cos(angle),sn=(float)Math.sin(angle);
-        for(Level.Sector s:level.sectors){
+        for(int si=0;si<level.sectors.size();si++){
+            Level.Sector s=level.sectors.get(si);
             if(s.loop.size()<3)continue;
-            plane(level,s,s.floor,s.floorMaterial,ox,oy,cs,sn,.85f);
-            plane(level,s,s.ceiling,s.ceilingMaterial,ox,oy,cs,sn,.65f);
+            currentSurface=si*3+1;plane(level,s,s.floor,s.floorMaterial,ox,oy,cs,sn,.85f);
+            currentSurface=si*3+2;plane(level,s,s.ceiling,s.ceilingMaterial,ox,oy,cs,sn,.65f);
         }
         for(Level.LineDef line:PortalTopology.build(level)){
             if(line.from<0||line.to<0||line.from>=level.vertices.size()||line.to>=level.vertices.size()||line.front<0||line.front>=level.sectors.size())continue;
             Level.Vertex a=level.vertices.get(line.from),b=level.vertices.get(line.to);
             Level.Sector front=level.sectors.get(line.front);
+            currentSurface=line.front*3;
             if(line.back>=0&&line.back<level.sectors.size()){
                 Level.Sector back=level.sectors.get(line.back);
                 wall(a,b,Math.min(front.floor,back.floor),Math.max(front.floor,back.floor),front.wallMaterial,ox,oy,cs,sn);

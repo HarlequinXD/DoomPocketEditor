@@ -21,6 +21,125 @@ public class EditorView extends View {
     private int mode=POLY, brush=1, thingType=0, polygonTool=0, selectedSector=-1,toolPage=0,materialSurface=0,selectedEdge=0;
     private final ArrayList<float[]> pending=new ArrayList<>();
     private SectorEditor sectorEditor;
+    // 3D editor controls and selected surface (0 wall, 1 floor, 2 ceiling).
+    private int selectedSurface=-1,selectedMaterial=0;
+    private float joyOriginX,joyOriginY,joyX,joyY,lookLastX,lookLastY;
+    private boolean joyVisible=false;
+    private long joyReleaseTime=0,last3DFrame=System.nanoTime(),lastTapTime=0;
+    private float lastTapX,lastTapY;
+    private final android.graphics.Bitmap[] materialPreviews=new android.graphics.Bitmap[6];
+    private float browserWidth(){return Math.min(170f,Math.max(105f,w*.20f));}
+    private boolean in3DEdit(){return mode==VIEW3D||mode==POLY3D;}
+    private float viewLeft(){return in3DEdit()?browserWidth():0;}
+    private float viewRight(){return in3DEdit()?w:w*.78f;}
+    private void update3DCamera(){
+        long now=System.nanoTime();float dt=Math.min(.05f,(now-last3DFrame)*1e-9f);last3DFrame=now;
+        if(!in3DEdit()||!joyVisible)return;
+        float forward=-moveY*3.4f*dt,strafe=moveX*3.4f*dt;
+        float nx=camX+(float)Math.cos(camAngle)*forward-(float)Math.sin(camAngle)*strafe;
+        float ny=camY+(float)Math.sin(camAngle)*forward+(float)Math.cos(camAngle)*strafe;
+        if(PortalTopology.canCross(level,camX,camY,nx,camY,.6f,1.5f))camX=nx;
+        if(PortalTopology.canCross(level,camX,camY,camX,ny,.6f,1.5f))camY=ny;
+    }
+    private void moveJoystick(float x,float y){
+        float radius=Math.min(100f,Math.max(65f,h*.22f));
+        float dx=x-joyOriginX,dy=y-joyOriginY;
+        float len=(float)Math.hypot(dx,dy),limit=radius*.68f;
+        float scale=len>limit?limit/len:1;
+        joyX=joyOriginX+dx*scale;joyY=joyOriginY+dy*scale;
+        moveX=(joyX-joyOriginX)/limit;moveY=(joyY-joyOriginY)/limit;
+    }
+    private void draw3DOverlay(Canvas c){
+        float left=browserWidth();
+        rect(c,0,toolbarH,left,h,0xee202a35);
+        label(c,"TEXTURES",12,toolbarH+25,Math.min(15,left*.12f),0xffe6eef4);
+        for(int i=0;i<6;i++){
+            int col=i%2,row=i/2;
+            float size=Math.min((left-24)/2f,Math.max(40,(h-toolbarH-75)/3f-8));
+            float tx=8+col*(size+6),ty=toolbarH+39+row*(size+10);
+            if(materialPreviews[i]==null)materialPreviews[i]=PolygonRenderer.texturePreview(i);
+            p.setColor(Color.WHITE);p.setAlpha(255);
+            c.drawBitmap(materialPreviews[i],null,new RectF(tx,ty,tx+size,ty+size),p);
+            p.setColor(i==selectedMaterial?0xff66eec2:0xff637382);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(i==selectedMaterial?3:1);
+            c.drawRect(tx,ty,tx+size,ty+size,p);p.setStyle(Paint.Style.FILL);
+        }
+        label(c,"Tap texture, then",9,h-39,Math.min(11,left*.095f),0xffcad9e1);
+        label(c,"double-tap surface",9,h-24,Math.min(11,left*.095f),0xffcad9e1);
+        // Joystick is hidden by default; brief fade after finger release.
+        float alpha=joyVisible?1f:Math.max(0f,1f-(System.currentTimeMillis()-joyReleaseTime)/240f);
+        if(alpha>0f){
+            int a=(int)(alpha*255);float radius=Math.min(100f,Math.max(65f,h*.22f));
+            color((a/3<<24)|0x90a6b9);c.drawCircle(joyOriginX,joyOriginY,radius,p);
+            p.setColor((a<<24)|0x8fa9b9);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(3);c.drawCircle(joyOriginX,joyOriginY,radius,p);
+            p.setStyle(Paint.Style.FILL);p.setColor((a<<24)|0x9bd9ce);c.drawCircle(joyX,joyY,radius*.42f,p);
+        }
+        if(selectedSector>=0&&selectedSurface>=0){
+            String kind=selectedSurface==0?"WALL":selectedSurface==1?"FLOOR":"CEILING";
+            round(c,left+12,h-43,Math.min(w-15,left+255),h-9,0xdd1a2530);
+            label(c,kind+"  |  SECTOR "+(selectedSector+1),left+22,h-22,12,0xffa8f3cb);
+            if(selectedSurface!=0){
+                float bx=w-47,cy=h*.5f;
+                round(c,bx-2,cy-87,w-5,cy-13,0xdd324353);
+                round(c,bx-2,cy+13,w-5,cy+87,0xdd324353);
+                label(c,"▲",bx+8,cy-41,24,Color.WHITE);
+                label(c,"▼",bx+8,cy+60,24,Color.WHITE);
+            }
+        }
+        if(!joyVisible&&alpha>0)postInvalidateDelayed(32);
+    }
+    private boolean handle3DTouch(MotionEvent e){
+        int action=e.getActionMasked(),index=e.getActionIndex(),id=e.getPointerId(index);
+        float x=e.getX(index),y=e.getY(index),left=browserWidth();
+        if(action==MotionEvent.ACTION_DOWN||action==MotionEvent.ACTION_POINTER_DOWN){
+            if(y<toolbarH)return false;
+            if(x<left){
+                float size=Math.min((left-24)/2f,Math.max(40,(h-toolbarH-75)/3f-8));
+                int col=(int)((x-8)/(size+6)),row=(int)((y-toolbarH-39)/(size+10));
+                if(x>=8&&y>=toolbarH+39&&col>=0&&col<2&&row>=0&&row<3){selectedMaterial=row*2+col;hint("Material "+selectedMaterial+" selected");}
+                return true;
+            }
+            if(selectedSurface>0&&selectedSector>=0&&x>w-56&&y>h*.5f-90&&y<h*.5f+90){
+                float delta=y<h*.5f?0.25f:-0.25f;
+                boolean ok=selectedSurface==1?sectorEditor.changeHeight(selectedSector,delta,0):sectorEditor.changeHeight(selectedSector,0,delta);
+                if(ok){autoSave();hint("Height updated");}else hint(sectorEditor.error);
+                return true;
+            }
+            if(x<left+(w-left)*.47f){
+                if(activePointer<0){activePointer=id;joyVisible=true;joyOriginX=joyX=x;joyOriginY=joyY=y;moveX=moveY=0;}
+            }else if(lookPointer<0){lookPointer=id;lookLastX=x;lookLastY=y;downX=x;downY=y;}
+            invalidate();return true;
+        }
+        if(action==MotionEvent.ACTION_MOVE){
+            for(int i=0;i<e.getPointerCount();i++){
+                int pid=e.getPointerId(i),px=(int)e.getX(i),py=(int)e.getY(i);
+                if(pid==activePointer)moveJoystick(px,py);
+                if(pid==lookPointer){camAngle+=(px-lookLastX)*.007f;lookLastX=px;lookLastY=py;}
+            }
+            invalidate();return true;
+        }
+        if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_POINTER_UP||action==MotionEvent.ACTION_CANCEL){
+            if(id==lookPointer){
+                float tx=x,ty=y;
+                if(action!=MotionEvent.ACTION_CANCEL&&Math.hypot(tx-downX,ty-downY)<14){
+                    int hit=PolygonRenderer.pick(tx,ty,left,toolbarH,w,h);
+                    if(hit>=0){
+                        int sector=hit/3,surface=hit%3;
+                        boolean twice=System.currentTimeMillis()-lastTapTime<380&&Math.hypot(tx-lastTapX,ty-lastTapY)<34;
+                        selectedSector=sector;selectedSurface=surface;
+                        if(twice){
+                            boolean ok=sectorEditor.setMaterial(sector,surface,selectedMaterial);
+                            if(ok){autoSave();hint("Texture applied");}else hint(sectorEditor.error);
+                        }else hint((surface==0?"Wall":surface==1?"Floor":"Ceiling")+" selected");
+                        lastTapTime=System.currentTimeMillis();lastTapX=tx;lastTapY=ty;
+                    }else{selectedSector=-1;selectedSurface=-1;}
+                }
+                lookPointer=-1;
+            }
+            if(id==activePointer){activePointer=-1;joyVisible=false;joyReleaseTime=System.currentTimeMillis();moveX=moveY=0;}
+            invalidate();return true;
+        }
+        return true;
+    }
     private int dragVertex=-1;
     private float touchStartX,touchStartY;
     private float w,h,toolbarH,cell,mapLeft,mapTop;
@@ -45,9 +164,15 @@ public class EditorView extends View {
     @Override protected void onDraw(Canvas c){super.onDraw(c);w=getWidth();h=getHeight();toolbarH=Math.max(52,h*.12f);
         rect(c,0,0,w,h,0xff151b23);
         if(mode==MAP||mode==THINGS||mode==POLY)drawMap(c);
-        else PolygonRenderer.render(c,level,0,toolbarH,mode==PLAY?w:w*.78f,h,mode==PLAY?camX:level.playerX,mode==PLAY?camY:level.playerY,mode==PLAY?camAngle:level.facing);
+        else {
+            if(in3DEdit())update3DCamera();
+            PolygonRenderer.setHighlight(in3DEdit()?selectedSector:-1,selectedSurface);
+            PolygonRenderer.render(c,level,viewLeft(),toolbarH,mode==PLAY?w:in3DEdit()?w:w*.78f,h,camX,camY,camAngle);
+        }
         drawToolbar(c);
-        if(mode==PLAY){drawPlayControls(c);updateGame();postInvalidateDelayed(16);}else drawTools(c);
+        if(mode==PLAY){drawPlayControls(c);updateGame();postInvalidateDelayed(16);}
+        else if(in3DEdit()){draw3DOverlay(c);if(joyVisible)postInvalidateDelayed(16);}
+        else drawTools(c);
         if(System.currentTimeMillis()<messageUntil){round(c,w*.20f,h-36,w*.78f,h-6,0xcc121820);label(c,message,w*.22f,h-17,Math.min(15,w*.024f),Color.WHITE);}
     }
 
@@ -238,7 +363,7 @@ public class EditorView extends View {
         p.setColor(Color.WHITE);p.setStrokeWidth(2);c.drawLine(w*.5f-8,h*.5f,w*.5f+8,h*.5f,p);c.drawLine(w*.5f,h*.5f-8,w*.5f,h*.5f+8,p);
     }
     private void save(){try{SharedPreferences pref=getContext().getSharedPreferences("project",0);pref.edit().putString("level",level.toJson().toString()).apply();hint("Saved on phone");}catch(Exception e){hint("Save failed");}}
-    private void changeMode(int next){mode=next;pending.clear();moving=looking=false;moveX=moveY=0;
+    private void changeMode(int next){mode=next;pending.clear();moving=looking=false;moveX=moveY=0;activePointer=lookPointer=-1;joyVisible=false;last3DFrame=System.nanoTime();
         if(next==PLAY){camX=level.playerX;camY=level.playerY;camAngle=level.facing;health=100;ammo=30;kills=0;lastTime=System.nanoTime();}
         hint(next==PLAY?"Left stick move; right swipe look":next==POLY?"Tap points to draw a sector":"Polygon renderer active");}
     private boolean inMap(float x,float y){return x>=mapLeft&&y>=mapTop&&x<mapLeft+Level.W*cell&&y<mapTop+Level.H*cell&&x<w*.78f;}
@@ -322,6 +447,7 @@ public class EditorView extends View {
             if(Math.abs(delta)<.15f&&dist<best){best=dist;target=t;}}
         if(target!=null){level.things.remove(target);kills++;hint("Enemy eliminated");}}
     @Override public boolean onTouchEvent(MotionEvent e){int action=e.getActionMasked(),idx=e.getActionIndex();float x=e.getX(idx),y=e.getY(idx);
+        if(in3DEdit()&&(y>=toolbarH||action==MotionEvent.ACTION_MOVE||action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_POINTER_UP||action==MotionEvent.ACTION_CANCEL))return handle3DTouch(e);
         if(action==MotionEvent.ACTION_POINTER_DOWN&&e.getPointerCount()==2&&(mode==POLY||mode==MAP||mode==THINGS)){
             pinchDistance=(float)Math.hypot(e.getX(0)-e.getX(1),e.getY(0)-e.getY(1));lastX=(e.getX(0)+e.getX(1))*.5f;lastY=(e.getY(0)+e.getY(1))*.5f;dragging=true;return true;}
         if(action==MotionEvent.ACTION_DOWN){downX=lastX=x;downY=lastY=y;dragging=false;touchStartX=x;touchStartY=y;
