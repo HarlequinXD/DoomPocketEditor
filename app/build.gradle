@@ -1,3 +1,3 @@
 plugins { id 'com.android.application' }
-android { namespace 'com.example.fsmstudio'; compileSdk 35
- defaultConfig { applicationId 'com.example.fsmstudio'; minSdk 24; targetSdk 28; versionCode 1; versionName '1.0' } }
+android { namespace 'com.example.doomeditor'; compileSdk 35
+ defaultConfig { applicationId 'com.example.doomeditor'; minSdk 24; targetSdk 28; versionCode 1; versionName '1.0' } }
