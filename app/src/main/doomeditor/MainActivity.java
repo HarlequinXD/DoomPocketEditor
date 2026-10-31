@@ -92,9 +92,11 @@ public class MainActivity extends Activity implements UiHost {
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton(ok, (d, w) -> { yes.run(); if (after != null) after.run(); }).show();
     }
-    @Override public void prompt(String title, String hint, String initial, boolean numeric, java.util.function.Consumer<String> done) { prompt(this, title, hint, initial, numeric, done, editor::invalidate); }
-    @Override public void choose(String title, String[] items, int checked, java.util.function.IntConsumer done) { choose(this, title, items, checked, done, editor::invalidate); }
-    @Override public void confirm(String title, String message, String ok, Runnable yes) { confirm(this, title, message, ok, yes, editor::invalidate); }
+    @Override public void prompt(String title, String hint, String initial, boolean numeric, java.util.function.Consumer<String> done) { prompt(this, title, hint, initial, numeric, done, this::refreshView); }
+    @Override public void choose(String title, String[] items, int checked, java.util.function.IntConsumer done) { choose(this, title, items, checked, done, this::refreshView); }
+    @Override public void confirm(String title, String message, String ok, Runnable yes) { confirm(this, title, message, ok, yes, this::refreshView); }
+    /** Redraws whichever screen is showing (title screen or editor). */
+    private void refreshView() { if (editor != null) editor.invalidate(); if (title != null) title.refresh(); }
     @Override public void openFsm(String defId) {
         Intent i = new Intent(this, FSMEditorActivity.class);
         if (defId != null) i.putExtra("def", defId);
