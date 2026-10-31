@@ -1,27 +1,25 @@
-# Doom Pocket Editor — Infinite Sector Canvas + FSM prototype
+# FSM Studio — Java / Android Views
 
-Based on the previously working Professional Edition v1.1 source.
+Standalone Android Studio source project (Phases 1–4 foundation). Open the folder in Android Studio, sync Gradle, and run on an Android device. Landscape layout is intentional.
 
-## New
-- Sector and entity grid renders continuously in all directions, including negative world coordinates.
-- Grid cursor no longer stops at the original 24x24 map boundary. Practical coordinate safety limit is +/-1,000,000 grid units.
-- Camera follows cursor; only visible grid lines are rendered.
-- New **FSM** entry in the upper title/header area opens a separate touch graph editor.
-- FSM graph nodes can be added, selected, dragged, renamed and deleted.
-- EDIT opens action configuration, start-state selection and event linking.
-- LINK: select source, tap LINK, then destination, then enter event name.
-- Saved FSM JSON is persisted locally in SharedPreferences under `fsm_graph`.
-- FSM runtime resets on Play Mode entry, receives `FIRE` events and ticks each game frame.
-- Actions implemented: NONE, WAIT (seconds), SET_LIGHT (sectorIndex,brightness), SET_VARIABLE (name,value), CHECK_VARIABLE (name,threshold).
-- Transition events implemented: FIRE, FINISHED, TRUE, and arbitrary custom events if sent programmatically.
-- Default example graph: Idle --FIRE--> Active --FINISHED after 1.5s--> Idle.
+## Included
+- Touch graph: draggable states, Bézier edges, pinch zoom, pan, grid, connect mode, state selection and editing.
+- Right inspector: state properties, action list, reorder/edit/enable/remove, transitions.
+- 90 named actions in nine categories, searchable action picker.
+- FSM runtime with start/stop, enter/exit, update, event transitions, and working math/flags/health/wait/event actions.
+- Save/load JSON in app-private storage, undo/redo for editor changes, sample graph, event testing.
+- GameApi extension hooks for game engine-specific actions.
 
-## Limits
-- This is an initial FSM editor and runtime, **not full PlayMaker feature parity**. No per-entity FSM attachment, action library browser, inspector panels, graph zoom/pan, breakpoints, templates, undo, global events or trigger integration yet.
-- Existing legacy 24x24 cell-based grid remains for backward compatibility; only the polygon sector map is unbounded.
-- The map is not literally infinite: coordinates and device memory are finite.
-- FSM graph is saved separately from level JSON; exporting a standalone level JSON will not include it.
-- Android APK compilation/device testing not completed by assistant. Run GitHub Actions.
+## Important limitations
+This is a standalone project, NOT a merged copy of your original Doom editor. The 90 actions are catalogued and can be attached to states, but engine-dependent actions (doors, raycasts, entities, sounds, animation, etc.) require implementing `GameApi.onAction` against your game world. This package is not a verified APK, and Android SDK/Gradle compilation was not available in the generation environment. It is not a claim of full PlayMaker feature parity.
 
-## Install
-Replace the entire Android Studio project content, keeping a backup of your working version. Run Actions > Build Android APK.
+## Action argument examples
+- `Wait`: `2` (seconds)
+- `Send Event`: `SEEN`
+- `Set Float`: `speed,3.5`
+- `Add Float`: `speed,1`
+- `Set Game Flag`: `doorOpen,true`
+- `Show Message`: `Hello`
+
+## Integration
+Use `GraphView`, `Model`, `ActionRegistry`, `FsmRuntime`, and `GameApi` in your own editor. The sample `MainActivity` is a standalone host. Replace `GameApi.onAction` with calls to your entity, sector, audio, and rendering APIs.
