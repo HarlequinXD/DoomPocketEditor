@@ -185,15 +185,19 @@ public class EditorView extends View {
     private float followX=0,followY=0;
     private int dpadPointer=-1,dpadDirection=-1;
     private long nextDpadRepeat=0;
-    private float dpadCX(){return 104f;}
-    private float dpadCY(){return h-108f;}
+    private float dpadCX(){return Math.max(175f,Math.min(215f,w*.22f));}
+    private float dpadCY(){return h-Math.max(165f,Math.min(205f,h*.33f));}
     private float applyCX(){return w*.68f;}
     private float applyCY(){return h-96f;}
     private int dpadHit(float x,float y){
         float dx=x-dpadCX(),dy=y-dpadCY();
-        if(Math.abs(dx)>110||Math.abs(dy)>110)return -1;
-        if(Math.abs(dx)<32&&Math.abs(dy)<32)return -1;
-        return Math.abs(dx)>Math.abs(dy)?(dx>0?1:3):(dy>0?2:0);
+        float spacing=90f, radius=40f;
+        for(int i=0;i<4;i++){
+            float bx=(i==1?spacing:i==3?-spacing:0);
+            float by=(i==2?spacing:i==0?-spacing:0);
+            if(Math.abs(dx-bx)<=radius&&Math.abs(dy-by)<=radius)return i;
+        }
+        return -1;
     }
     private void cursorStep(int direction){
         if(direction==0)cursorY=Math.max(0,cursorY-1);
@@ -226,9 +230,9 @@ public class EditorView extends View {
     }
     private void drawCursorControls(Canvas c){
         if(mode!=POLY&&mode!=THINGS)return;
-        float cx=dpadCX(),cy=dpadCY(),r=38;
+        float cx=dpadCX(),cy=dpadCY(),r=39;
         for(int i=0;i<4;i++){
-            float bx=cx+(i==1?67:i==3?-67:0),by=cy+(i==2?67:i==0?-67:0);
+            float bx=cx+(i==1?90:i==3?-90:0),by=cy+(i==2?90:i==0?-90:0);
             round(c,bx-r,by-r,bx+r,by+r,0xee3e5b6c);
             label(c,new String[]{"▲","▶","▼","◀"}[i],bx-15,by+16,38,Color.WHITE);
         }
@@ -373,8 +377,17 @@ public class EditorView extends View {
     }
     private void mapBounds(){float availW=w*.77f,availH=h-toolbarH-14;
         cell=Math.min(availW/Level.W,availH/Level.H)*zoom;
-        mapLeft=(availW-Level.W*cell)*.5f+panX+5;
-        mapTop=toolbarH+(availH-Level.H*cell)*.5f+panY+7;
+        float baseLeft=(availW-Level.W*cell)*.5f+panX+5;
+        float baseTop=toolbarH+(availH-Level.H*cell)*.5f+panY+7;
+        if(mode==POLY||mode==THINGS){
+            float targetX=availW*.50f-(baseLeft+cursorX*cell);
+            float targetY=toolbarH+(h-toolbarH)*.46f-(baseTop+cursorY*cell);
+            followX+=(targetX-followX)*.17f;
+            followY+=(targetY-followY)*.17f;
+            if(Math.abs(targetX-followX)>0.35f||Math.abs(targetY-followY)>0.35f)postInvalidateDelayed(16);
+        }
+        mapLeft=baseLeft+followX;
+        mapTop=baseTop+followY;
     }
     private void drawMap(Canvas c){mapBounds();c.save();c.clipRect(0,toolbarH,w*.78f,h);
         panel(c,mapLeft,mapTop,mapLeft+Level.W*cell,mapTop+Level.H*cell,0xff1b2732);
@@ -406,8 +419,27 @@ public class EditorView extends View {
         if(mode==THINGS){for(Level.Thing t:level.things){color(t.type==0?0xffff6565:0xff74e7a6);c.drawCircle(mapLeft+t.x*cell,mapTop+t.y*cell,Math.max(5,cell*.27f),p);}}
         color(0xff45e8d5);float x=mapLeft+level.playerX*cell,y=mapTop+level.playerY*cell;c.drawCircle(x,y,Math.max(4,cell*.20f),p);
         c.drawLine(x,y,x+(float)Math.cos(level.facing)*cell*.75f,y+(float)Math.sin(level.facing)*cell*.75f,p);
+        if(mode==POLY||mode==THINGS){
+            float px=mapLeft+cursorX*cell,py=mapTop+cursorY*cell;
+            // High-contrast halo and precise crosshair, at a whole-grid intersection.
+            p.setStyle(Paint.Style.STROKE);
+            p.setStrokeWidth(5f);p.setColor(0xff16232b);
+            c.drawCircle(px,py,14f,p);
+            p.setStrokeWidth(2.8f);p.setColor(0xffffe36a);
+            c.drawCircle(px,py,14f,p);
+            c.drawLine(px-23,py,px-6,py,p);c.drawLine(px+6,py,px+23,py,p);
+            c.drawLine(px,py-23,px,py-6,p);c.drawLine(px,py+6,px,py+23,p);
+            p.setStyle(Paint.Style.FILL);p.setColor(0xffffffff);
+            c.drawCircle(px,py,3.5f,p);
+            if(rectStartX>=0&&mode==POLY){
+                p.setStyle(Paint.Style.STROKE);p.setColor(0xfff6d17b);p.setStrokeWidth(2.5f);
+                c.drawRect(mapLeft+Math.min(rectStartX,cursorX)*cell,mapTop+Math.min(rectStartY,cursorY)*cell,
+                    mapLeft+Math.max(rectStartX,cursorX)*cell,mapTop+Math.max(rectStartY,cursorY)*cell,p);
+                p.setStyle(Paint.Style.FILL);
+            }
+        }
         c.restore();
-        rect(c,0,h-24,w*.78f,h,0xff202933);label(c,"GRID 1.0   |   PINCH ZOOM   |   TWO-FINGER PAN   |   SECTORS: "+level.sectors.size(),10,h-8,Math.min(11,w*.015f),0xffa7bbc9);
+        rect(c,0,h-24,w*.78f,h,0xff202933);label(c,"CURSOR "+cursorX+", "+cursorY+"   |   SNAP 1.0   |   SECTORS: "+level.sectors.size(),10,h-8,Math.max(11,Math.min(15,w*.019f)),0xffe1e9ee);
     }
     private static final String[][] SECTOR_TOOLS={
         {"DRAW","SELECT","RECT","CLOSE","UNDO PT","CANCEL","FLOOR +","FLOOR -","CEIL +","CEIL -","UNDO","NEXT >"},
