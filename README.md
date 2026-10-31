@@ -1,30 +1,27 @@
-# Doom Pocket Editor
+# Doom Pocket Editor — Infinite Sector Canvas + FSM prototype
 
-A new **Android Studio Java project** for creating and playing retro FPS maps on Android, with no external rendering libraries.
+Based on the previously working Professional Edition v1.1 source.
 
-## Included in this initial prototype
-- Landscape fullscreen, touch-driven interface
-- **2D MAP:** 24×24 editable cell grid, wall brush, erase brush, selectable player spawn
-- **3D TEXTURE:** real-time pseudo-3D raycasting, surface selection (wall/floor/ceiling), five colour-based material presets, touch to paint and swipe to turn
-- **THINGS:** place/remove red enemies and green medkits in an overhead view
-- **PLAY:** FPS mode with left virtual joystick, right drag to look, FIRE button, collision, target shooting and ammo/kills HUD
-- Save current level to on-device local preferences; reset to demo map
+## New
+- Sector and entity grid renders continuously in all directions, including negative world coordinates.
+- Grid cursor no longer stops at the original 24x24 map boundary. Practical coordinate safety limit is +/-1,000,000 grid units.
+- Camera follows cursor; only visible grid lines are rendered.
+- New **FSM** entry in the upper title/header area opens a separate touch graph editor.
+- FSM graph nodes can be added, selected, dragged, renamed and deleted.
+- EDIT opens action configuration, start-state selection and event linking.
+- LINK: select source, tap LINK, then destination, then enter event name.
+- Saved FSM JSON is persisted locally in SharedPreferences under `fsm_graph`.
+- FSM runtime resets on Play Mode entry, receives `FIRE` events and ticks each game frame.
+- Actions implemented: NONE, WAIT (seconds), SET_LIGHT (sectorIndex,brightness), SET_VARIABLE (name,value), CHECK_VARIABLE (name,threshold).
+- Transition events implemented: FIRE, FINISHED, TRUE, and arbitrary custom events if sent programmatically.
+- Default example graph: Idle --FIRE--> Active --FINISHED after 1.5s--> Idle.
 
-## Build the debug APK
-1. Open this folder in Android Studio (JDK 17).
-2. Allow Gradle sync (requires the Android SDK Platform 35 and internet for Gradle dependencies).
-3. Run `gradle assembleDebug` (or select **Build > Build APK(s)**).
-4. Install `app/build/outputs/apk/debug/app-debug.apk` on an Android 7+ device.
+## Limits
+- This is an initial FSM editor and runtime, **not full PlayMaker feature parity**. No per-entity FSM attachment, action library browser, inspector panels, graph zoom/pan, breakpoints, templates, undo, global events or trigger integration yet.
+- Existing legacy 24x24 cell-based grid remains for backward compatibility; only the polygon sector map is unbounded.
+- The map is not literally infinite: coordinates and device memory are finite.
+- FSM graph is saved separately from level JSON; exporting a standalone level JSON will not include it.
+- Android APK compilation/device testing not completed by assistant. Run GitHub Actions.
 
-Alternatively, upload the project to your own GitHub repository; the included GitHub Actions workflow builds an APK as a downloadable workflow artifact.
-
-## Current limitations
-This is an initial, editable **grid-cell raycaster**, not a true Doom arbitrary-polygon sector engine. Room layout is formed by cells, not connected linedefs/sectors. Textures are procedural flat/checker-shaded colour palettes rather than imported image files. Enemies are simple shooting targets and do not yet move, medkits are decorative, and the project has not been compiled in this environment (Android SDK/Gradle not installed). A production sector editor would require polygon editing, vertex/line splitting, proper sector height data, portals, texture asset import, serialization/export, touch camera navigation and more robust gameplay.
-
-## v0.3 polygon geometry
-- POLYGONS tab: snapped vertex creation, tap first vertex to close a polygon, sector selection, floor and ceiling height adjustments, sector deletion.
-- Shared vertex indices and computed linedefs; opposite-direction shared edges become portals.
-- POLY 3D tab: projected wall quads, ceiling/floor height differences at portals, near-plane clipping, swipe look.
-- JSON v3 persistence for vertices and polygon sectors, with backward-compatible loading of grid levels.
-
-**Limitations:** The new polygon mode is a separate experimental geometry layer. The original PLAY mode still uses the grid raycaster and does not yet traverse polygon sectors. The polygon 3D preview currently renders walls and portal steps; textured polygon floor/ceiling spans, z-buffering, wall splitting and polygon collision are not implemented.
+## Install
+Replace the entire Android Studio project content, keeping a backup of your working version. Run Actions > Build Android APK.
