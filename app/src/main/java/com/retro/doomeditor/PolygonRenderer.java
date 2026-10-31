@@ -4,131 +4,148 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
-import android.graphics.Path;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.Arrays;
 
-/** Low-resolution CPU polygon renderer for Doom-style sectors. */
+/** 320x180 CPU polygon renderer with textured triangles and per-pixel Z buffer. */
 public final class PolygonRenderer {
-    private static final int RW = 320, RH = 180;
-    private static final float NEAR = .08f, FOCAL = 225f, EYE = 1.35f;
-    private static final int[] COLORS = {0xff687786,0xff8e7861,0xff68728a,0xff927c68,0xff87749c,0xff9e8a57};
-    private static Bitmap buffer;
-    private static Canvas offscreen;
-    private static final Paint paint = new Paint();
-    private static final Paint screenPaint = new Paint();
-    private PolygonRenderer() {}
+    private static final int W=320,H=180,T=32;
+    private static final float NEAR=.08f,FOCAL=225f,EYE=1.35f;
+    private static final int[] pixels=new int[W*H];
+    private static final float[] zbuffer=new float[W*H];
+    private static final int[][] textures=new int[6][T*T];
+    private static final int[] BASE={0xff657482,0xff8e7861,0xff747c85,0xff937c68,0xff88749b,0xff9e8a57};
+    private static final Paint screenPaint=new Paint();
+    private static Bitmap bitmap;
+    private PolygonRenderer(){}
 
-    private static class Point3 {
-        float x, z, height;
-        Point3(float x,float z,float height){this.x=x;this.z=z;this.height=height;}
+    private static class V {
+        float x,z,y,u,v;
+        V(float x,float z,float y,float u,float v){this.x=x;this.z=z;this.y=y;this.u=u;this.v=v;}
     }
-    private static class Face {
-        ArrayList<Point3> pts;
-        int color;
-        float depth;
-        Face(ArrayList<Point3> pts,int color,float depth){this.pts=pts;this.color=color;this.depth=depth;}
+    private static class P {
+        float x,y,iz,uz,vz;
+        P(V v){iz=1f/v.z;x=W*.5f+v.x*iz*FOCAL;y=H*.5f-(v.y-EYE)*iz*FOCAL;uz=v.u*iz;vz=v.v*iz;}
     }
-    private static Point3 cameraPoint(float x,float y,float height,float ox,float oy,float cs,float sn){
+    private static int shade(int c,float f){
+        return Color.rgb(Math.min(255,Math.max(0,(int)(Color.red(c)*f))),
+            Math.min(255,Math.max(0,(int)(Color.green(c)*f))),
+            Math.min(255,Math.max(0,(int)(Color.blue(c)*f))));
+    }
+    static {
+        for(int t=0;t<6;t++)for(int y=0;y<T;y++)for(int x=0;x<T;x++){
+            int n=((x*73+y*151+x*y*19+t*41)^((x+y)*29))&15;
+            float light=.83f+n*.018f;
+            if(t==1||t==3){int shift=((y/8)&1)*8;if(y%8==0||(x+shift)%16==0)light=.43f;else if(t==3)light*=.86f;}
+            else if(t==2){if(x%8==0||y%8==0)light=.55f;}
+            else if(t==4){if(x%16==0||y%16==0)light=.55f;else if(x%16==2&&y%16==2)light=1.25f;}
+            else if(t==5){if(x%8==0)light=.43f;else if(x%8==1)light=1.1f;}
+            else if(x%16==0||y%16==0)light=.68f;
+            textures[t][y*T+x]=shade(BASE[t],light);
+        }
+    }
+    private static V camera(float x,float y,float h,float u,float v,float ox,float oy,float cs,float sn){
         float dx=x-ox,dy=y-oy;
-        return new Point3(-dx*sn+dy*cs,dx*cs+dy*sn,height);
+        return new V(-dx*sn+dy*cs,dx*cs+dy*sn,h,u,v);
     }
-    private static ArrayList<Point3> clipNear(ArrayList<Point3> input){
-        ArrayList<Point3> out=new ArrayList<>();
-        if(input.isEmpty())return out;
-        Point3 prev=input.get(input.size()-1);
-        for(Point3 cur:input){
-            boolean a=prev.z>=NEAR,b=cur.z>=NEAR;
-            if(a!=b){
-                float t=(NEAR-prev.z)/(cur.z-prev.z);
-                out.add(new Point3(prev.x+t*(cur.x-prev.x),NEAR,prev.height+t*(cur.height-prev.height)));
-            }
-            if(b)out.add(cur);
+    private static V intersect(V a,V b){
+        float t=(NEAR-a.z)/(b.z-a.z);
+        return new V(a.x+(b.x-a.x)*t,NEAR,a.y+(b.y-a.y)*t,
+            a.u+(b.u-a.u)*t,a.v+(b.v-a.v)*t);
+    }
+    private static float edge(P a,P b,float x,float y){return (x-a.x)*(b.y-a.y)-(y-a.y)*(b.x-a.x);}
+    private static void triangle(P a,P b,P c,int mat,float light){
+        float area=edge(a,b,c.x,c.y);
+        if(Math.abs(area)<.00001f)return;
+        int x0=Math.max(0,(int)Math.floor(Math.min(a.x,Math.min(b.x,c.x))));
+        int x1=Math.min(W-1,(int)Math.ceil(Math.max(a.x,Math.max(b.x,c.x))));
+        int y0=Math.max(0,(int)Math.floor(Math.min(a.y,Math.min(b.y,c.y))));
+        int y1=Math.min(H-1,(int)Math.ceil(Math.max(a.y,Math.max(b.y,c.y))));
+        if(x0>x1||y0>y1)return;
+        float inv=1f/area;
+        int[] tex=textures[Math.max(0,Math.min(5,mat))];
+        for(int y=y0;y<=y1;y++)for(int x=x0;x<=x1;x++){
+            float sx=x+.5f,sy=y+.5f;
+            float wa=edge(b,c,sx,sy)*inv,wb=edge(c,a,sx,sy)*inv,wc=1-wa-wb;
+            if(wa<-.0001f||wb<-.0001f||wc<-.0001f)continue;
+            float iz=wa*a.iz+wb*b.iz+wc*c.iz;
+            int pos=y*W+x;
+            if(iz<=zbuffer[pos])continue;
+            float u=(wa*a.uz+wb*b.uz+wc*c.uz)/iz;
+            float v=(wa*a.vz+wb*b.vz+wc*c.vz)/iz;
+            int tx=((int)Math.floor(u*T))&(T-1),ty=((int)Math.floor(v*T))&(T-1);
+            float fog=Math.max(.34f,1f-(1f/iz)*.022f);
+            pixels[pos]=shade(tex[ty*T+tx],light*fog);
+            zbuffer[pos]=iz;
+        }
+    }
+    private static void polygon(ArrayList<V> input,int mat,float light){
+        if(input.size()<3)return;
+        ArrayList<V> clipped=new ArrayList<>();
+        V prev=input.get(input.size()-1);
+        for(V cur:input){
+            boolean pa=prev.z>=NEAR,ca=cur.z>=NEAR;
+            if(pa!=ca)clipped.add(intersect(prev,cur));
+            if(ca)clipped.add(cur);
             prev=cur;
         }
-        return out;
-    }
-    private static void addFace(ArrayList<Face> faces,ArrayList<Point3> input,int color){
-        ArrayList<Point3> clipped=clipNear(input);
         if(clipped.size()<3)return;
-        float depth=0;
-        for(Point3 pt:clipped)depth+=pt.z;
-        faces.add(new Face(clipped,color,depth/clipped.size()));
+        P first=new P(clipped.get(0));
+        for(int i=1;i+1<clipped.size();i++)triangle(first,new P(clipped.get(i)),new P(clipped.get(i+1)),mat,light);
     }
-    private static void quad(ArrayList<Face> faces,Level.Vertex a,Level.Vertex b,float low,float high,
-                             float ox,float oy,float cs,float sn,int color){
+    private static void wall(Level.Vertex a,Level.Vertex b,float low,float high,int mat,float ox,float oy,float cs,float sn){
         if(high<=low+.001f)return;
-        ArrayList<Point3> pts=new ArrayList<>();
-        pts.add(cameraPoint(a.x,a.y,high,ox,oy,cs,sn));
-        pts.add(cameraPoint(b.x,b.y,high,ox,oy,cs,sn));
-        pts.add(cameraPoint(b.x,b.y,low,ox,oy,cs,sn));
-        pts.add(cameraPoint(a.x,a.y,low,ox,oy,cs,sn));
-        addFace(faces,pts,color);
+        float length=(float)Math.hypot(b.x-a.x,b.y-a.y);
+        float light=Math.abs(b.x-a.x)>Math.abs(b.y-a.y)?.83f:1f;
+        ArrayList<V> q=new ArrayList<>(4);
+        q.add(camera(a.x,a.y,high,0,high,ox,oy,cs,sn));
+        q.add(camera(b.x,b.y,high,length,high,ox,oy,cs,sn));
+        q.add(camera(b.x,b.y,low,length,low,ox,oy,cs,sn));
+        q.add(camera(a.x,a.y,low,0,low,ox,oy,cs,sn));
+        polygon(q,mat,light);
     }
-    private static int shade(int col,float factor){
-        return Color.rgb(Math.min(255,(int)(Color.red(col)*factor)),
-                Math.min(255,(int)(Color.green(col)*factor)),
-                Math.min(255,(int)(Color.blue(col)*factor)));
-    }
-    private static int material(int id){return COLORS[Math.max(0,Math.min(COLORS.length-1,id))];}
-    private static void plane(ArrayList<Face> faces,Level level,Level.Sector sec,float height,
-                              float ox,float oy,float cs,float sn,int color){
-        ArrayList<Point3> pts=new ArrayList<>();
-        for(int id:sec.loop){
-            if(id<0||id>=level.vertices.size())return;
-            Level.Vertex v=level.vertices.get(id);
-            pts.add(cameraPoint(v.x,v.y,height,ox,oy,cs,sn));
+    private static void plane(Level level,Level.Sector s,float h,int mat,float ox,float oy,float cs,float sn,float light){
+        if(s.loop.size()<3)return;
+        int ia=s.loop.get(0);
+        if(ia<0||ia>=level.vertices.size())return;
+        Level.Vertex a=level.vertices.get(ia);
+        // Triangle fan: supports convex sector loops. Concave loops need triangulation later.
+        for(int i=1;i+1<s.loop.size();i++){
+            int ib=s.loop.get(i),ic=s.loop.get(i+1);
+            if(ib<0||ic<0||ib>=level.vertices.size()||ic>=level.vertices.size())continue;
+            Level.Vertex b=level.vertices.get(ib),c=level.vertices.get(ic);
+            ArrayList<V> tri=new ArrayList<>(3);
+            tri.add(camera(a.x,a.y,h,a.x*.5f,a.y*.5f,ox,oy,cs,sn));
+            tri.add(camera(b.x,b.y,h,b.x*.5f,b.y*.5f,ox,oy,cs,sn));
+            tri.add(camera(c.x,c.y,h,c.x*.5f,c.y*.5f,ox,oy,cs,sn));
+            polygon(tri,mat,light);
         }
-        addFace(faces,pts,color);
     }
-    public static void render(Canvas output,Level level,float left,float top,float right,float bottom,
-                              float ox,float oy,float angle){
+    public static void render(Canvas output,Level level,float left,float top,float right,float bottom,float ox,float oy,float angle){
         if(right<=left||bottom<=top)return;
-        if(buffer==null){
-            buffer=Bitmap.createBitmap(RW,RH,Bitmap.Config.ARGB_8888);
-            offscreen=new Canvas(buffer);
-        }
-        paint.setStyle(Paint.Style.FILL);
-        paint.setColor(0xff39455b);offscreen.drawRect(0,0,RW,RH/2f,paint);
-        paint.setColor(0xff4b463d);offscreen.drawRect(0,RH/2f,RW,RH,paint);
+        Arrays.fill(zbuffer,0f);
+        for(int y=0;y<H;y++)Arrays.fill(pixels,y*W,(y+1)*W,y<H/2?0xff39455b:0xff4b463d);
         float cs=(float)Math.cos(angle),sn=(float)Math.sin(angle);
-        ArrayList<Face> faces=new ArrayList<>();
-        for(Level.Sector sec:level.sectors){
-            if(sec.loop.size()<3)continue;
-            plane(faces,level,sec,sec.floor,ox,oy,cs,sn,shade(material(sec.floorMaterial),.75f));
-            plane(faces,level,sec,sec.ceiling,ox,oy,cs,sn,shade(material(sec.ceilingMaterial),.60f));
+        for(Level.Sector s:level.sectors){
+            if(s.loop.size()<3)continue;
+            plane(level,s,s.floor,s.floorMaterial,ox,oy,cs,sn,.85f);
+            plane(level,s,s.ceiling,s.ceilingMaterial,ox,oy,cs,sn,.65f);
         }
         for(Level.LineDef line:level.linedefs()){
-            if(line.from<0||line.to<0||line.from>=level.vertices.size()||line.to>=level.vertices.size())continue;
-            if(line.front<0||line.front>=level.sectors.size())continue;
+            if(line.from<0||line.to<0||line.from>=level.vertices.size()||line.to>=level.vertices.size()||line.front<0||line.front>=level.sectors.size())continue;
             Level.Vertex a=level.vertices.get(line.from),b=level.vertices.get(line.to);
             Level.Sector front=level.sectors.get(line.front);
-            int color=material(front.wallMaterial);
-            float edgeShade=(Math.abs(a.x-b.x)>Math.abs(a.y-b.y))?.85f:1f;
-            color=shade(color,edgeShade);
             if(line.back>=0&&line.back<level.sectors.size()){
                 Level.Sector back=level.sectors.get(line.back);
-                quad(faces,a,b,Math.min(front.floor,back.floor),Math.max(front.floor,back.floor),ox,oy,cs,sn,color);
-                quad(faces,a,b,Math.min(front.ceiling,back.ceiling),Math.max(front.ceiling,back.ceiling),ox,oy,cs,sn,color);
-            }else quad(faces,a,b,front.floor,front.ceiling,ox,oy,cs,sn,color);
+                wall(a,b,Math.min(front.floor,back.floor),Math.max(front.floor,back.floor),front.wallMaterial,ox,oy,cs,sn);
+                wall(a,b,Math.min(front.ceiling,back.ceiling),Math.max(front.ceiling,back.ceiling),front.wallMaterial,ox,oy,cs,sn);
+            }else wall(a,b,front.floor,front.ceiling,front.wallMaterial,ox,oy,cs,sn);
         }
-        // Painter sorting is intentionally simple; overlapping geometry can require a depth buffer later.
-        Collections.sort(faces,(a,b)->Float.compare(b.depth,a.depth));
-        for(Face face:faces){
-            Path path=new Path();boolean first=true;
-            for(Point3 pt:face.pts){
-                float sx=RW*.5f+pt.x/pt.z*FOCAL;
-                float sy=RH*.5f-(pt.height-EYE)/pt.z*FOCAL;
-                if(first){path.moveTo(sx,sy);first=false;}else path.lineTo(sx,sy);
-            }
-            path.close();
-            paint.setColor(shade(face.color,Math.max(.35f,1f-face.depth*.028f)));
-            paint.setStyle(Paint.Style.FILL);offscreen.drawPath(path,paint);
-        }
-        // Nearest-neighbour enlargement produces crisp, low-resolution PS1-like pixels.
+        if(bitmap==null)bitmap=Bitmap.createBitmap(W,H,Bitmap.Config.ARGB_8888);
+        bitmap.setPixels(pixels,0,W,0,0,W,H);
         screenPaint.setFilterBitmap(false);
-        output.drawBitmap(buffer,new Rect(0,0,RW,RH),new RectF(left,top,right,bottom),screenPaint);
+        output.drawBitmap(bitmap,new Rect(0,0,W,H),new RectF(left,top,right,bottom),screenPaint);
     }
 }
