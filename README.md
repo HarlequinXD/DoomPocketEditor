@@ -1,25 +1,18 @@
-# FSM Studio — Java / Android Views
+# Doom Sector Editor — Android Java project
 
-Standalone Android Studio source project (Phases 1–4 foundation). Open the folder in Android Studio, sync Gradle, and run on an Android device. Landscape layout is intentional.
+Open this folder in Android Studio (AGP 8.6.1, JDK 17, compileSdk 35). Main activity is DoomEditorActivity.
 
 ## Included
-- Touch graph: draggable states, Bézier edges, pinch zoom, pan, grid, connect mode, state selection and editing.
-- Right inspector: state properties, action list, reorder/edit/enable/remove, transitions.
-- 90 named actions in nine categories, searchable action picker.
-- FSM runtime with start/stop, enter/exit, update, event transitions, and working math/flags/health/wait/event actions.
-- Save/load JSON in app-private storage, undo/redo for editor changes, sample graph, event testing.
-- GameApi extension hooks for game engine-specific actions.
+- 2D unlimited-coordinate sector canvas with grid, on-screen D-pad cursor, APPLY point, Close Sector, undo point, pan and save.
+- CPU-rendered 3D ray-cast wall preview of sector polygon edges, collision within sectors, touch movement.
+- FSM Graph screen inside the editor: draggable states, cubic Bézier transitions, pinch zoom, event labels, start state, undo/redo, JSON autosave.
+- Right-hand state inspector, actions, transition editing, searchable 90-item action registry.
+- FSM runtime with a functional subset of built-in actions and an extensible GameApi for other actions.
 
 ## Important limitations
-This is a standalone project, NOT a merged copy of your original Doom editor. The 90 actions are catalogued and can be attached to states, but engine-dependent actions (doors, raycasts, entities, sounds, animation, etc.) require implementing `GameApi.onAction` against your game world. This package is not a verified APK, and Android SDK/Gradle compilation was not available in the generation environment. It is not a claim of full PlayMaker feature parity.
+This is a fresh starter rebuild, **not** a complete Doom-compatible engine. The renderer is a basic wall preview; it does not yet render variable floor/ceiling heights, portals, textures, sprites, or sector-to-sector passage. The 90 actions are registered/editable but most are hooks, not implemented gameplay. FSM data and map data save separately; FSM gameplay is demonstrated in the FSM tab, not yet bound to map entities. No APK or build verification is included.
 
-## Action argument examples
-- `Wait`: `2` (seconds)
-- `Send Event`: `SEEN`
-- `Set Float`: `speed,3.5`
-- `Add Float`: `speed,1`
-- `Set Game Flag`: `doorOpen,true`
-- `Show Message`: `Hello`
-
-## Integration
-Use `GraphView`, `Model`, `ActionRegistry`, `FsmRuntime`, and `GameApi` in your own editor. The sample `MainActivity` is a standalone host. Replace `GameApi.onAction` with calls to your entity, sector, audio, and rendering APIs.
+## Controls
+2D: D-pad moves snapping cursor; APPLY adds point; Close Sector completes polygon; drag grid pans.
+3D: turn, forward/back, strafe.
+FSM: drag nodes, Connect then tap destination, inspector edits state and actions.
