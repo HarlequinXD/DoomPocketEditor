@@ -40,19 +40,44 @@ public class EditorView extends View {
     private void label(Canvas c,String s,float x,float y,float size,int col){color(col);p.setTypeface(android.graphics.Typeface.create("sans-serif-medium",0));p.setTextSize(size);c.drawText(s,x,y,p);}
     private void hint(String s){message=s;messageUntil=System.currentTimeMillis()+2500;invalidate();}
     @Override protected void onDraw(Canvas c){super.onDraw(c);w=getWidth();h=getHeight();toolbarH=Math.max(52,h*.12f);
-        rect(c,0,0,w,h,0xff141b23);
+        rect(c,0,0,w,h,0xff151b23);
         if(mode==MAP||mode==THINGS||mode==POLY)drawMap(c);
         else PolygonRenderer.render(c,level,0,toolbarH,mode==PLAY?w:w*.78f,h,mode==PLAY?camX:level.playerX,mode==PLAY?camY:level.playerY,mode==PLAY?camAngle:level.facing);
         drawToolbar(c);
         if(mode==PLAY){drawPlayControls(c);updateGame();postInvalidateDelayed(16);}else drawTools(c);
         if(System.currentTimeMillis()<messageUntil){round(c,w*.20f,h-36,w*.78f,h-6,0xcc121820);label(c,message,w*.22f,h-17,Math.min(15,w*.024f),Color.WHITE);}
     }
-    private void drawToolbar(Canvas c){rect(c,0,0,w,toolbarH,0xff26303a);
-        String[] names={"GRID","3D","THINGS","PLAY","SECTORS","PS1 3D"};
+    private void drawToolbar(Canvas c){
+        rect(c,0,0,w,toolbarH,0xff20252d);
+        float titleH=Math.min(23,toolbarH*.34f);
+        rect(c,0,0,w,titleH,0xff171b21);
+        label(c,"DOOM POCKET  /  EDITOR",12,titleH*.72f,
+              Math.min(12,w*.018f),0xffd7e3ed);
+        label(c,"UNTITLED MAP",w*.46f,titleH*.72f,
+              Math.min(11,w*.016f),0xff8d9ead);
+
+        String[] names={"GRID","3D VIEW","ENTITIES","PLAY","SECTORS","PS1 VIEW"};
+        String[] symbols={"#","3D","<>",">","[]","PS"};
         float bw=(w-175)/6f;
-        for(int i=0;i<6;i++){float x=5+i*bw;round(c,x,6,x+bw-3,toolbarH-6,mode==i?0xff188f9a:0xff3d4c5b);label(c,names[i],x+4,toolbarH*.62f,Math.max(9,Math.min(14,bw*.17f)),Color.WHITE);}
-        round(c,w-166,6,w-86,toolbarH-6,0xff476072);label(c,"SAVE",w-153,toolbarH*.62f,13,Color.WHITE);
-        round(c,w-82,6,w-5,toolbarH-6,0xff754e50);label(c,"RESET",w-75,toolbarH*.62f,12,Color.WHITE);
+        float rowTop=titleH+2, rowBottom=toolbarH-5;
+        for(int i=0;i<6;i++){
+            float x=5+i*bw;
+            round(c,x,rowTop,x+bw-3,rowBottom,
+                  mode==i?0xff344d57:0xff2a333e);
+            if(mode==i)rect(c,x,toolbarH-3,x+bw-3,toolbarH,0xff58d2c5);
+            label(c,symbols[i],x+7,rowTop+(rowBottom-rowTop)*.67f,
+                  Math.max(10,Math.min(15,bw*.18f)),
+                  mode==i?0xff79e8dc:0xffa3b5c5);
+            label(c,names[i],x+Math.min(28,bw*.34f),
+                  rowTop+(rowBottom-rowTop)*.66f,
+                  Math.max(8,Math.min(12,bw*.12f)),0xffedf3f7);
+        }
+        round(c,w-166,rowTop,w-87,rowBottom,0xff286d67);
+        label(c,"SAVE",w-150,rowTop+(rowBottom-rowTop)*.66f,
+              12,Color.WHITE);
+        round(c,w-82,rowTop,w-5,rowBottom,0xff513e47);
+        label(c,"RESET",w-70,rowTop+(rowBottom-rowTop)*.66f,
+              12,0xffffd2d5);
     }
     private void mapBounds(){float availW=w*.77f,availH=h-toolbarH-14;
         cell=Math.min(availW/Level.W,availH/Level.H)*zoom;
@@ -89,22 +114,67 @@ public class EditorView extends View {
         color(0xff45e8d5);float x=mapLeft+level.playerX*cell,y=mapTop+level.playerY*cell;c.drawCircle(x,y,Math.max(4,cell*.20f),p);
         c.drawLine(x,y,x+(float)Math.cos(level.facing)*cell*.75f,y+(float)Math.sin(level.facing)*cell*.75f,p);
         c.restore();
-        label(c,"Pinch zoom  |  Two-finger pan",10,h-14,12,0xffb6c6d4);
+        rect(c,0,h-24,w*.78f,h,0xff202933);label(c,"GRID 0.5   |   PINCH ZOOM   |   TWO-FINGER PAN   |   SECTORS: "+level.sectors.size(),10,h-8,Math.min(11,w*.015f),0xffa7bbc9);
     }
-    private void button(Canvas c,int row,String s,boolean active){float x=w*.79f,y=toolbarH+44+row*43;
-        round(c,x+4,y,w-9,y+38,active?0xff168f9e:0xff3b4958);
-        label(c,s,x+11,y+25,Math.max(10,Math.min(14,w*.022f)),Color.WHITE);
+    private void button(Canvas c,int row,String s,boolean active){
+        float x=w*.79f,y=toolbarH+44+row*43;
+        round(c,x+4,y,w-9,y+38,active?0xff286d69:0xff35404d);
+        if(active)rect(c,x+4,y+5,x+7,y+33,0xff6ce8d7);
+        String symbol="o";
+        if(s.equals("DRAW"))symbol="+";
+        else if(s.equals("SELECT"))symbol=">";
+        else if(s.equals("CLOSE"))symbol="[]";
+        else if(s.equals("UNDO PT"))symbol="<";
+        else if(s.equals("CANCEL"))symbol="x";
+        else if(s.contains("+"))symbol="+";
+        else if(s.contains("-")||s.equals("ERASE"))symbol="-";
+        else if(s.equals("DELETE")||s.equals("REMOVE"))symbol="x";
+        else if(s.equals("WALL"))symbol="#";
+        else if(s.equals("SPAWN"))symbol="@";
+        else if(s.equals("ENEMY"))symbol="!";
+        else if(s.equals("MEDKIT"))symbol="+";
+        label(c,symbol,x+12,y+25,Math.max(12,Math.min(17,w*.025f)),
+              active?0xff8af3e6:0xffbdcbd6);
+        label(c,s,x+Math.min(35,(w-x)*.30f),y+24,
+              Math.max(9,Math.min(13,w*.020f)),0xfff0f4f7);
     }
-    private void drawTools(Canvas c){round(c,w*.785f,toolbarH+5,w-4,h-5,0xff26313b);
-        label(c,mode==POLY?"SECTOR TOOLS":mode==MAP?"GRID TOOLS":mode==THINGS?"THINGS":"3D VIEW",w*.80f,toolbarH+28,Math.min(16,w*.024f),Color.WHITE);
-        if(mode==POLY){button(c,0,"DRAW",polygonTool==0);button(c,1,"SELECT",polygonTool==1);
-            button(c,2,"CLOSE",false);button(c,3,"UNDO PT",false);button(c,4,"CANCEL",false);
-            button(c,5,"FLOOR +",false);button(c,6,"FLOOR -",false);
-            button(c,7,"CEIL +",false);button(c,8,"CEIL -",false);button(c,9,"DELETE",false);
-            label(c,"Vertices: "+pending.size(),w*.80f,h-16,12,Color.WHITE);
-        }else if(mode==MAP){button(c,0,"WALL",brush==1);button(c,1,"ERASE",brush==0);button(c,2,"SPAWN",brush==2);
-        }else if(mode==THINGS){button(c,0,"ENEMY",thingType==0);button(c,1,"MEDKIT",thingType==1);button(c,2,"REMOVE",thingType==2);
-        }else{label(c,"Swipe to look",w*.80f,toolbarH+75,13,Color.WHITE);label(c,"Polygon CPU",w*.80f,toolbarH+103,13,Color.WHITE);label(c,"320 x 180",w*.80f,toolbarH+131,13,Color.WHITE);}
+
+    private void drawTools(Canvas c){
+        float x=w*.785f;
+        rect(c,x,toolbarH,w,h,0xff222a34);
+        rect(c,x,toolbarH,x+2,h,0xff40505e);
+        rect(c,x+2,toolbarH,w,toolbarH+37,0xff2e3945);
+        label(c,mode==POLY?"SECTOR INSPECTOR":
+              mode==MAP?"GRID TOOLS":
+              mode==THINGS?"ENTITY TOOLS":"3D VIEWPORT",
+              x+9,toolbarH+24,Math.max(10,Math.min(15,w*.020f)),
+              0xffe6eef4);
+        if(mode==POLY){
+            button(c,0,"DRAW",polygonTool==0);
+            button(c,1,"SELECT",polygonTool==1);
+            button(c,2,"CLOSE",false);
+            button(c,3,"UNDO PT",false);
+            button(c,4,"CANCEL",false);
+            button(c,5,"FLOOR +",false);
+            button(c,6,"FLOOR -",false);
+            button(c,7,"CEIL +",false);
+            button(c,8,"CEIL -",false);
+            button(c,9,"DELETE",false);
+            label(c,"VERTICES: "+pending.size(),x+9,h-15,11,0xffa9bfcd);
+        }else if(mode==MAP){
+            button(c,0,"WALL",brush==1);
+            button(c,1,"ERASE",brush==0);
+            button(c,2,"SPAWN",brush==2);
+        }else if(mode==THINGS){
+            button(c,0,"ENEMY",thingType==0);
+            button(c,1,"MEDKIT",thingType==1);
+            button(c,2,"REMOVE",thingType==2);
+        }else{
+            label(c,"RENDERER",x+10,toolbarH+76,12,0xff7bd9ca);
+            label(c,"Software / CPU",x+10,toolbarH+102,12,0xffd1dce6);
+            label(c,"320 x 180",x+10,toolbarH+128,12,0xff9caebc);
+            label(c,"Swipe to look",x+10,toolbarH+158,12,0xff9caebc);
+        }
     }
     private void drawPlayControls(Canvas c){float cy=h-80,rad=Math.min(58,h*.12f);
         color(0x997c91a5);c.drawCircle(80,cy,rad,p);color(0xff9ec6dc);c.drawCircle(80+moveX*rad*.55f,cy+moveY*rad*.55f,rad*.32f,p);
