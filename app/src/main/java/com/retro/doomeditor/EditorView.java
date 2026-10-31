@@ -47,6 +47,66 @@ public class EditorView extends View {
         if(mode==PLAY){drawPlayControls(c);updateGame();postInvalidateDelayed(16);}else drawTools(c);
         if(System.currentTimeMillis()<messageUntil){round(c,w*.20f,h-36,w*.78f,h-6,0xcc121820);label(c,message,w*.22f,h-17,Math.min(15,w*.024f),Color.WHITE);}
     }
+
+    /** Font-independent icons. Coordinates are normalized to a 24-unit vector canvas. */
+    private void drawIcon(Canvas c,int type,float cx,float cy,float size,int tint){
+        c.save();
+        c.translate(cx,cy);
+        c.scale(size/24f,size/24f);
+        p.setColor(tint);p.setStrokeWidth(2.2f);
+        p.setStrokeCap(Paint.Cap.ROUND);p.setStrokeJoin(Paint.Join.ROUND);
+        p.setStyle(Paint.Style.STROKE);
+        switch(type){
+            case 0: // grid
+                for(int i=-1;i<=1;i++){
+                    float v=i*7f;c.drawLine(v,-10,v,10,p);c.drawLine(-10,v,10,v,p);
+                }break;
+            case 1: // cube
+                Path cube=new Path();cube.moveTo(0,-10);cube.lineTo(9,-5);
+                cube.lineTo(9,5);cube.lineTo(0,10);cube.lineTo(-9,5);
+                cube.lineTo(-9,-5);cube.close();c.drawPath(cube,p);
+                c.drawLine(-9,-5,0,0,p);c.drawLine(9,-5,0,0,p);
+                c.drawLine(0,0,0,10,p);break;
+            case 2: // entity
+                c.drawCircle(0,-6,4,p);c.drawRoundRect(new RectF(-8,0,8,10),3,3,p);break;
+            case 3: // play
+                Path play=new Path();play.moveTo(-6,-10);play.lineTo(10,0);
+                play.lineTo(-6,10);play.close();p.setStyle(Paint.Style.FILL);
+                c.drawPath(play,p);break;
+            case 4: // sector
+                Path hex=new Path();for(int i=0;i<6;i++){
+                    double a=i*Math.PI/3-Math.PI/2;
+                    float x=(float)Math.cos(a)*10,y=(float)Math.sin(a)*10;
+                    if(i==0)hex.moveTo(x,y);else hex.lineTo(x,y);
+                }hex.close();c.drawPath(hex,p);break;
+            case 5: // viewport monitor
+                c.drawRoundRect(new RectF(-11,-9,11,7),2,2,p);
+                c.drawLine(0,7,0,11,p);c.drawLine(-6,11,6,11,p);break;
+            case 6: // circle
+                c.drawCircle(0,0,8,p);break;
+            case 7: // pencil
+                c.drawLine(-8,8,7,-7,p);c.drawLine(-10,11,-5,10,p);
+                c.drawLine(6,-9,10,-5,p);break;
+            case 8: // pointer
+                Path cursor=new Path();cursor.moveTo(-8,-10);cursor.lineTo(8,1);
+                cursor.lineTo(1,3);cursor.lineTo(4,10);cursor.lineTo(0,11);
+                cursor.lineTo(-3,4);cursor.lineTo(-8,9);cursor.close();c.drawPath(cursor,p);break;
+            case 9: // undo
+                c.drawArc(new RectF(-9,-8,9,9),-75,255,false,p);
+                c.drawLine(-10,-5,-10,3,p);c.drawLine(-10,3,-3,1,p);break;
+            case 10: // x
+                c.drawLine(-8,-8,8,8,p);c.drawLine(8,-8,-8,8,p);break;
+            case 11: // plus
+                c.drawLine(-9,0,9,0,p);c.drawLine(0,-9,0,9,p);break;
+            case 12: // minus
+                c.drawLine(-9,0,9,0,p);break;
+            case 13: // target
+                c.drawCircle(0,0,8,p);c.drawCircle(0,0,2,p);
+                c.drawLine(-12,0,-6,0,p);c.drawLine(6,0,12,0,p);break;
+        }
+        p.setStyle(Paint.Style.FILL);
+        c.restore();
+    }
     private void drawToolbar(Canvas c){
         rect(c,0,0,w,toolbarH,0xff20252d);
         float titleH=Math.min(23,toolbarH*.34f);
@@ -57,7 +117,6 @@ public class EditorView extends View {
               Math.min(11,w*.016f),0xff8d9ead);
 
         String[] names={"GRID","3D VIEW","ENTITIES","PLAY","SECTORS","PS1 VIEW"};
-        String[] symbols={"#","3D","<>",">","[]","PS"};
         float bw=(w-175)/6f;
         float rowTop=titleH+2, rowBottom=toolbarH-5;
         for(int i=0;i<6;i++){
@@ -65,9 +124,9 @@ public class EditorView extends View {
             round(c,x,rowTop,x+bw-3,rowBottom,
                   mode==i?0xff344d57:0xff2a333e);
             if(mode==i)rect(c,x,toolbarH-3,x+bw-3,toolbarH,0xff58d2c5);
-            label(c,symbols[i],x+7,rowTop+(rowBottom-rowTop)*.67f,
-                  Math.max(10,Math.min(15,bw*.18f)),
-                  mode==i?0xff79e8dc:0xffa3b5c5);
+            drawIcon(c,i,x+14,(rowTop+rowBottom)*.5f,
+                     Math.min(18,Math.max(11,bw*.19f)),
+                     mode==i?0xff79e8dc:0xffa3b5c5);
             label(c,names[i],x+Math.min(28,bw*.34f),
                   rowTop+(rowBottom-rowTop)*.66f,
                   Math.max(8,Math.min(12,bw*.12f)),0xffedf3f7);
@@ -120,21 +179,19 @@ public class EditorView extends View {
         float x=w*.79f,y=toolbarH+44+row*43;
         round(c,x+4,y,w-9,y+38,active?0xff286d69:0xff35404d);
         if(active)rect(c,x+4,y+5,x+7,y+33,0xff6ce8d7);
-        String symbol="o";
-        if(s.equals("DRAW"))symbol="+";
-        else if(s.equals("SELECT"))symbol=">";
-        else if(s.equals("CLOSE"))symbol="[]";
-        else if(s.equals("UNDO PT"))symbol="<";
-        else if(s.equals("CANCEL"))symbol="x";
-        else if(s.contains("+"))symbol="+";
-        else if(s.contains("-")||s.equals("ERASE"))symbol="-";
-        else if(s.equals("DELETE")||s.equals("REMOVE"))symbol="x";
-        else if(s.equals("WALL"))symbol="#";
-        else if(s.equals("SPAWN"))symbol="@";
-        else if(s.equals("ENEMY"))symbol="!";
-        else if(s.equals("MEDKIT"))symbol="+";
-        label(c,symbol,x+12,y+25,Math.max(12,Math.min(17,w*.025f)),
-              active?0xff8af3e6:0xffbdcbd6);
+        int icon=6;
+        if(s.equals("DRAW"))icon=7;
+        else if(s.equals("SELECT"))icon=8;
+        else if(s.equals("CLOSE"))icon=4;
+        else if(s.equals("UNDO PT"))icon=9;
+        else if(s.equals("CANCEL")||s.equals("DELETE")||s.equals("REMOVE"))icon=10;
+        else if(s.contains("+"))icon=11;
+        else if(s.contains("-")||s.equals("ERASE"))icon=12;
+        else if(s.equals("WALL"))icon=0;
+        else if(s.equals("SPAWN"))icon=13;
+        else if(s.equals("ENEMY"))icon=2;
+        else if(s.equals("MEDKIT"))icon=11;
+        drawIcon(c,icon,x+19,y+19,18,active?0xff8af3e6:0xffbdcbd6);
         label(c,s,x+Math.min(35,(w-x)*.30f),y+24,
               Math.max(9,Math.min(13,w*.020f)),0xfff0f4f7);
     }
