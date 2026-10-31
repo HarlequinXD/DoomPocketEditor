@@ -200,10 +200,10 @@ public class EditorView extends View {
         return -1;
     }
     private void cursorStep(int direction){
-        if(direction==0)cursorY=Math.max(0,cursorY-1);
-        if(direction==1)cursorX=Math.min(Level.W,cursorX+1);
-        if(direction==2)cursorY=Math.min(Level.H,cursorY+1);
-        if(direction==3)cursorX=Math.max(0,cursorX-1);
+        if(direction==0)cursorY=Math.max(-1000000,cursorY-1);
+        if(direction==1)cursorX=Math.min(1000000,cursorX+1);
+        if(direction==2)cursorY=Math.min(1000000,cursorY+1);
+        if(direction==3)cursorX=Math.max(-1000000,cursorX-1);
         invalidate();
     }
     private void cursorApply(){
@@ -363,7 +363,7 @@ public class EditorView extends View {
         header(c,0,0,w,titleH,0xff171b21);
         label(c,"DOOM POCKET  /  EDITOR",12,titleH*.72f,
               Math.min(12,w*.018f),0xffd7e3ed);
-        label(c,"UNTITLED MAP",w*.46f,titleH*.72f,
+        label(c,"FSM",w*.46f,titleH*.72f,
               Math.min(11,w*.016f),0xff8d9ead);
 
         String[] names={"SECTORS","ENTITIES","3D MODE","PLAY"};
@@ -401,14 +401,19 @@ public class EditorView extends View {
         mapTop=baseTop+followY;
     }
     private void drawMap(Canvas c){mapBounds();c.save();c.clipRect(0,toolbarH,w*.78f,h);
-        panel(c,mapLeft,mapTop,mapLeft+Level.W*cell,mapTop+Level.H*cell,0xff1b2732);
+        rect(c,0,toolbarH,w*.78f,h,0xff1b2732);
         if(mode==MAP){for(int y=0;y<Level.H;y++)for(int x=0;x<Level.W;x++){
             int col=level.cells[y][x]==1?palette[Math.max(0,Math.min(5,level.wallTex[y][x]))]:palette[0];
             rect(c,mapLeft+x*cell+1,mapTop+y*cell+1,mapLeft+(x+1)*cell-1,mapTop+(y+1)*cell-1,col);
         }}
         p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(1);p.setColor(0x557d98a7);
-        for(int i=0;i<=Level.W;i++)c.drawLine(mapLeft+i*cell,mapTop,mapLeft+i*cell,mapTop+Level.H*cell,p);
-        for(int i=0;i<=Level.H;i++)c.drawLine(mapLeft,mapTop+i*cell,mapLeft+Level.W*cell,mapTop+i*cell,p);
+        // Draw only the visible portion of an unbounded world grid, including negative coordinates.
+        int minGX=Math.max(-1000000,(int)Math.floor((0-mapLeft)/cell)-1);
+        int maxGX=Math.min(1000000,(int)Math.ceil((w*.78f-mapLeft)/cell)+1);
+        int minGY=Math.max(-1000000,(int)Math.floor((toolbarH-mapTop)/cell)-1);
+        int maxGY=Math.min(1000000,(int)Math.ceil((h-mapTop)/cell)+1);
+        for(int i=minGX;i<=maxGX;i++)c.drawLine(mapLeft+i*cell,toolbarH,mapLeft+i*cell,h,p);
+        for(int i=minGY;i<=maxGY;i++)c.drawLine(0,mapTop+i*cell,w*.78f,mapTop+i*cell,p);
         p.setStyle(Paint.Style.FILL);
         if(mode==POLY||mode==THINGS){for(int k=0;k<level.sectors.size();k++){
             Level.Sector s=level.sectors.get(k);if(s.loop.size()<3)continue;Path path=new Path();
@@ -528,9 +533,9 @@ public class EditorView extends View {
         hint(errors.isEmpty()?"Saved and validated":"Saved: "+errors.size()+" map warning(s)");
     }catch(Exception e){hint("Save failed");}}
     private void changeMode(int next){mode=next;pending.clear();moving=looking=false;moveX=moveY=0;activePointer=lookPointer=-1;joyVisible=false;last3DFrame=System.nanoTime();
-        if(next==PLAY){camX=level.playerX;camY=level.playerY;camAngle=level.facing;health=100;ammo=30;kills=0;lastTime=System.nanoTime();}
+        if(next==PLAY){runtimeGraph=FSMGraph.fromJson(getContext().getSharedPreferences("project",0).getString("fsm_graph",""));runtimeGraph.reset();camX=level.playerX;camY=level.playerY;camAngle=level.facing;health=100;ammo=30;kills=0;lastTime=System.nanoTime();}
         hint(next==PLAY?"Left stick move; right swipe look":next==POLY?"Tap points to draw a sector":"Polygon renderer active");}
-    private boolean inMap(float x,float y){return x>=mapLeft&&y>=mapTop&&x<mapLeft+Level.W*cell&&y<mapTop+Level.H*cell&&x<w*.78f;}
+    private boolean inMap(float x,float y){return x>=0&&y>=toolbarH&&x<w*.78f&&y<h;}
     private float wx(float x){return Math.round((x-mapLeft)/cell);}
     private float wy(float y){return Math.round((y-mapTop)/cell);}
     private void closeSector(){
@@ -607,13 +612,15 @@ public class EditorView extends View {
     private void stick(float x,float y){float dx=x-80,dy=y-(h-80),r=Math.min(58,h*.12f),d=(float)Math.hypot(dx,dy);
         moveX=d>r?dx/d:dx/r;moveY=d>r?dy/d:dy/r;}
     private boolean walkable(float x,float y,float nx,float ny){return PortalTopology.canCross(level,x,y,nx,ny,.6f,1.5f);}
+    private FSMGraph runtimeGraph;private long lastFSMTime;
     private void updateGame(){long now=System.nanoTime();float dt=Math.min(.05f,(now-lastTime)*1e-9f);lastTime=now;
+        if(runtimeGraph!=null)runtimeGraph.tick(dt,level);
         if(moving){float f=-moveY*3f*dt,st=moveX*3f*dt;
             float nx=camX+(float)Math.cos(camAngle)*f-(float)Math.sin(camAngle)*st;
             float ny=camY+(float)Math.sin(camAngle)*f+(float)Math.cos(camAngle)*st;
             if(walkable(camX,camY,nx,camY))camX=nx;if(walkable(camX,camY,camX,ny))camY=ny;}
         if(fireDown){fireDown=false;fire();}}
-    private void fire(){if(ammo<=0){hint("No ammo");return;}ammo--;
+    private void fire(){if(runtimeGraph!=null&&mode==PLAY)runtimeGraph.event("FIRE");if(ammo<=0){hint("No ammo");return;}ammo--;
         Level.Thing target=null;float best=15;
         for(Level.Thing t:level.things){if(t.type!=0)continue;float dx=t.x-camX,dy=t.y-camY,dist=(float)Math.hypot(dx,dy);
             float delta=(float)Math.atan2(dy,dx)-camAngle;while(delta>Math.PI)delta-=2*Math.PI;while(delta<-Math.PI)delta+=2*Math.PI;
@@ -637,7 +644,8 @@ public class EditorView extends View {
         if(action==MotionEvent.ACTION_POINTER_DOWN&&e.getPointerCount()==2&&(mode==POLY||mode==THINGS)){
             pinchDistance=(float)Math.hypot(e.getX(0)-e.getX(1),e.getY(0)-e.getY(1));lastX=(e.getX(0)+e.getX(1))*.5f;lastY=(e.getY(0)+e.getY(1))*.5f;dragging=true;return true;}
         if(action==MotionEvent.ACTION_DOWN){downX=lastX=x;downY=lastY=y;dragging=false;touchStartX=x;touchStartY=y;
-            if(y<toolbarH){float bw=(w-175)/4f;int[] modes={POLY,THINGS,POLY3D,PLAY};for(int i=0;i<4;i++)if(x>=5+i*bw&&x<5+(i+1)*bw){changeMode(modes[i]);return true;}
+            if(y<toolbarH){if(y<toolbarH*.40f&&x>w*.43f&&x<w*.59f){getContext().startActivity(new android.content.Intent(getContext(),FSMEditorActivity.class));return true;}
+                float bw=(w-175)/4f;int[] modes={POLY,THINGS,POLY3D,PLAY};for(int i=0;i<4;i++)if(x>=5+i*bw&&x<5+(i+1)*bw){changeMode(modes[i]);return true;}
                 if(x>=w-166&&x<w-86){save();return true;}
                 if(x>=w-82){level=new Level();sectorEditor=new SectorEditor(level);pending.clear();selectedSector=-1;camX=level.playerX;camY=level.playerY;camAngle=level.facing;hint("Level reset");return true;}}
             if(mode==PLAY){if(x<155&&y>h-175){moving=true;activePointer=e.getPointerId(idx);stick(x,y);}else if(x>w-145&&y>h-160){fireDown=true;}else{looking=true;lookPointer=e.getPointerId(idx);}invalidate();return true;}
