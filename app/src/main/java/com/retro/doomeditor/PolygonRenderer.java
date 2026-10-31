@@ -106,21 +106,48 @@ public final class PolygonRenderer {
         q.add(camera(a.x,a.y,low,0,low,ox,oy,cs,sn));
         polygon(q,mat,light);
     }
+    private static float orient(Level.Vertex a,Level.Vertex b,Level.Vertex c){
+        return (b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x);
+    }
+    private static boolean inTriangle(Level.Vertex p,Level.Vertex a,Level.Vertex b,Level.Vertex c,float winding){
+        return orient(a,b,p)*winding>=-.00001f&&orient(b,c,p)*winding>=-.00001f&&orient(c,a,p)*winding>=-.00001f;
+    }
+    /** Ear-clipping triangulation supports concave simple sector polygons. */
     private static void plane(Level level,Level.Sector s,float h,int mat,float ox,float oy,float cs,float sn,float light){
-        if(s.loop.size()<3)return;
-        int ia=s.loop.get(0);
-        if(ia<0||ia>=level.vertices.size())return;
-        Level.Vertex a=level.vertices.get(ia);
-        // Triangle fan: supports convex sector loops. Concave loops need triangulation later.
-        for(int i=1;i+1<s.loop.size();i++){
-            int ib=s.loop.get(i),ic=s.loop.get(i+1);
-            if(ib<0||ic<0||ib>=level.vertices.size()||ic>=level.vertices.size())continue;
-            Level.Vertex b=level.vertices.get(ib),c=level.vertices.get(ic);
-            ArrayList<V> tri=new ArrayList<>(3);
-            tri.add(camera(a.x,a.y,h,a.x*.5f,a.y*.5f,ox,oy,cs,sn));
-            tri.add(camera(b.x,b.y,h,b.x*.5f,b.y*.5f,ox,oy,cs,sn));
-            tri.add(camera(c.x,c.y,h,c.x*.5f,c.y*.5f,ox,oy,cs,sn));
-            polygon(tri,mat,light);
+        int n=s.loop.size();if(n<3)return;
+        ArrayList<Integer> remaining=new ArrayList<>();
+        float signed=0;
+        for(int i=0;i<n;i++){
+            int a=s.loop.get(i),b=s.loop.get((i+1)%n);
+            if(a<0||b<0||a>=level.vertices.size()||b>=level.vertices.size())return;
+            remaining.add(a);
+            Level.Vertex va=level.vertices.get(a),vb=level.vertices.get(b);
+            signed+=va.x*vb.y-vb.x*va.y;
+        }
+        float winding=signed>=0?1f:-1f;
+        int guard=0;
+        while(remaining.size()>=3&&guard++<n*n){
+            boolean found=false;int count=remaining.size();
+            for(int i=0;i<count;i++){
+                Level.Vertex a=level.vertices.get(remaining.get((i+count-1)%count));
+                Level.Vertex b=level.vertices.get(remaining.get(i));
+                Level.Vertex c=level.vertices.get(remaining.get((i+1)%count));
+                if(orient(a,b,c)*winding<=.00001f)continue;
+                boolean contains=false;
+                for(int j=0;j<count;j++){
+                    if(j==i||j==(i+count-1)%count||j==(i+1)%count)continue;
+                    Level.Vertex p=level.vertices.get(remaining.get(j));
+                    if(inTriangle(p,a,b,c,winding)){contains=true;break;}
+                }
+                if(contains)continue;
+                ArrayList<V> tri=new ArrayList<>(3);
+                tri.add(camera(a.x,a.y,h,a.x*.5f,a.y*.5f,ox,oy,cs,sn));
+                tri.add(camera(b.x,b.y,h,b.x*.5f,b.y*.5f,ox,oy,cs,sn));
+                tri.add(camera(c.x,c.y,h,c.x*.5f,c.y*.5f,ox,oy,cs,sn));
+                polygon(tri,mat,light);
+                remaining.remove(i);found=true;break;
+            }
+            if(!found)break;
         }
     }
     public static void render(Canvas output,Level level,float left,float top,float right,float bottom,float ox,float oy,float angle){
