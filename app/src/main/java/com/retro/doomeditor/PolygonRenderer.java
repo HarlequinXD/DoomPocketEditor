@@ -17,6 +17,33 @@ public final class PolygonRenderer {
     private static final float[] zbuffer=new float[W*H];
     private static final int[] surfaceBuffer=new int[W*H];
     private static int currentSurface=-1,highlightSurface=-1;
+    private static final java.util.HashMap<String,Integer> wallMaterials=new java.util.HashMap<>();
+    private static final ArrayList<String> wallKeys=new ArrayList<>();
+    private static String key(Level level,Level.LineDef line,int part){
+        Level.Vertex a=level.vertices.get(line.from),b=level.vertices.get(line.to);
+        String aKey=a.x+","+a.y,bKey=b.x+","+b.y;
+        return (aKey.compareTo(bKey)<0?aKey+"|"+bKey:bKey+"|"+aKey)+"|"+line.front+"|"+part;
+    }
+    public static void loadWallMaterials(android.content.Context ctx){
+        wallMaterials.clear();
+        try{
+            org.json.JSONObject obj=new org.json.JSONObject(ctx.getSharedPreferences("project",0).getString("wallMaterials","{}"));
+            java.util.Iterator<String> keys=obj.keys();
+            while(keys.hasNext()){String k=keys.next();wallMaterials.put(k,obj.getInt(k));}
+        }catch(Exception ignored){}
+    }
+    public static boolean applyWallMaterial(android.content.Context ctx,int hit,int material){
+        int index=(hit-100000)/2,part=(hit-100000)%2;
+        if(hit<100000||index<0||index>=wallKeys.size())return false;
+        wallMaterials.put(wallKeys.get(index)+"|"+part,material);
+        org.json.JSONObject json=new org.json.JSONObject();
+        try{for(java.util.Map.Entry<String,Integer> entry:wallMaterials.entrySet())json.put(entry.getKey(),entry.getValue());}
+        catch(Exception ignored){}
+        ctx.getSharedPreferences("project",0).edit().putString("wallMaterials",json.toString()).apply();
+        return true;
+    }
+    public static void setHighlightHit(int hit){highlightSurface=hit;}
+
     // IDs: sector*3 + 0 wall, +1 floor, +2 ceiling.
     public static int pick(float x,float y,float left,float top,float right,float bottom){
         if(x<left||x>=right||y<top||y>=bottom)return -1;
@@ -170,7 +197,7 @@ public final class PolygonRenderer {
     }
     public static void render(Canvas output,Level level,float left,float top,float right,float bottom,float ox,float oy,float angle){
         if(right<=left||bottom<=top)return;
-        Arrays.fill(zbuffer,0f);Arrays.fill(surfaceBuffer,-1);
+        Arrays.fill(zbuffer,0f);Arrays.fill(surfaceBuffer,-1);wallKeys.clear();
         for(int y=0;y<H;y++)Arrays.fill(pixels,y*W,(y+1)*W,y<H/2?0xff39455b:0xff4b463d);
         float cs=(float)Math.cos(angle),sn=(float)Math.sin(angle);
         for(int si=0;si<level.sectors.size();si++){
@@ -183,12 +210,21 @@ public final class PolygonRenderer {
             if(line.from<0||line.to<0||line.from>=level.vertices.size()||line.to>=level.vertices.size()||line.front<0||line.front>=level.sectors.size())continue;
             Level.Vertex a=level.vertices.get(line.from),b=level.vertices.get(line.to);
             Level.Sector front=level.sectors.get(line.front);
-            currentSurface=line.front*3;
+            int index=wallKeys.size();
+            wallKeys.add(key(level,line,0).substring(0,key(level,line,0).length()-2)); // geometry + front, suffix added per wall part
+            String base=wallKeys.get(index);
+            int lower=wallMaterials.containsKey(base+"|0")?wallMaterials.get(base+"|0"):front.wallMaterial;
+            int upper=wallMaterials.containsKey(base+"|1")?wallMaterials.get(base+"|1"):front.wallMaterial;
             if(line.back>=0&&line.back<level.sectors.size()){
                 Level.Sector back=level.sectors.get(line.back);
-                wall(a,b,Math.min(front.floor,back.floor),Math.max(front.floor,back.floor),front.wallMaterial,ox,oy,cs,sn);
-                wall(a,b,Math.min(front.ceiling,back.ceiling),Math.max(front.ceiling,back.ceiling),front.wallMaterial,ox,oy,cs,sn);
-            }else wall(a,b,front.floor,front.ceiling,front.wallMaterial,ox,oy,cs,sn);
+                currentSurface=100000+index*2;
+                wall(a,b,Math.min(front.floor,back.floor),Math.max(front.floor,back.floor),lower,ox,oy,cs,sn);
+                currentSurface=100000+index*2+1;
+                wall(a,b,Math.min(front.ceiling,back.ceiling),Math.max(front.ceiling,back.ceiling),upper,ox,oy,cs,sn);
+            }else{
+                currentSurface=100000+index*2;
+                wall(a,b,front.floor,front.ceiling,lower,ox,oy,cs,sn);
+            }
         }
         if(bitmap==null)bitmap=Bitmap.createBitmap(W,H,Bitmap.Config.ARGB_8888);
         bitmap.setPixels(pixels,0,W,0,0,W,H);

@@ -25,7 +25,7 @@ public class EditorView extends View {
     private final ArrayList<float[]> pending=new ArrayList<>();
     private SectorEditor sectorEditor;
     // 3D editor controls and selected surface (0 wall, 1 floor, 2 ceiling).
-    private int selectedSurface=-1,selectedMaterial=0;
+    private int selectedSurface=-1,selectedMaterial=0,selectedWallHit=-1;
     private float joyOriginX,joyOriginY,joyX,joyY,lookLastX,lookLastY;
     private boolean joyVisible=false;
     private long joyReleaseTime=0,last3DFrame=System.nanoTime(),lastTapTime=0;
@@ -85,7 +85,7 @@ public class EditorView extends View {
         label(c,"double-tap surface",9,h-24,Math.min(11,left*.095f),0xffcad9e1);
         drawFloatingJoystick(c);
         if(selectedSector>=0&&selectedSurface>=0){
-            String kind=selectedSurface==0?"WALL":selectedSurface==1?"FLOOR":"CEILING";
+            String kind=selectedSurface==0?"LINEDEF WALL":selectedSurface==1?"FLOOR":"CEILING";
             round(c,left+12,h-43,Math.min(w-15,left+255),h-9,0xdd1a2530);
             label(c,kind+"  |  SECTOR "+(selectedSector+1),left+22,h-22,12,0xffa8f3cb);
             if(selectedSurface!=0){
@@ -158,11 +158,16 @@ public class EditorView extends View {
                 if(action!=MotionEvent.ACTION_CANCEL&&Math.hypot(tx-downX,ty-downY)<14){
                     int hit=PolygonRenderer.pick(tx,ty,left,toolbarH,w,h);
                     if(hit>=0){
-                        int sector=hit/3,surface=hit%3;
+                        int sector=hit>=100000?selectedSector:hit/3,surface=hit>=100000?0:hit%3;
+                        if(hit>=100000){
+                            java.util.ArrayList<Level.LineDef> lines=PortalTopology.build(level);
+                            int li=(hit-100000)/2;
+                            if(li>=0&&li<lines.size())sector=lines.get(li).front;
+                        }
                         boolean twice=System.currentTimeMillis()-lastTapTime<380&&Math.hypot(tx-lastTapX,ty-lastTapY)<34;
-                        selectedSector=sector;selectedSurface=surface;
+                        selectedSector=sector;selectedSurface=surface;selectedWallHit=hit>=100000?hit:-1;
                         if(twice){
-                            boolean ok=sectorEditor.setMaterial(sector,surface,selectedMaterial);
+                            boolean ok=hit>=100000?PolygonRenderer.applyWallMaterial(getContext(),hit,selectedMaterial):sectorEditor.setMaterial(sector,surface,selectedMaterial);
                             if(ok){autoSave();hint("Texture applied");}else hint(sectorEditor.error);
                         }else hint((surface==0?"Wall":surface==1?"Floor":"Ceiling")+" selected");
                         lastTapTime=System.currentTimeMillis();lastTapX=tx;lastTapY=ty;
@@ -174,6 +179,61 @@ public class EditorView extends View {
             invalidate();return true;
         }
         return true;
+    }
+    // D-pad controlled 2D editing cursor. Camera follows by eased pan.
+    private int cursorX=5,cursorY=5,rectStartX=-1,rectStartY=-1;
+    private float followX=0,followY=0;
+    private int dpadPointer=-1,dpadDirection=-1;
+    private long nextDpadRepeat=0;
+    private float dpadCX(){return 104f;}
+    private float dpadCY(){return h-108f;}
+    private float applyCX(){return w*.68f;}
+    private float applyCY(){return h-96f;}
+    private int dpadHit(float x,float y){
+        float dx=x-dpadCX(),dy=y-dpadCY();
+        if(Math.abs(dx)>110||Math.abs(dy)>110)return -1;
+        if(Math.abs(dx)<32&&Math.abs(dy)<32)return -1;
+        return Math.abs(dx)>Math.abs(dy)?(dx>0?1:3):(dy>0?2:0);
+    }
+    private void cursorStep(int direction){
+        if(direction==0)cursorY=Math.max(0,cursorY-1);
+        if(direction==1)cursorX=Math.min(Level.W,cursorX+1);
+        if(direction==2)cursorY=Math.min(Level.H,cursorY+1);
+        if(direction==3)cursorX=Math.max(0,cursorX-1);
+        invalidate();
+    }
+    private void cursorApply(){
+        float x=mapLeft+cursorX*cell,y=mapTop+cursorY*cell;
+        if(mode==THINGS){
+            // Entities are placed at sector interiors, with half-cell offset.
+            applyMap(x+cell*.5f,y+cell*.5f);
+            return;
+        }
+        if(mode!=POLY)return;
+        if(polygonTool==2){
+            if(rectStartX<0){rectStartX=cursorX;rectStartY=cursorY;hint("Move cursor to opposite corner; APPLY again");}
+            else {if(sectorEditor.rectangle(rectStartX,rectStartY,cursorX,cursorY)){selectedSector=level.sectors.size()-1;autoSave();hint("Rectangle created");}else hint(sectorEditor.error);
+                rectStartX=rectStartY=-1;}
+        }else if(polygonTool==1){
+            selectedSector=level.sectorAt(cursorX+.25f,cursorY+.25f);
+            hint(selectedSector<0?"No sector under cursor":"Sector "+(selectedSector+1)+" selected");
+        }else if(polygonTool==0){
+            float[] pt=sectorEditor.snapPoint(cursorX,cursorY,1f);
+            if(pending.size()>=3&&Math.hypot(pt[0]-pending.get(0)[0],pt[1]-pending.get(0)[1])<.01){closeSector();return;}
+            for(float[] v:pending)if(Math.hypot(v[0]-pt[0],v[1]-pt[1])<.01){hint("Corner already added");return;}
+            pending.add(pt);hint("Corner "+pending.size()+" added; CLOSE to finish");
+        }else if(polygonTool==3){hint("Select wall in sector tools, then use wall movement");}
+    }
+    private void drawCursorControls(Canvas c){
+        if(mode!=POLY&&mode!=THINGS)return;
+        float cx=dpadCX(),cy=dpadCY(),r=38;
+        for(int i=0;i<4;i++){
+            float bx=cx+(i==1?67:i==3?-67:0),by=cy+(i==2?67:i==0?-67:0);
+            round(c,bx-r,by-r,bx+r,by+r,0xee3e5b6c);
+            label(c,new String[]{"▲","▶","▼","◀"}[i],bx-15,by+16,38,Color.WHITE);
+        }
+        round(c,applyCX()-56,applyCY()-48,applyCX()+56,applyCY()+48,0xff286d67);
+        label(c,"APPLY",applyCX()-43,applyCY()+9,23,Color.WHITE);
     }
     private int dragVertex=-1;
     private float touchStartX,touchStartY;
@@ -188,7 +248,7 @@ public class EditorView extends View {
 
     EditorView(Context ctx){super(ctx);setLayerType(View.LAYER_TYPE_SOFTWARE,null);
         try{String saved=ctx.getSharedPreferences("project",0).getString("level",null);if(saved!=null)level=Level.fromJson(new JSONObject(saved));}catch(Exception ignored){}
-        sectorEditor=new SectorEditor(level);camX=level.playerX;camY=level.playerY;camAngle=level.facing;setFocusable(true);
+        sectorEditor=new SectorEditor(level);PolygonRenderer.loadWallMaterials(ctx);camX=level.playerX;camY=level.playerY;camAngle=level.facing;setFocusable(true);
     }
     boolean exitPlay(){if(mode!=PLAY)return false;mode=POLY3D;moving=looking=false;invalidate();return true;}
     private void color(int col){p.setColor(col);p.setStyle(Paint.Style.FILL);p.setStrokeWidth(1);}
@@ -213,12 +273,13 @@ public class EditorView extends View {
         else {
             if(in3DEdit())update3DCamera();
             PolygonRenderer.setHighlight(in3DEdit()?selectedSector:-1,selectedSurface);
+            if(in3DEdit()&&selectedWallHit>=100000)PolygonRenderer.setHighlightHit(selectedWallHit);
             PolygonRenderer.render(c,level,viewLeft(),toolbarH,mode==PLAY?w:in3DEdit()?w:w*.78f,h,camX,camY,camAngle);
         }
         drawToolbar(c);
         if(mode==PLAY){drawPlayControls(c);updateGame();postInvalidateDelayed(16);}
         else if(in3DEdit()){draw3DOverlay(c);if(joyVisible)postInvalidateDelayed(16);}
-        else drawTools(c);
+        else {drawTools(c);drawCursorControls(c);}
         if(System.currentTimeMillis()<messageUntil){round(c,w*.20f,h-36,w*.78f,h-6,0xcc121820);label(c,message,w*.22f,h-17,Math.min(15,w*.024f),Color.WHITE);}
     }
 
@@ -500,6 +561,19 @@ public class EditorView extends View {
             if(Math.abs(delta)<.15f&&dist<best){best=dist;target=t;}}
         if(target!=null){level.things.remove(target);kills++;hint("Enemy eliminated");}}
     @Override public boolean onTouchEvent(MotionEvent e){int action=e.getActionMasked(),idx=e.getActionIndex();float x=e.getX(idx),y=e.getY(idx);
+        if((mode==POLY||mode==THINGS)&&action==MotionEvent.ACTION_DOWN&&y>=toolbarH){
+            int direction=dpadHit(x,y);
+            if(direction>=0){dpadPointer=e.getPointerId(idx);dpadDirection=direction;cursorStep(direction);nextDpadRepeat=System.currentTimeMillis()+270;return true;}
+            if(Math.abs(x-applyCX())<65&&Math.abs(y-applyCY())<55){cursorApply();invalidate();return true;}
+        }
+        if((mode==POLY||mode==THINGS)&&action==MotionEvent.ACTION_MOVE&&dpadPointer>=0){
+            int direction=dpadHit(e.getX(0),e.getY(0));
+            if(direction>=0&&System.currentTimeMillis()>=nextDpadRepeat){cursorStep(direction);nextDpadRepeat=System.currentTimeMillis()+95;}
+            return true;
+        }
+        if((mode==POLY||mode==THINGS)&&(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL)&&dpadPointer>=0){
+            dpadPointer=-1;dpadDirection=-1;return true;
+        }
         if((in3DEdit()||mode==PLAY)&&(y>=toolbarH||action==MotionEvent.ACTION_MOVE||action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_POINTER_UP||action==MotionEvent.ACTION_CANCEL))return handle3DTouch(e);
         if(action==MotionEvent.ACTION_POINTER_DOWN&&e.getPointerCount()==2&&(mode==POLY||mode==THINGS)){
             pinchDistance=(float)Math.hypot(e.getX(0)-e.getX(1),e.getY(0)-e.getY(1));lastX=(e.getX(0)+e.getX(1))*.5f;lastY=(e.getY(0)+e.getY(1))*.5f;dragging=true;return true;}
@@ -531,7 +605,7 @@ public class EditorView extends View {
                     if(d<best){best=d;dragVertex=i;}
                 }
                 if(dragVertex<0)polygonTap(x,y);
-            }else if(mode==POLY&&polygonTool==2){hint("Drag rectangle to opposite corner");}else if(mode==POLY)polygonTap(x,y);else if(mode==THINGS)applyMap(x,y);else{looking=true;lookPointer=e.getPointerId(idx);}
+            }else if(mode==POLY&&polygonTool==2){hint("Drag rectangle to opposite corner");}else if(mode==POLY||mode==THINGS){hint("Use D-pad and APPLY to edit");}else{looking=true;lookPointer=e.getPointerId(idx);}
             invalidate();return true;
         }
         if(action==MotionEvent.ACTION_MOVE){
