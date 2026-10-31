@@ -1,7 +1,15 @@
-# FSM Graph manifest repair
+# Doom Pocket Editor – launch crash fix
 
-Fixes the empty manifest currently in GitHub and uses fully qualified activity names matching the Java package. Also aligns Gradle namespace with com.retro.doomeditor.
+Upload everything in this ZIP to the repository root, preserving paths, then run GitHub Actions.
 
-Upload all files from this ZIP to your repository, preserving paths. The two FSM Java files must also be present. Run GitHub Actions afterwards.
+Changes:
+- Saved maps from older builds are checked before use. A map with broken vertex references
+  (the most likely launch crash) is set aside as `level_unreadable` and a fresh map is loaded.
+- New `DoomApp` crash recorder. If the app ever crashes, the next launch shows the full error
+  with buttons to copy it, reset the saved map, or continue.
+- Drawing/touch errors in the editor are shown on screen instead of closing the app.
+- Removed the duplicated sector parsing in `Level.fromJson`.
+- `patch.py` removed: it has already been applied, and running it again breaks the build.
 
-This is a source-level repair; an Android Gradle build has not been run here.
+All Java files must be in `app/src/main/java/com/retro/doomeditor/` with `package com.retro.doomeditor;`.
+Delete any older copies of these classes that live in a different folder or package.
