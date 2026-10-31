@@ -19,7 +19,10 @@ public class EditorView extends View {
     private final Level levelDefault=new Level();
     private Level level=levelDefault;
     private int mode=POLY, brush=1, thingType=0, polygonTool=0, selectedSector=-1;
-    private final ArrayList<Integer> pending=new ArrayList<>();
+    private final ArrayList<float[]> pending=new ArrayList<>();
+    private SectorEditor sectorEditor;
+    private int dragVertex=-1;
+    private float touchStartX,touchStartY;
     private float w,h,toolbarH,cell,mapLeft,mapTop;
     private float camX,camY,camAngle,moveX,moveY,lastX,lastY,downX,downY;
     private boolean moving,looking,dragging,fireDown;
@@ -31,7 +34,7 @@ public class EditorView extends View {
 
     EditorView(Context ctx){super(ctx);setLayerType(View.LAYER_TYPE_SOFTWARE,null);
         try{String saved=ctx.getSharedPreferences("project",0).getString("level",null);if(saved!=null)level=Level.fromJson(new JSONObject(saved));}catch(Exception ignored){}
-        camX=level.playerX;camY=level.playerY;camAngle=level.facing;setFocusable(true);
+        sectorEditor=new SectorEditor(level);camX=level.playerX;camY=level.playerY;camAngle=level.facing;setFocusable(true);
     }
     boolean exitPlay(){if(mode!=PLAY)return false;mode=POLY3D;moving=looking=false;invalidate();return true;}
     private void color(int col){p.setColor(col);p.setStyle(Paint.Style.FILL);p.setStrokeWidth(1);}
@@ -165,7 +168,7 @@ public class EditorView extends View {
         }
         for(Level.Vertex v:level.vertices){color(0xffffe4a0);c.drawCircle(mapLeft+v.x*cell,mapTop+v.y*cell,Math.max(3,cell*.13f),p);}
         if(!pending.isEmpty()){Path line=new Path();for(int i=0;i<pending.size();i++){
-            Level.Vertex v=level.vertices.get(pending.get(i));float x=mapLeft+v.x*cell,y=mapTop+v.y*cell;
+            float[] v=pending.get(i);float x=mapLeft+v[0]*cell,y=mapTop+v[1]*cell;
             if(i==0)line.moveTo(x,y);else line.lineTo(x,y);
             color(i==0?0xff55ffb6:0xffff8888);c.drawCircle(x,y,Math.max(5,cell*.23f),p);
         }p.setColor(0xfff3d88d);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(3);c.drawPath(line,p);p.setStyle(Paint.Style.FILL);}
@@ -183,7 +186,7 @@ public class EditorView extends View {
         if(s.equals("DRAW"))icon=7;
         else if(s.equals("SELECT"))icon=8;
         else if(s.equals("CLOSE"))icon=4;
-        else if(s.equals("UNDO PT"))icon=9;
+        else if(s.equals("UNDO PT")||s.equals("UNDO"))icon=9;
         else if(s.equals("CANCEL")||s.equals("DELETE")||s.equals("REMOVE"))icon=10;
         else if(s.contains("+"))icon=11;
         else if(s.contains("-")||s.equals("ERASE"))icon=12;
@@ -217,6 +220,7 @@ public class EditorView extends View {
             button(c,7,"CEIL +",false);
             button(c,8,"CEIL -",false);
             button(c,9,"DELETE",false);
+            if(h>toolbarH+44+13*43+40){button(c,10,"UNDO",false);button(c,11,"REDO",false);button(c,12,"VALIDATE",false);button(c,13,"DUPLICATE",false);}
             label(c,"VERTICES: "+pending.size(),x+9,h-15,11,0xffa9bfcd);
         }else if(mode==MAP){
             button(c,0,"WALL",brush==1);
@@ -246,26 +250,37 @@ public class EditorView extends View {
     private boolean inMap(float x,float y){return x>=mapLeft&&y>=mapTop&&x<mapLeft+Level.W*cell&&y<mapTop+Level.H*cell&&x<w*.78f;}
     private float wx(float x){return Math.round((x-mapLeft)/cell*2f)*.5f;}
     private float wy(float y){return Math.round((y-mapTop)/cell*2f)*.5f;}
-    private void closeSector(){if(pending.size()<3){hint("Need at least 3 different points");return;}
-        float area=0;for(int i=0;i<pending.size();i++){Level.Vertex a=level.vertices.get(pending.get(i)),b=level.vertices.get(pending.get((i+1)%pending.size()));area+=a.x*b.y-b.x*a.y;}
-        if(Math.abs(area)<.05f){hint("Sector has no area");return;}
-        Level.Sector s=new Level.Sector();s.loop.addAll(pending);level.sectors.add(s);selectedSector=level.sectors.size()-1;pending.clear();hint("Sector created");}
-    private void polygonTap(float x,float y){if(!inMap(x,y))return;float gx=wx(x),gy=wy(y);
-        if(polygonTool==1){selectedSector=level.sectorAt(gx,gy);hint(selectedSector>=0?"Sector "+(selectedSector+1)+" selected":"No sector selected");return;}
-        int id=level.addVertex(gx,gy);
-        if(!pending.isEmpty()&&id==pending.get(0)&&pending.size()>=3){closeSector();return;}
-        if(!pending.contains(id)){pending.add(id);hint("Point "+pending.size()+" added");}else hint("Point already in sector");}
-    private void sectorAction(int row){if(row==0||row==1){polygonTool=row;pending.clear();hint(row==0?"Draw sector":"Tap a sector to select");return;}
-        if(row==2){closeSector();return;}if(row==3){if(!pending.isEmpty()){pending.remove(pending.size()-1);hint("Last point undone");}return;}
+    private void closeSector(){
+        if(sectorEditor.addSector(pending)){
+            selectedSector=level.sectors.size()-1;pending.clear();hint("Sector created");autoSave();
+        }else hint(sectorEditor.error);
+    }
+    private void autoSave(){try{getContext().getSharedPreferences("project",0).edit().putString("level",level.toJson().toString()).apply();}catch(Exception ignored){}}
+    private void restoreEditor(){level=sectorEditor.level;selectedSector=-1;pending.clear();autoSave();invalidate();}
+    private void polygonTap(float x,float y){if(!inMap(x,y))return;
+        float gx=wx(x),gy=wy(y);float[] point=sectorEditor.snapPoint(gx,gy,.5f);
+        if(polygonTool==1){selectedSector=level.sectorAt(point[0],point[1]);hint(selectedSector>=0?"Sector "+(selectedSector+1)+" selected":"No sector selected");return;}
+        if(pending.size()>=3&&Math.hypot(point[0]-pending.get(0)[0],point[1]-pending.get(0)[1])<.1){closeSector();return;}
+        for(float[] v:pending)if(Math.hypot(point[0]-v[0],point[1]-v[1])<.08){hint("Point already in drawing");return;}
+        pending.add(point);hint("Point "+pending.size()+" added");
+    }
+    private void sectorAction(int row){
+        if(row==0||row==1){polygonTool=row;pending.clear();hint(row==0?"Draw sector":"Tap a sector to select");return;}
+        if(row==2){closeSector();return;}
+        if(row==3){if(!pending.isEmpty()){pending.remove(pending.size()-1);hint("Last point removed");}else if(sectorEditor.undo()){restoreEditor();hint("Undo");}return;}
         if(row==4){pending.clear();hint("Drawing cancelled");return;}
+        if(row==10){if(sectorEditor.undo()){restoreEditor();hint("Undo");}return;}
+        if(row==11){if(sectorEditor.redo()){restoreEditor();hint("Redo");}return;}
+        if(row==12){hint(sectorEditor.validateMap());return;}
         if(selectedSector<0||selectedSector>=level.sectors.size()){hint("Select a sector first");return;}
-        Level.Sector s=level.sectors.get(selectedSector);
-        if(row==5)s.floor=Math.min(s.ceiling-.5f,s.floor+.25f);
-        if(row==6)s.floor-=.25f;
-        if(row==7)s.ceiling+=.25f;
-        if(row==8)s.ceiling=Math.max(s.floor+.5f,s.ceiling-.25f);
-        if(row==9){level.sectors.remove(selectedSector);selectedSector=-1;hint("Sector deleted");return;}
-        hint("Floor "+s.floor+" / Ceiling "+s.ceiling);
+        boolean changed=false;
+        if(row==5)changed=sectorEditor.changeHeight(selectedSector,.25f,0);
+        if(row==6)changed=sectorEditor.changeHeight(selectedSector,-.25f,0);
+        if(row==7)changed=sectorEditor.changeHeight(selectedSector,0,.25f);
+        if(row==8)changed=sectorEditor.changeHeight(selectedSector,0,-.25f);
+        if(row==9){changed=sectorEditor.deleteSector(selectedSector);selectedSector=-1;}
+        if(row==13){changed=sectorEditor.duplicateSector(selectedSector,1,1);if(changed)selectedSector=level.sectors.size()-1;}
+        if(changed){autoSave();hint("Map updated");}else hint(sectorEditor.error.isEmpty()?"Action unavailable":sectorEditor.error);
     }
     private void applyMap(float x,float y){if(!inMap(x,y))return;int cx=(int)((x-mapLeft)/cell),cy=(int)((y-mapTop)/cell);
         if(cx<0||cy<0||cx>=Level.W||cy>=Level.H)return;
@@ -293,15 +308,22 @@ public class EditorView extends View {
     @Override public boolean onTouchEvent(MotionEvent e){int action=e.getActionMasked(),idx=e.getActionIndex();float x=e.getX(idx),y=e.getY(idx);
         if(action==MotionEvent.ACTION_POINTER_DOWN&&e.getPointerCount()==2&&(mode==POLY||mode==MAP||mode==THINGS)){
             pinchDistance=(float)Math.hypot(e.getX(0)-e.getX(1),e.getY(0)-e.getY(1));lastX=(e.getX(0)+e.getX(1))*.5f;lastY=(e.getY(0)+e.getY(1))*.5f;dragging=true;return true;}
-        if(action==MotionEvent.ACTION_DOWN){downX=lastX=x;downY=lastY=y;dragging=false;
+        if(action==MotionEvent.ACTION_DOWN){downX=lastX=x;downY=lastY=y;dragging=false;touchStartX=x;touchStartY=y;
             if(y<toolbarH){float bw=(w-175)/6f;for(int i=0;i<6;i++)if(x>=5+i*bw&&x<5+(i+1)*bw){changeMode(i);return true;}
                 if(x>=w-166&&x<w-86){save();return true;}
-                if(x>=w-82){level=new Level();pending.clear();selectedSector=-1;camX=level.playerX;camY=level.playerY;camAngle=level.facing;hint("Level reset");return true;}}
+                if(x>=w-82){level=new Level();sectorEditor=new SectorEditor(level);pending.clear();selectedSector=-1;camX=level.playerX;camY=level.playerY;camAngle=level.facing;hint("Level reset");return true;}}
             if(mode==PLAY){if(x<155&&y>h-175){moving=true;activePointer=e.getPointerId(idx);stick(x,y);}else if(x>w-145&&y>h-160){fireDown=true;}else{looking=true;lookPointer=e.getPointerId(idx);}invalidate();return true;}
-            if(x>w*.78f){if(mode==POLY){int row=(int)((y-toolbarH-44)/43);if(y>=toolbarH+44&&row>=0&&row<=9)sectorAction(row);}
+            if(x>w*.78f){if(mode==POLY){int row=(int)((y-toolbarH-44)/43);if(y>=toolbarH+44&&row>=0&&row<=(h>toolbarH+44+13*43+40?13:9))sectorAction(row);}
                 else if(mode==MAP||mode==THINGS){int row=(int)((y-toolbarH-44)/43);if(row>=0&&row<=2){if(mode==MAP)brush=row==0?1:row==1?0:2;else thingType=row;}}
                 invalidate();return true;}
-            if(mode==POLY)polygonTap(x,y);else if(mode==MAP||mode==THINGS)applyMap(x,y);else{looking=true;lookPointer=e.getPointerId(idx);}
+            if(mode==POLY&&polygonTool==1){
+                dragVertex=-1;float best=22f;
+                for(int i=0;i<level.vertices.size();i++){
+                    Level.Vertex v=level.vertices.get(i);float d=(float)Math.hypot(mapLeft+v.x*cell-x,mapTop+v.y*cell-y);
+                    if(d<best){best=d;dragVertex=i;}
+                }
+                if(dragVertex<0)polygonTap(x,y);
+            }else if(mode==POLY)polygonTap(x,y);else if(mode==MAP||mode==THINGS)applyMap(x,y);else{looking=true;lookPointer=e.getPointerId(idx);}
             invalidate();return true;
         }
         if(action==MotionEvent.ACTION_MOVE){
@@ -313,8 +335,18 @@ public class EditorView extends View {
             else if(mode==MAP&&!dragging){applyMap(e.getX(0),e.getY(0));}
             invalidate();return true;
         }
-        if(action==MotionEvent.ACTION_POINTER_UP){int id=e.getPointerId(idx);if(id==activePointer){moving=false;activePointer=-1;moveX=moveY=0;}if(id==lookPointer){looking=false;lookPointer=-1;}pinchDistance=0;invalidate();return true;}
-        if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL){moving=looking=false;activePointer=lookPointer=-1;moveX=moveY=0;pinchDistance=0;invalidate();return true;}
+        if(action==MotionEvent.ACTION_POINTER_UP){int id=e.getPointerId(idx);if(id==activePointer){moving=false;activePointer=-1;moveX=moveY=0;}if(id==lookPointer){looking=false;lookPointer=-1;}pinchDistance=0;dragVertex=-1;invalidate();return true;}
+        if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL){
+            if(action==MotionEvent.ACTION_UP&&mode==POLY&&dragVertex>=0&&e.getPointerCount()==1){
+                float ex=e.getX(),ey=e.getY();
+                if(Math.hypot(ex-touchStartX,ey-touchStartY)>12){
+                    float[] pt=sectorEditor.snapPoint(wx(ex),wy(ey),.5f);
+                    if(sectorEditor.moveVertex(dragVertex,pt[0],pt[1])){autoSave();hint("Vertex moved");}
+                    else hint(sectorEditor.error);
+                }else{for(int k=0;k<level.sectors.size();k++)if(level.sectors.get(k).loop.contains(dragVertex)){selectedSector=k;break;}}
+                dragVertex=-1;
+            }
+            moving=looking=false;activePointer=lookPointer=-1;moveX=moveY=0;pinchDistance=0;invalidate();return true;}
         return true;
     }
 }
