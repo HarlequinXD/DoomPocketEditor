@@ -209,7 +209,7 @@ final class Renderer {
         int y0=Math.max(0,(int)Math.ceil(minY-.5f)),y1=Math.min(H-1,(int)Math.floor(maxY-.5f));
         if(y0>y1)return;
         int m=Math.max(0,Math.min(Textures.COUNT-1,mat));
-        int[][] table=Textures.shaded[m];boolean bright=Textures.BRIGHT[m];
+        int[][] table=Textures.table(m);boolean bright=Textures.BRIGHT[m];
         float fk=fadeK;int minL=Math.max(1,L/4);
         for(int y=y0;y<=y1;y++){
             float yc=y+.5f,xl=1e9f,xr=-1e9f;

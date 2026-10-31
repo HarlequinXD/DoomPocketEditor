@@ -576,7 +576,7 @@ public class EditorView extends View {
             case SKY:sectorEditor.setMaterial(s,2,sec.ceilingMaterial==Textures.SKY?2:Textures.SKY);break;
             case FLOOR_TEX:case CEIL_TEX:case WALL_TEX:{int surf=t==FLOOR_TEX?1:t==CEIL_TEX?2:0;int cur=surf==1?sec.floorMaterial:surf==2?sec.ceilingMaterial:sec.wallMaterial;
                 if(host!=null){host.choose(toolName(t)+" · sector "+(s+1),Textures.NAMES,cur,i->{if(i==Textures.SKY&&surf!=2){hint("Sky only works on ceilings");return;}sectorEditor.setMaterial(s,surf,i);changed(Textures.NAMES[i]);});return;}
-                sectorEditor.setMaterial(s,surf,(cur+1)%(Textures.COUNT-1));break;}
+                {int nx=(cur+1)%Textures.COUNT;if(nx==Textures.SKY)nx++;sectorEditor.setMaterial(s,surf,nx%Textures.COUNT);}break;}
         }
         if(ok)changed(toolName(t)+" · sector "+(s+1)+": floor "+fmt(sec.floor)+", ceiling "+fmt(sec.ceiling)+", light "+sec.light);else hint(sectorEditor.error);
     }
