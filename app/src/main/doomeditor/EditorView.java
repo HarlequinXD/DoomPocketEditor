@@ -24,7 +24,7 @@ public class EditorView extends View {
     private static final int H_MODE=100,H_FSM=110,H_SAVE=111,H_RESET=112,H_PAGE=120,H_TOOL=200,H_APPLY=520,H_MAT=400,
             H_RAISE=500,H_LOWER=501,H_LIGHTUP=502,H_LIGHTDN=503,H_FLY=504,H_UP=505,H_DOWN=506,H_EDITFSM3D=507,H_START3D=508,
             H_FIRE=510,H_USE=511,H_JUMP=512,H_WEAPON=513,H_EXITPLAY=514,H_RETRY=530,H_BACK=531,
-            H_NEWDEF=590,H_DEF=600,H_PROP=700,H_ETOOL=800,H_EDITFSM=810,H_DUPDEF=811,H_DELDEF=812;
+            H_NEWDEF=590,H_ZOOMIN=591,H_ZOOMOUT=592,H_DEF=600,H_PROP=700,H_ETOOL=800,H_EDITFSM=810,H_DUPDEF=811,H_DELDEF=812;
     // Sector tools (cursor + Apply) and immediate actions.
     private static final int DRAW=1,RECT=2,PREFAB=3,STAIRS=4,SELECT=5,MOVE=6,SPLIT=7,EXTRUDE=8,DUPLICATE=9,DELETE=10,SPECIAL=11,START=12;
     private static final int CLOSE=101,UNDO_PT=102,CANCEL=103,UNDO=104,REDO=105,VALIDATE=106,CLEAN=107,DESELECT=108,
@@ -122,6 +122,7 @@ public class EditorView extends View {
     private float wx(float x){return viewX+(x-(mapL()+mapR())*.5f)/cell;}
     private float wy(float y){return viewY+(y-(mapT()+mapB())*.5f)/cell;}
     private boolean inMap(float x,float y){return x>=mapL()&&x<mapR()&&y>=mapT()&&y<mapB();}
+    private boolean inStatusBar(float x,float y){return in2D()&&x>=mapL()&&x<mapR()&&y>=mapB();}
 
     // ---------------------------------------------------------------- frame
     @Override protected void onDraw(Canvas c){super.onDraw(c);
@@ -298,7 +299,10 @@ public class EditorView extends View {
         x=statusItem(c,x,cy,Icons.CROSSHAIR,fmt(cursorX)+", "+fmt(cursorY));
         x=statusItem(c,x,cy,Icons.GRID,"Snap "+fmt(snap()));
         if(R-L>dp(420)){x=statusItem(c,x,cy,Icons.SECTORS,level.sectors.size()+" sectors");x=statusItem(c,x,cy,Icons.ENTITIES,level.things.size()+" entities");}
-        ui.textMid(c,Math.round(zoom*100)+"%",R-dp(12),cy,11,Ui.TEXT_3,1,1);
+        float bw=dp(34),bt=top+dp(3),bb=h-dp(3);
+        r.set(R-dp(6)-bw,bt,R-dp(6),bb);ui.round(c,r,dp(6),Ui.SURFACE_2);ui.icon(c,Icons.PLUS,r.centerX(),r.centerY(),15,Ui.TEXT);ui.hit(r.left,top,r.right,h,H_ZOOMIN);
+        ui.textMid(c,Math.round(zoom*100)+"%",R-dp(12)-bw-dp(24),cy,11,Ui.TEXT_2,1,0);
+        r.set(R-dp(18)-bw*2-dp(36),bt,R-dp(18)-bw-dp(36),bb);ui.round(c,r,dp(6),Ui.SURFACE_2);ui.icon(c,Icons.MINUS,r.centerX(),r.centerY(),15,Ui.TEXT);ui.hit(r.left,top,r.right,h,H_ZOOMOUT);
     }
     private float statusItem(Canvas c,float x,float cy,int icon,String text){ui.icon(c,icon,x+dp(6),cy,12,Ui.TEXT_3);ui.textMid(c,text,x+dp(17),cy,11,Ui.TEXT_2,0,-1);return x+dp(17)+ui.measure(text,11,0)+dp(18);}
     static String fmt(float v){return Math.abs(v-Math.round(v))<.001f?String.valueOf(Math.round(v)):String.format(java.util.Locale.US,"%.2f",v).replaceAll("0+$","");}
@@ -837,25 +841,17 @@ public class EditorView extends View {
                 int dir=dpadHit(x,y);
                 if(dir>=0){dpadPointer=e.getPointerId(idx);dpadDirection=dir;cursorStep(dir);nextDpadRepeat=System.currentTimeMillis()+270;postDpadRepeat();return true;}
                 if(hid==H_APPLY){cursorApply();invalidate();return true;}
-                panning=true;return true;
+                return true; // cursor-only editing: other touches on the canvas are ignored
             }
             if(mode==THINGS&&x<entPanelW()){scrollTarget=1;return true;}
             if(x>=mapR()){scrollTarget=mode==THINGS?2:0;return true;}
             return true;
         }
-        if(a==MotionEvent.ACTION_POINTER_DOWN&&e.getPointerCount()==2&&panning){
-            pinchDist=(float)Math.hypot(e.getX(0)-e.getX(1),e.getY(0)-e.getY(1));lastX=(e.getX(0)+e.getX(1))*.5f;lastY=(e.getY(0)+e.getY(1))*.5f;dragged=true;return true;}
         if(a==MotionEvent.ACTION_MOVE){
             if(dpadPointer>=0){int dir=dpadHit(e.getX(0),e.getY(0));if(dir!=dpadDirection){dpadDirection=dir;if(dir>=0){cursorStep(dir);nextDpadRepeat=System.currentTimeMillis()+270;}invalidate();}return true;}
-            if(e.getPointerCount()>=2&&pinchDist>0){
-                float d=(float)Math.hypot(e.getX(0)-e.getX(1),e.getY(0)-e.getY(1)),mx=(e.getX(0)+e.getX(1))*.5f,my=(e.getY(0)+e.getY(1))*.5f;
-                float wxm=wx(mx),wym=wy(my);zoom=Math.max(.35f,Math.min(4f,zoom*d/pinchDist));pinchDist=d;cell=(mapB()-mapT())/14f*zoom;
-                viewX=wxm-(mx-(mapL()+mapR())*.5f)/cell;viewY=wym-(my-(mapT()+mapB())*.5f)/cell;
-                viewX-=(mx-lastX)/cell;viewY-=(my-lastY)/cell;lastX=mx;lastY=my;followCursor=false;invalidate();return true;}
             if(Math.abs(x-downX)+Math.abs(y-downY)>dp(8))dragged=true;
             if(dragged){
-                if(panning){viewX-=(x-lastX)/cell;viewY-=(y-lastY)/cell;followCursor=false;}
-                else if(scrollTarget==1)defScroll-=(y-lastY);
+                if(scrollTarget==1)defScroll-=(y-lastY);
                 else if(scrollTarget==2)propScroll-=(y-lastY);
                 invalidate();}
             lastX=x;lastY=y;return true;
@@ -864,14 +860,10 @@ public class EditorView extends View {
         if(a==MotionEvent.ACTION_UP||a==MotionEvent.ACTION_CANCEL){
             if(dpadPointer>=0){dpadPointer=-1;dpadDirection=-1;invalidate();return true;}
             if(a==MotionEvent.ACTION_UP&&!dragged){
-                if(panning&&inMap(x,y)){
-                    float s=snap();cursorX=Math.round(wx(x)/s)*s;cursorY=Math.round(wy(y)/s)*s;
-                    if(stage==1&&tool==MOVE&&mode==POLY)previewMove();
-                    long now=System.currentTimeMillis();
-                    if(now-lastTapTime<330&&Math.hypot(x-lastTapX,y-lastTapY)<dp(24)){cursorApply();lastTapTime=0;}else{lastTapTime=now;lastTapX=x;lastTapY=y;}
-                }else{
+                {
                     int hid=ui.hitAt(x,y);
-                    if(hid>=H_PAGE&&hid<H_PAGE+3){toolPage=hid-H_PAGE;}
+                    if(hid==H_ZOOMIN||hid==H_ZOOMOUT){zoom=Math.max(.35f,Math.min(4f,zoom*(hid==H_ZOOMIN?1.25f:.8f)));followCursor=true;}
+                    else if(hid>=H_PAGE&&hid<H_PAGE+3){toolPage=hid-H_PAGE;}
                     else if(hid>=H_TOOL&&hid<H_TOOL+11&&mode==POLY){sectorAction(PAGES[toolPage][hid-H_TOOL]);}
                     else if(hid>=H_DEF&&hid<H_DEF+500){int i=hid-H_DEF;if(i<project.defs.size()){selDef=project.defs.get(i).id;selThing=-1;propScroll=0;if(entityTool!=0){entityTool=0;}hint(project.defs.get(i).name+" · Apply to place");}}
                     else if(hid==H_NEWDEF)newEntityType();
