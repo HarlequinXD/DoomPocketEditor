@@ -18,7 +18,7 @@ final class Icons {
             WALL_TEX=29,FLOOR_TEX=30,CEIL_TEX=31,NEXT_TEX=32,PREV_TEX=33,LAYERS=34,SUN=35,SUN_DIM=36,GRID=37,
             CROSSHAIR=38,HELP=39,SKULL=40,MEDKIT=41,CHECK=42,CHEVRON_UP=43,CHEVRON_DOWN=44,CHEVRON_LEFT=45,
             CHEVRON_RIGHT=46,ARROW_UP=47,ARROW_DOWN=48,INFO=49,HEART=50,ZAP=51,PLUS_SQUARE=52,LINK=53,FLAG=54,
-            STOP=55,ARROW_LEFT=56,FIT=57,LIST=58,TAG=59,PLUS=60,MINUS=61,LOGO=62,CLOCK=63,DOT_CIRCLE=64;
+            STOP=55,ARROW_LEFT=56,FIT=57,LIST=58,TAG=59,PLUS=60,MINUS=61,LOGO=62,CLOCK=63,DOT_CIRCLE=64,CLOUD=65,SEARCH=66,FOLDER=67;
 
     private static final Path path=new Path();
     private static final RectF oval=new RectF();
@@ -151,6 +151,12 @@ final class Icons {
                 line(c,p,9,6,20,6);line(c,p,9,12,20,12);line(c,p,9,18,20,18);dot(c,p,4.5f,6,1.3f);dot(c,p,4.5f,12,1.3f);dot(c,p,4.5f,18,1.3f);break;
             case CLOCK: c.drawCircle(12,12,9,p);poly(c,p,false,12,7,12,12,15.5f,14);break;
             case DOT_CIRCLE: c.drawCircle(12,12,9,p);dot(c,p,12,12,3.5f);break;
+            case CLOUD:
+                path.reset();path.moveTo(7,19);path.cubicTo(4,19,2.5f,17,2.5f,14.8f);path.cubicTo(2.5f,12.4f,4.4f,10.7f,6.6f,10.8f);path.cubicTo(7.4f,7.6f,10,5.5f,13,5.5f);
+                path.cubicTo(16.6f,5.5f,19.4f,8.3f,19.5f,11.8f);path.cubicTo(21.2f,12.3f,22,13.8f,22,15.4f);path.cubicTo(22,17.4f,20.4f,19,18.4f,19);path.close();c.drawPath(path,p);break;
+            case SEARCH: c.drawCircle(10.5f,10.5f,6.5f,p);line(c,p,15.5f,15.5f,21,21);break;
+            case FOLDER:
+                path.reset();path.moveTo(3,6);path.quadTo(3,4,5,4);path.lineTo(9.5f,4);path.lineTo(11.5f,6.5f);path.lineTo(19,6.5f);path.quadTo(21,6.5f,21,8.5f);path.lineTo(21,18);path.quadTo(21,20,19,20);path.lineTo(5,20);path.quadTo(3,20,3,18);path.close();c.drawPath(path,p);break;
             case TAG:
                 poly(c,p,true,3,3,12,3,21,12,12,21,3,12);dot(c,p,8,8,1.5f);break;
         }

@@ -29,6 +29,7 @@ final class Ui {
 
     Ui(Context ctx){dp=ctx.getResources().getDisplayMetrics().density;}
     float dp(float v){return v*dp;}
+    static int brighten(int c){int a=c>>>24;int r=Math.min(255,((c>>16)&255)*5/4+20),g=Math.min(255,((c>>8)&255)*5/4+20),b=Math.min(255,(c&255)*5/4+20);return (a<<24)|(r<<16)|(g<<8)|b;}
 
     void clearHits(){hits.clear();}
     void hit(RectF r,int id){hits.add(new Hit(new RectF(r),id));}

@@ -79,7 +79,7 @@ public final class SectorEditor {
         return true;
     }
     public boolean duplicateSector(int index,float dx,float dy){if(index<0||index>=level.sectors.size())return false;Level.Sector s=level.sectors.get(index);ArrayList<float[]> poly=coords(s);for(float[] p:poly){p[0]+=dx;p[1]+=dy;}if(!validate(poly,-1))return false;
-        push();Level.Sector copy=new Level.Sector();copy.floor=s.floor;copy.ceiling=s.ceiling;copy.floorMaterial=s.floorMaterial;copy.ceilingMaterial=s.ceilingMaterial;copy.wallMaterial=s.wallMaterial;
+        push();Level.Sector copy=new Level.Sector();copy.floor=s.floor;copy.ceiling=s.ceiling;copy.floorMaterial=s.floorMaterial;copy.ceilingMaterial=s.ceilingMaterial;copy.wallMaterial=s.wallMaterial;copy.light=s.light;copy.special=s.special;copy.tag=s.tag;
         for(float[] p:poly)copy.loop.add(level.addVertex(p[0],p[1]));level.sectors.add(copy);return true;}
     /** Insert grid-aligned vertices on collinear edges so adjacent sectors share full segments. */
     private void normalizeEdges(){
@@ -121,6 +121,45 @@ public final class SectorEditor {
     public boolean setHeights(int index,float floor,float ceiling){
         if(index<0||index>=level.sectors.size()||ceiling-floor<.5f){error="Invalid floor/ceiling clearance";return false;}
         push();Level.Sector s=level.sectors.get(index);s.floor=floor;s.ceiling=ceiling;return true;
+    }
+    /** Moves a set of vertices by (dx,dy) as one undoable step, validating every affected sector. */
+    public boolean moveVertices(int[] ids,float dx,float dy){
+        error="";if(ids.length==0||(dx==0&&dy==0))return false;
+        float[] old=new float[ids.length*2];
+        for(int i=0;i<ids.length;i++){if(ids[i]<0||ids[i]>=level.vertices.size())return false;Level.Vertex v=level.vertices.get(ids[i]);old[i*2]=v.x;old[i*2+1]=v.y;v.x+=dx;v.y+=dy;}
+        boolean valid=true;
+        for(int i=0;i<level.sectors.size()&&valid;i++){Level.Sector s=level.sectors.get(i);boolean touched=false;for(int id:ids)if(s.loop.contains(id)){touched=true;break;}
+            if(touched&&!validate(coords(s),i))valid=false;}
+        for(int i=0;i<ids.length;i++){Level.Vertex v=level.vertices.get(ids[i]);v.x=old[i*2];v.y=old[i*2+1];}
+        if(!valid)return false;
+        push();for(int id:ids){Level.Vertex v=level.vertices.get(id);v.x+=dx;v.y+=dy;}return true;
+    }
+    /** Splits an axis-aligned rectangular sector into 1-unit steps rising away from (fromX,fromY). */
+    public boolean makeStairs(int index,float fromX,float fromY,float rise){
+        error="";if(index<0||index>=level.sectors.size())return false;
+        Level.Sector s=level.sectors.get(index);
+        float minX=1e9f,minY=1e9f,maxX=-1e9f,maxY=-1e9f;
+        for(int id:s.loop){Level.Vertex v=level.vertices.get(id);minX=Math.min(minX,v.x);minY=Math.min(minY,v.y);maxX=Math.max(maxX,v.x);maxY=Math.max(maxY,v.y);}
+        float area=0;for(int i=0;i<s.loop.size();i++){Level.Vertex a=level.vertices.get(s.loop.get(i)),b=level.vertices.get(s.loop.get((i+1)%s.loop.size()));area+=a.x*b.y-b.x*a.y;}
+        if(Math.abs(Math.abs(area*.5f)-(maxX-minX)*(maxY-minY))>.01f){error="Stairs need a rectangular sector";return false;}
+        boolean alongX=maxX-minX>=maxY-minY;int n=(int)Math.floor(alongX?maxX-minX:maxY-minY);
+        if(n<2){error="Sector is too small for stairs";return false;}
+        boolean reverse=alongX?Math.abs(fromX-maxX)<Math.abs(fromX-minX):Math.abs(fromY-maxY)<Math.abs(fromY-minY);
+        push();
+        Level.Sector template=s;level.sectors.remove(index);
+        for(int i=0;i<n;i++){
+            float a=alongX?minX+i:minY+i,b=i==n-1?(alongX?maxX:maxY):a+1;
+            ArrayList<float[]> poly=new ArrayList<>();
+            if(alongX){poly.add(new float[]{a,minY});poly.add(new float[]{b,minY});poly.add(new float[]{b,maxY});poly.add(new float[]{a,maxY});}
+            else{poly.add(new float[]{minX,a});poly.add(new float[]{maxX,a});poly.add(new float[]{maxX,b});poly.add(new float[]{minX,b});}
+            Level.Sector step=new Level.Sector();for(float[] q:poly)step.loop.add(level.addVertex(q[0],q[1]));
+            int k=reverse?n-1-i:i;
+            step.floor=template.floor+rise*k;step.ceiling=Math.max(template.ceiling,step.floor+2f);
+            step.floorMaterial=template.floorMaterial;step.ceilingMaterial=template.ceilingMaterial;step.wallMaterial=template.wallMaterial;step.light=template.light;
+            level.sectors.add(step);
+        }
+        normalizeEdges();
+        return true;
     }
     public boolean moveEdge(int sector,int edge,float dx,float dy){
         if(sector<0||sector>=level.sectors.size())return false;
