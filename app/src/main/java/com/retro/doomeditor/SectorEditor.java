@@ -18,8 +18,8 @@ public final class SectorEditor {
     public boolean redo(){if(redo.isEmpty())return false;String s=snapshot();try{Level next=Level.fromJson(new JSONObject(redo.pop()));if(s!=null)undo.push(s);level=next;return true;}catch(Exception e){return false;}}
     public static float snap(float n,float step){return Math.round(n/step)*step;}
     public float[] snapPoint(float x,float y,float grid){
-        float sx=snap(x,grid),sy=snap(y,grid),best=grid*.55f;
-        for(Level.Vertex v:level.vertices){float d=(float)Math.hypot(v.x-x,v.y-y);if(d<best){best=d;sx=v.x;sy=v.y;}}
+        float sx=snap(x,1f),sy=snap(y,1f),best=.42f;
+        for(Level.Vertex v:level.vertices){float d=(float)Math.hypot(v.x-x,v.y-y);if(d<best&&Math.abs(v.x-Math.round(v.x))<EPS&&Math.abs(v.y-Math.round(v.y))<EPS){best=d;sx=v.x;sy=v.y;}}
         return new float[]{sx,sy};
     }
     private static float cross(float ax,float ay,float bx,float by,float cx,float cy){return (bx-ax)*(cy-ay)-(by-ay)*(cx-ax);}
@@ -66,7 +66,7 @@ public final class SectorEditor {
         }
         return true;
     }
-    public boolean addSector(ArrayList<float[]> points){if(!validate(points,-1))return false;push();Level.Sector s=new Level.Sector();for(float[] p:points)s.loop.add(level.addVertex(p[0],p[1]));level.sectors.add(s);return true;}
+    public boolean addSector(ArrayList<float[]> points){if(!validate(points,-1))return false;push();Level.Sector s=new Level.Sector();for(float[] p:points)s.loop.add(level.addVertex(p[0],p[1]));level.sectors.add(s);normalizeEdges();return true;}
     public boolean deleteSector(int index){if(index<0||index>=level.sectors.size())return false;push();level.sectors.remove(index);return true;}
     public boolean changeHeight(int index,float floorDelta,float ceilingDelta){if(index<0||index>=level.sectors.size())return false;Level.Sector s=level.sectors.get(index);if(s.ceiling+ceilingDelta-s.floor-floorDelta<.5f){error="Not enough clearance";return false;}push();s.floor+=floorDelta;s.ceiling+=ceilingDelta;return true;}
     public boolean moveVertex(int id,float x,float y){if(id<0||id>=level.vertices.size())return false;Level.Vertex v=level.vertices.get(id);float oldX=v.x,oldY=v.y;v.x=x;v.y=y;
@@ -81,5 +81,82 @@ public final class SectorEditor {
     public boolean duplicateSector(int index,float dx,float dy){if(index<0||index>=level.sectors.size())return false;Level.Sector s=level.sectors.get(index);ArrayList<float[]> poly=coords(s);for(float[] p:poly){p[0]+=dx;p[1]+=dy;}if(!validate(poly,-1))return false;
         push();Level.Sector copy=new Level.Sector();copy.floor=s.floor;copy.ceiling=s.ceiling;copy.floorMaterial=s.floorMaterial;copy.ceilingMaterial=s.ceilingMaterial;copy.wallMaterial=s.wallMaterial;
         for(float[] p:poly)copy.loop.add(level.addVertex(p[0],p[1]));level.sectors.add(copy);return true;}
+    /** Insert grid-aligned vertices on collinear edges so adjacent sectors share full segments. */
+    private void normalizeEdges(){
+        for(Level.Sector sec:level.sectors){
+            ArrayList<Integer> loop=new ArrayList<>();int n=sec.loop.size();
+            for(int i=0;i<n;i++){
+                int ia=sec.loop.get(i),ib=sec.loop.get((i+1)%n);
+                Level.Vertex a=level.vertices.get(ia),b=level.vertices.get(ib);
+                loop.add(ia);
+                ArrayList<Integer> mids=new ArrayList<>();
+                for(int k=0;k<level.vertices.size();k++){
+                    if(k==ia||k==ib)continue;
+                    Level.Vertex v=level.vertices.get(k);
+                    if(onSegment(a.x,a.y,b.x,b.y,v.x,v.y)&&
+                       Math.hypot(v.x-a.x,v.y-a.y)>.001&&Math.hypot(v.x-b.x,v.y-b.y)>.001)mids.add(k);
+                }
+                java.util.Collections.sort(mids,(u,v)->{
+                    Level.Vertex x=level.vertices.get(u),y=level.vertices.get(v);
+                    float dx=b.x-a.x,dy=b.y-a.y;
+                    return Float.compare((x.x-a.x)*dx+(x.y-a.y)*dy,(y.x-a.x)*dx+(y.y-a.y)*dy);
+                });
+                loop.addAll(mids);
+            }
+            sec.loop=loop;
+        }
+    }
+    public boolean rectangle(int x1,int y1,int x2,int y2){
+        if(x1==x2||y1==y2){error="Rectangle needs width and height";return false;}
+        ArrayList<float[]> p=new ArrayList<>();
+        p.add(new float[]{x1,y1});p.add(new float[]{x2,y1});p.add(new float[]{x2,y2});p.add(new float[]{x1,y2});
+        return addSector(p);
+    }
+    public boolean setMaterial(int index,int surface,int material){
+        if(index<0||index>=level.sectors.size())return false;
+        push();Level.Sector s=level.sectors.get(index);
+        if(surface==0)s.wallMaterial=material;else if(surface==1)s.floorMaterial=material;else s.ceilingMaterial=material;
+        return true;
+    }
+    public boolean setHeights(int index,float floor,float ceiling){
+        if(index<0||index>=level.sectors.size()||ceiling-floor<.5f){error="Invalid floor/ceiling clearance";return false;}
+        push();Level.Sector s=level.sectors.get(index);s.floor=floor;s.ceiling=ceiling;return true;
+    }
+    public boolean moveEdge(int sector,int edge,float dx,float dy){
+        if(sector<0||sector>=level.sectors.size())return false;
+        Level.Sector s=level.sectors.get(sector);if(edge<0||edge>=s.loop.size())return false;
+        int a=s.loop.get(edge),b=s.loop.get((edge+1)%s.loop.size());
+        Level.Vertex va=level.vertices.get(a),vb=level.vertices.get(b);
+        float ax=va.x,ay=va.y,bx=vb.x,by=vb.y;
+        va.x+=dx;va.y+=dy;vb.x+=dx;vb.y+=dy;
+        boolean valid=true;
+        for(int i=0;i<level.sectors.size();i++)if((level.sectors.get(i).loop.contains(a)||level.sectors.get(i).loop.contains(b))&&!validate(coords(level.sectors.get(i)),i)){valid=false;break;}
+        va.x=ax;va.y=ay;vb.x=bx;vb.y=by;
+        if(!valid)return false;
+        push();va.x+=dx;va.y+=dy;vb.x+=dx;vb.y+=dy;return true;
+    }
+    public boolean extrude(int sector,int edge,int distance){
+        if(sector<0||sector>=level.sectors.size()||distance==0)return false;
+        Level.Sector s=level.sectors.get(sector);if(edge<0||edge>=s.loop.size())return false;
+        Level.Vertex a=level.vertices.get(s.loop.get(edge)),b=level.vertices.get(s.loop.get((edge+1)%s.loop.size()));
+        float dx=b.x-a.x,dy=b.y-a.y,len=(float)Math.hypot(dx,dy);if(len<.001)return false;
+        float area=0;for(int i=0;i<s.loop.size();i++){Level.Vertex x=level.vertices.get(s.loop.get(i)),y=level.vertices.get(s.loop.get((i+1)%s.loop.size()));area+=x.x*y.y-x.y*y.x;}
+        float sign=area>0?1:-1,nx=sign*dy/len*distance,ny=-sign*dx/len*distance;
+        ArrayList<float[]> poly=new ArrayList<>();
+        poly.add(new float[]{b.x,b.y});poly.add(new float[]{a.x,a.y});poly.add(new float[]{a.x+nx,a.y+ny});poly.add(new float[]{b.x+nx,b.y+ny});
+        if(!addSector(poly))return false;
+        Level.Sector created=level.sectors.get(level.sectors.size()-1);
+        created.floor=s.floor;created.ceiling=s.ceiling;created.floorMaterial=s.floorMaterial;created.ceilingMaterial=s.ceilingMaterial;created.wallMaterial=s.wallMaterial;
+        return true;
+    }
+    /** Remove orphaned vertices, preserving sector indices by remapping references. */
+    public int cleanOrphans(){
+        java.util.HashSet<Integer> used=new java.util.HashSet<>();for(Level.Sector s:level.sectors)used.addAll(s.loop);
+        int removed=level.vertices.size()-used.size();if(removed<=0)return 0;
+        push();ArrayList<Level.Vertex> vertices=new ArrayList<>();int[] remap=new int[level.vertices.size()];
+        for(int i=0;i<level.vertices.size();i++)if(used.contains(i)){remap[i]=vertices.size();vertices.add(level.vertices.get(i));}
+        for(Level.Sector s:level.sectors)for(int i=0;i<s.loop.size();i++)s.loop.set(i,remap[s.loop.get(i)]);
+        level.vertices=vertices;return removed;
+    }
     public String validateMap(){for(int i=0;i<level.sectors.size();i++)if(!validate(coords(level.sectors.get(i)),i))return "Sector "+(i+1)+": "+error;return "Geometry valid";}
 }

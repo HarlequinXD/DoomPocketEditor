@@ -18,7 +18,7 @@ public class EditorView extends View {
     private final Paint p=new Paint(3);
     private final Level levelDefault=new Level();
     private Level level=levelDefault;
-    private int mode=POLY, brush=1, thingType=0, polygonTool=0, selectedSector=-1;
+    private int mode=POLY, brush=1, thingType=0, polygonTool=0, selectedSector=-1,toolPage=0,materialSurface=0,selectedEdge=0;
     private final ArrayList<float[]> pending=new ArrayList<>();
     private SectorEditor sectorEditor;
     private int dragVertex=-1;
@@ -176,27 +176,30 @@ public class EditorView extends View {
         color(0xff45e8d5);float x=mapLeft+level.playerX*cell,y=mapTop+level.playerY*cell;c.drawCircle(x,y,Math.max(4,cell*.20f),p);
         c.drawLine(x,y,x+(float)Math.cos(level.facing)*cell*.75f,y+(float)Math.sin(level.facing)*cell*.75f,p);
         c.restore();
-        rect(c,0,h-24,w*.78f,h,0xff202933);label(c,"GRID 0.5   |   PINCH ZOOM   |   TWO-FINGER PAN   |   SECTORS: "+level.sectors.size(),10,h-8,Math.min(11,w*.015f),0xffa7bbc9);
+        rect(c,0,h-24,w*.78f,h,0xff202933);label(c,"GRID 1.0   |   PINCH ZOOM   |   TWO-FINGER PAN   |   SECTORS: "+level.sectors.size(),10,h-8,Math.min(11,w*.015f),0xffa7bbc9);
     }
-    private void button(Canvas c,int row,String s,boolean active){
-        float x=w*.79f,y=toolbarH+44+row*43;
-        round(c,x+4,y,w-9,y+38,active?0xff286d69:0xff35404d);
-        if(active)rect(c,x+4,y+5,x+7,y+33,0xff6ce8d7);
+    private static final String[][] SECTOR_TOOLS={
+        {"DRAW","SELECT","RECT","CLOSE","UNDO PT","CANCEL","FLOOR +","FLOOR -","CEIL +","CEIL -","UNDO","NEXT >"},
+        {"REDO","VALIDATE","CLEAN","DUPLICATE","DELETE","SPLIT EDGE","EXTRUDE","MOVE WALL","STAIRS","DOOR","PREFAB","NEXT >"},
+        {"WALL MAT","FLOOR MAT","CEIL MAT","MAT +","MAT -","PLATFORM","LIGHT +","LIGHT -","SNAP INFO","3D PICK","HELP","NEXT >"}
+    };
+    private float toolTop(){return toolbarH+43;}
+    private float toolRowHeight(){return Math.max(27f,Math.min(44f,(h-toolTop()-28f)/6f));}
+    private void button(Canvas c,int row,String name,boolean active){
+        float left=w*.79f,usable=w-left-9,half=usable*.5f;
+        int col=row%2,r=row/2;float x=left+col*half,y=toolTop()+r*toolRowHeight();
+        float right=x+half-3,bottom=y+toolRowHeight()-3;
+        round(c,x+2,y,right,bottom,active?0xff286d69:0xff35404d);
+        if(active)rect(c,x+2,y+3,x+5,bottom-3,0xff6ce8d7);
         int icon=6;
-        if(s.equals("DRAW"))icon=7;
-        else if(s.equals("SELECT"))icon=8;
-        else if(s.equals("CLOSE"))icon=4;
-        else if(s.equals("UNDO PT")||s.equals("UNDO"))icon=9;
-        else if(s.equals("CANCEL")||s.equals("DELETE")||s.equals("REMOVE"))icon=10;
-        else if(s.contains("+"))icon=11;
-        else if(s.contains("-")||s.equals("ERASE"))icon=12;
-        else if(s.equals("WALL"))icon=0;
-        else if(s.equals("SPAWN"))icon=13;
-        else if(s.equals("ENEMY"))icon=2;
-        else if(s.equals("MEDKIT"))icon=11;
-        drawIcon(c,icon,x+19,y+19,18,active?0xff8af3e6:0xffbdcbd6);
-        label(c,s,x+Math.min(35,(w-x)*.30f),y+24,
-              Math.max(9,Math.min(13,w*.020f)),0xfff0f4f7);
+        if(name.equals("DRAW"))icon=7;else if(name.equals("SELECT"))icon=8;
+        else if(name.contains("UNDO"))icon=9;else if(name.equals("CANCEL")||name.equals("DELETE"))icon=10;
+        else if(name.contains("+"))icon=11;else if(name.contains("-"))icon=12;
+        else if(name.equals("WALL")||name.equals("RECT"))icon=0;else if(name.equals("SPAWN"))icon=13;
+        else if(name.equals("ENEMY"))icon=2;else if(name.equals("CLOSE"))icon=4;
+        float cy=(y+bottom)*.5f;
+        if(half>75)drawIcon(c,icon,x+11,cy,Math.min(15,toolRowHeight()*.45f),0xffb8e4df);
+        label(c,name,x+(half>75?22:5),cy+4,Math.max(8,Math.min(11,half*.105f)),0xfff0f4f7);
     }
 
     private void drawTools(Canvas c){
@@ -210,18 +213,9 @@ public class EditorView extends View {
               x+9,toolbarH+24,Math.max(10,Math.min(15,w*.020f)),
               0xffe6eef4);
         if(mode==POLY){
-            button(c,0,"DRAW",polygonTool==0);
-            button(c,1,"SELECT",polygonTool==1);
-            button(c,2,"CLOSE",false);
-            button(c,3,"UNDO PT",false);
-            button(c,4,"CANCEL",false);
-            button(c,5,"FLOOR +",false);
-            button(c,6,"FLOOR -",false);
-            button(c,7,"CEIL +",false);
-            button(c,8,"CEIL -",false);
-            button(c,9,"DELETE",false);
-            if(h>toolbarH+44+13*43+40){button(c,10,"UNDO",false);button(c,11,"REDO",false);button(c,12,"VALIDATE",false);button(c,13,"DUPLICATE",false);}
-            label(c,"VERTICES: "+pending.size(),x+9,h-15,11,0xffa9bfcd);
+            String[] names=SECTOR_TOOLS[toolPage];
+            for(int i=0;i<names.length;i++)button(c,i,names[i],toolPage==0&&((i==0&&polygonTool==0)||(i==1&&polygonTool==1)||(i==2&&polygonTool==2)));
+            label(c,"PAGE "+(toolPage+1)+"/3  |  SECTORS "+level.sectors.size(),x+7,h-10,Math.min(10,w*.014f),0xffa9bfcd);
         }else if(mode==MAP){
             button(c,0,"WALL",brush==1);
             button(c,1,"ERASE",brush==0);
@@ -248,8 +242,8 @@ public class EditorView extends View {
         if(next==PLAY){camX=level.playerX;camY=level.playerY;camAngle=level.facing;health=100;ammo=30;kills=0;lastTime=System.nanoTime();}
         hint(next==PLAY?"Left stick move; right swipe look":next==POLY?"Tap points to draw a sector":"Polygon renderer active");}
     private boolean inMap(float x,float y){return x>=mapLeft&&y>=mapTop&&x<mapLeft+Level.W*cell&&y<mapTop+Level.H*cell&&x<w*.78f;}
-    private float wx(float x){return Math.round((x-mapLeft)/cell*2f)*.5f;}
-    private float wy(float y){return Math.round((y-mapTop)/cell*2f)*.5f;}
+    private float wx(float x){return Math.round((x-mapLeft)/cell);}
+    private float wy(float y){return Math.round((y-mapTop)/cell);}
     private void closeSector(){
         if(sectorEditor.addSector(pending)){
             selectedSector=level.sectors.size()-1;pending.clear();hint("Sector created");autoSave();
@@ -258,29 +252,51 @@ public class EditorView extends View {
     private void autoSave(){try{getContext().getSharedPreferences("project",0).edit().putString("level",level.toJson().toString()).apply();}catch(Exception ignored){}}
     private void restoreEditor(){level=sectorEditor.level;selectedSector=-1;pending.clear();autoSave();invalidate();}
     private void polygonTap(float x,float y){if(!inMap(x,y))return;
-        float gx=wx(x),gy=wy(y);float[] point=sectorEditor.snapPoint(gx,gy,.5f);
+        float gx=wx(x),gy=wy(y);float[] point=sectorEditor.snapPoint(gx,gy,1f);
         if(polygonTool==1){selectedSector=level.sectorAt(point[0],point[1]);hint(selectedSector>=0?"Sector "+(selectedSector+1)+" selected":"No sector selected");return;}
         if(pending.size()>=3&&Math.hypot(point[0]-pending.get(0)[0],point[1]-pending.get(0)[1])<.1){closeSector();return;}
         for(float[] v:pending)if(Math.hypot(point[0]-v[0],point[1]-v[1])<.08){hint("Point already in drawing");return;}
         pending.add(point);hint("Point "+pending.size()+" added");
     }
     private void sectorAction(int row){
-        if(row==0||row==1){polygonTool=row;pending.clear();hint(row==0?"Draw sector":"Tap a sector to select");return;}
-        if(row==2){closeSector();return;}
-        if(row==3){if(!pending.isEmpty()){pending.remove(pending.size()-1);hint("Last point removed");}else if(sectorEditor.undo()){restoreEditor();hint("Undo");}return;}
-        if(row==4){pending.clear();hint("Drawing cancelled");return;}
-        if(row==10){if(sectorEditor.undo()){restoreEditor();hint("Undo");}return;}
-        if(row==11){if(sectorEditor.redo()){restoreEditor();hint("Redo");}return;}
-        if(row==12){hint(sectorEditor.validateMap());return;}
+        int id=toolPage*12+row;
+        if(row==11){toolPage=(toolPage+1)%3;hint("Tools page "+(toolPage+1));return;}
+        if(id==0||id==1||id==2){polygonTool=id;pending.clear();hint(id==2?"Drag to draw rectangle":id==1?"Select vertex or sector":"Tap corners to draw");return;}
+        if(id==3){closeSector();return;}
+        if(id==4){if(!pending.isEmpty()){pending.remove(pending.size()-1);hint("Point removed");}else if(sectorEditor.undo()){restoreEditor();hint("Undo");}return;}
+        if(id==5){pending.clear();hint("Cancelled");return;}
+        if(id==10){if(sectorEditor.undo()){restoreEditor();hint("Undo");}return;}
+        if(id==12){if(sectorEditor.redo()){restoreEditor();hint("Redo");}return;}
+        if(id==13){hint(sectorEditor.validateMap());return;}
+        if(id==14){int n=sectorEditor.cleanOrphans();if(n>0)autoSave();hint("Cleaned "+n+" unused vertices");return;}
+        if(id==32){hint("Snap: whole grid corners only");return;}
+        if(id==33){changeMode(POLY3D);hint("Tap 3D view to select visible sector");return;}
+        if(id==34){hint("Select a sector, then choose an editing action");return;}
         if(selectedSector<0||selectedSector>=level.sectors.size()){hint("Select a sector first");return;}
-        boolean changed=false;
-        if(row==5)changed=sectorEditor.changeHeight(selectedSector,.25f,0);
-        if(row==6)changed=sectorEditor.changeHeight(selectedSector,-.25f,0);
-        if(row==7)changed=sectorEditor.changeHeight(selectedSector,0,.25f);
-        if(row==8)changed=sectorEditor.changeHeight(selectedSector,0,-.25f);
-        if(row==9){changed=sectorEditor.deleteSector(selectedSector);selectedSector=-1;}
-        if(row==13){changed=sectorEditor.duplicateSector(selectedSector,1,1);if(changed)selectedSector=level.sectors.size()-1;}
-        if(changed){autoSave();hint("Map updated");}else hint(sectorEditor.error.isEmpty()?"Action unavailable":sectorEditor.error);
+        Level.Sector sec=level.sectors.get(selectedSector);boolean changed=false;
+        if(id==6)changed=sectorEditor.changeHeight(selectedSector,.25f,0);
+        if(id==7)changed=sectorEditor.changeHeight(selectedSector,-.25f,0);
+        if(id==8)changed=sectorEditor.changeHeight(selectedSector,0,.25f);
+        if(id==9)changed=sectorEditor.changeHeight(selectedSector,0,-.25f);
+        if(id==15)changed=sectorEditor.duplicateSector(selectedSector,1,1);
+        if(id==16){changed=sectorEditor.deleteSector(selectedSector);selectedSector=-1;}
+        if(id==17){Level.Vertex a=level.vertices.get(sec.loop.get(selectedEdge%sec.loop.size())),b=level.vertices.get(sec.loop.get((selectedEdge+1)%sec.loop.size()));
+            float mx=(a.x+b.x)*.5f,my=(a.y+b.y)*.5f;
+            if(Math.abs(mx-Math.round(mx))<.001&&Math.abs(my-Math.round(my))<.001)changed=sectorEditor.splitWall(selectedSector,selectedEdge%sec.loop.size(),mx,my);
+            else hint("Wall midpoint is not on a grid corner");}
+        if(id==18)changed=sectorEditor.extrude(selectedSector,selectedEdge%sec.loop.size(),2);
+        if(id==19){polygonTool=3;hint("Drag a wall to move it on grid corners");return;}
+        if(id==20){changed=sectorEditor.setHeights(selectedSector,sec.floor+.5f,sec.ceiling);}
+        if(id==21){changed=sectorEditor.setHeights(selectedSector,sec.floor,sec.floor+1.5f);}
+        if(id==22){changed=sectorEditor.rectangle(2,13,6,17);if(!changed)hint("Prefab location occupied; use rectangle tool");}
+        if(id==24){materialSurface=0;hint("Wall material selected");return;}
+        if(id==25){materialSurface=1;hint("Floor material selected");return;}
+        if(id==26){materialSurface=2;hint("Ceiling material selected");return;}
+        if(id==27||id==28){int current=materialSurface==0?sec.wallMaterial:materialSurface==1?sec.floorMaterial:sec.ceilingMaterial;
+            changed=sectorEditor.setMaterial(selectedSector,materialSurface,(current+(id==27?1:5))%6);}
+        if(id==29)changed=sectorEditor.setHeights(selectedSector,sec.floor+.25f,sec.ceiling);
+        if(id==30||id==31){hint("Per-sector lighting needs a Level format upgrade");return;}
+        if(changed){autoSave();hint("Map updated");}else if(!sectorEditor.error.isEmpty())hint(sectorEditor.error);
     }
     private void applyMap(float x,float y){if(!inMap(x,y))return;int cx=(int)((x-mapLeft)/cell),cy=(int)((y-mapTop)/cell);
         if(cx<0||cy<0||cx>=Level.W||cy>=Level.H)return;
@@ -313,17 +329,30 @@ public class EditorView extends View {
                 if(x>=w-166&&x<w-86){save();return true;}
                 if(x>=w-82){level=new Level();sectorEditor=new SectorEditor(level);pending.clear();selectedSector=-1;camX=level.playerX;camY=level.playerY;camAngle=level.facing;hint("Level reset");return true;}}
             if(mode==PLAY){if(x<155&&y>h-175){moving=true;activePointer=e.getPointerId(idx);stick(x,y);}else if(x>w-145&&y>h-160){fireDown=true;}else{looking=true;lookPointer=e.getPointerId(idx);}invalidate();return true;}
-            if(x>w*.78f){if(mode==POLY){int row=(int)((y-toolbarH-44)/43);if(y>=toolbarH+44&&row>=0&&row<=(h>toolbarH+44+13*43+40?13:9))sectorAction(row);}
-                else if(mode==MAP||mode==THINGS){int row=(int)((y-toolbarH-44)/43);if(row>=0&&row<=2){if(mode==MAP)brush=row==0?1:row==1?0:2;else thingType=row;}}
+            if(x>w*.78f){if(mode==POLY){int row=(int)((y-toolTop())/toolRowHeight());int col=x>=w*.79f+(w-w*.79f-9)*.5f?1:0;if(y>=toolTop()&&row>=0&&row<6)sectorAction(row*2+col);}
+                else if(mode==MAP||mode==THINGS){int row=(int)((y-toolTop())/toolRowHeight())*2+(x>=w*.79f+(w-w*.79f-9)*.5f?1:0);if(y>=toolTop()&&row>=0&&row<=2){if(mode==MAP)brush=row==0?1:row==1?0:2;else thingType=row;}}
                 invalidate();return true;}
-            if(mode==POLY&&polygonTool==1){
+            if(mode==POLY&&polygonTool==3){
+                if(selectedSector>=0&&selectedSector<level.sectors.size()){
+                    Level.Sector sec=level.sectors.get(selectedSector);float best=30f;
+                    for(int j=0;j<sec.loop.size();j++){
+                        Level.Vertex a=level.vertices.get(sec.loop.get(j)),b=level.vertices.get(sec.loop.get((j+1)%sec.loop.size()));
+                        float ax=mapLeft+a.x*cell,ay=mapTop+a.y*cell,bx=mapLeft+b.x*cell,by=mapTop+b.y*cell;
+                        float dx=bx-ax,dy=by-ay,den=dx*dx+dy*dy;
+                        float t=den<.001?0:Math.max(0,Math.min(1,((x-ax)*dx+(y-ay)*dy)/den));
+                        float d=(float)Math.hypot(x-ax-t*dx,y-ay-t*dy);
+                        if(d<best){best=d;selectedEdge=j;}
+                    }
+                    hint("Drag selected wall on whole grid");
+                }
+            }else if(mode==POLY&&polygonTool==1){
                 dragVertex=-1;float best=22f;
                 for(int i=0;i<level.vertices.size();i++){
                     Level.Vertex v=level.vertices.get(i);float d=(float)Math.hypot(mapLeft+v.x*cell-x,mapTop+v.y*cell-y);
                     if(d<best){best=d;dragVertex=i;}
                 }
                 if(dragVertex<0)polygonTap(x,y);
-            }else if(mode==POLY)polygonTap(x,y);else if(mode==MAP||mode==THINGS)applyMap(x,y);else{looking=true;lookPointer=e.getPointerId(idx);}
+            }else if(mode==POLY&&polygonTool==2){hint("Drag rectangle to opposite corner");}else if(mode==POLY)polygonTap(x,y);else if(mode==MAP||mode==THINGS)applyMap(x,y);else{looking=true;lookPointer=e.getPointerId(idx);}
             invalidate();return true;
         }
         if(action==MotionEvent.ACTION_MOVE){
@@ -337,14 +366,29 @@ public class EditorView extends View {
         }
         if(action==MotionEvent.ACTION_POINTER_UP){int id=e.getPointerId(idx);if(id==activePointer){moving=false;activePointer=-1;moveX=moveY=0;}if(id==lookPointer){looking=false;lookPointer=-1;}pinchDistance=0;dragVertex=-1;invalidate();return true;}
         if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL){
+            if(action==MotionEvent.ACTION_UP&&mode==POLY&&polygonTool==3&&downX<w*.78f&&selectedSector>=0){
+                float dx=Math.round((e.getX()-downX)/cell),dy=Math.round((e.getY()-downY)/cell);
+                if((dx!=0||dy!=0)&&sectorEditor.moveEdge(selectedSector,selectedEdge,dx,dy)){autoSave();hint("Wall moved");}
+                else if(dx!=0||dy!=0)hint(sectorEditor.error);
+            }
+            if(action==MotionEvent.ACTION_UP&&mode==POLY&&polygonTool==2&&!dragging&&downX<w*.78f){
+                int ax=Math.round(wx(downX)),ay=Math.round(wy(downY)),bx=Math.round(wx(e.getX())),by=Math.round(wy(e.getY()));
+                if(sectorEditor.rectangle(ax,ay,bx,by)){selectedSector=level.sectors.size()-1;autoSave();hint("Rectangle created");}
+                else hint(sectorEditor.error);
+            }
             if(action==MotionEvent.ACTION_UP&&mode==POLY&&dragVertex>=0&&e.getPointerCount()==1){
                 float ex=e.getX(),ey=e.getY();
                 if(Math.hypot(ex-touchStartX,ey-touchStartY)>12){
-                    float[] pt=sectorEditor.snapPoint(wx(ex),wy(ey),.5f);
+                    float[] pt=sectorEditor.snapPoint(wx(ex),wy(ey),1f);
                     if(sectorEditor.moveVertex(dragVertex,pt[0],pt[1])){autoSave();hint("Vertex moved");}
                     else hint(sectorEditor.error);
                 }else{for(int k=0;k<level.sectors.size();k++)if(level.sectors.get(k).loop.contains(dragVertex)){selectedSector=k;break;}}
                 dragVertex=-1;
+            }
+            if(action==MotionEvent.ACTION_UP&&(mode==POLY3D||mode==VIEW3D)&&Math.hypot(e.getX()-downX,e.getY()-downY)<12){
+                int hit=-1;for(float dist=.2f;dist<18;dist+=.2f){float px=level.playerX+(float)Math.cos(level.facing)*dist,py=level.playerY+(float)Math.sin(level.facing)*dist;
+                    int si=level.sectorAt(px,py);if(si>=0){hit=si;break;}}
+                if(hit>=0){selectedSector=hit;hint("Sector "+(hit+1)+" selected; edit in SECTORS");}
             }
             moving=looking=false;activePointer=lookPointer=-1;moveX=moveY=0;pinchDistance=0;invalidate();return true;}
         return true;
