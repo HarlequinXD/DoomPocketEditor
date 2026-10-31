@@ -262,7 +262,15 @@ public class EditorView extends View {
     private final int[] palette={0xff333c4b,0xff827761,0xff7d4140,0xff56756c,0xff75639a,0xffa18743};
 
     EditorView(Context ctx){super(ctx);setLayerType(View.LAYER_TYPE_SOFTWARE,null);
-        try{String saved=ctx.getSharedPreferences("project",0).getString("level",null);if(saved!=null)level=Level.fromJson(new JSONObject(saved));}catch(Exception ignored){}
+        String saved=null;
+        try{saved=ctx.getSharedPreferences("project",0).getString("level",null);
+            if(saved!=null){Level loaded=Level.fromJson(new JSONObject(saved));if(loaded.isConsistent())level=loaded;else throw new IllegalStateException("inconsistent map");}
+        }catch(Throwable t){
+            // Saved map from an older build is unreadable: keep a copy and start from the default map.
+            level=levelDefault;
+            if(saved!=null)ctx.getSharedPreferences("project",0).edit().putString("level_unreadable",saved).remove("level").apply();
+            message="Saved map could not be loaded; started a new one";messageUntil=System.currentTimeMillis()+5000;
+        }
         sectorEditor=new SectorEditor(level);PolygonRenderer.loadWallMaterials(ctx);camX=level.playerX;camY=level.playerY;camAngle=level.facing;setFocusable(true);
     }
     boolean exitPlay(){if(mode!=PLAY)return false;mode=POLY3D;moving=looking=false;invalidate();return true;}
@@ -282,7 +290,16 @@ public class EditorView extends View {
     }
     private void label(Canvas c,String s,float x,float y,float size,int col){color(col);p.setTypeface(android.graphics.Typeface.create("sans-serif-medium",0));p.setTextSize(size);c.drawText(s,x,y,p);}
     private void hint(String s){message=s;messageUntil=System.currentTimeMillis()+2500;invalidate();}
-    @Override protected void onDraw(Canvas c){super.onDraw(c);w=getWidth();h=getHeight();toolbarH=Math.max(52,h*.12f);
+    private String drawError;
+    @Override protected void onDraw(Canvas c){super.onDraw(c);
+        if(drawError!=null){c.drawColor(0xff151b23);label(c,"Editor error (tap to reset view):",20,60,20,0xffffbd6e);label(c,drawError,20,95,15,Color.WHITE);return;}
+        int save=c.save();
+        try{drawFrame(c);}catch(RuntimeException ex){
+            c.restoreToCount(save);DoomApp.record(getContext(),ex);
+            drawError=ex.getClass().getSimpleName()+": "+ex.getMessage();invalidate();
+        }
+    }
+    private void drawFrame(Canvas c){w=getWidth();h=getHeight();toolbarH=Math.max(52,h*.12f);
         rect(c,0,0,w,h,0xff151b23);
         if(mode==THINGS||mode==POLY)drawMap(c);
         else {
@@ -628,7 +645,11 @@ public class EditorView extends View {
             float delta=(float)Math.atan2(dy,dx)-camAngle;while(delta>Math.PI)delta-=2*Math.PI;while(delta<-Math.PI)delta+=2*Math.PI;
             if(Math.abs(delta)<.15f&&dist<best){best=dist;target=t;}}
         if(target!=null){level.things.remove(target);kills++;hint("Enemy eliminated");}}
-    @Override public boolean onTouchEvent(MotionEvent e){int action=e.getActionMasked(),idx=e.getActionIndex();float x=e.getX(idx),y=e.getY(idx);
+    @Override public boolean onTouchEvent(MotionEvent e){
+        if(drawError!=null){if(e.getActionMasked()==MotionEvent.ACTION_UP){drawError=null;mode=POLY;selectedSector=-1;pending.clear();invalidate();}return true;}
+        try{return handleTouch(e);}catch(RuntimeException ex){DoomApp.record(getContext(),ex);drawError=ex.getClass().getSimpleName()+": "+ex.getMessage();invalidate();return true;}
+    }
+    private boolean handleTouch(MotionEvent e){int action=e.getActionMasked(),idx=e.getActionIndex();float x=e.getX(idx),y=e.getY(idx);
         if((mode==POLY||mode==THINGS)&&action==MotionEvent.ACTION_DOWN&&y>=toolbarH){
             int direction=dpadHit(x,y);
             if(direction>=0){dpadPointer=e.getPointerId(idx);dpadDirection=direction;cursorStep(direction);nextDpadRepeat=System.currentTimeMillis()+270;return true;}
@@ -647,7 +668,7 @@ public class EditorView extends View {
             pinchDistance=(float)Math.hypot(e.getX(0)-e.getX(1),e.getY(0)-e.getY(1));lastX=(e.getX(0)+e.getX(1))*.5f;lastY=(e.getY(0)+e.getY(1))*.5f;dragging=true;return true;}
         if(action==MotionEvent.ACTION_DOWN){downX=lastX=x;downY=lastY=y;dragging=false;touchStartX=x;touchStartY=y;
             if(y<toolbarH){if(y<=Math.max(23,Math.min(23,toolbarH*.34f))+8&&x>=w*.55f&&x<=w*.85f){
-                    getContext().startActivity(new android.content.Intent(getContext(),FSMEditorActivity.class));return true;}
+                    try{getContext().startActivity(new android.content.Intent(getContext(),FSMEditorActivity.class));}catch(RuntimeException ex){hint("Could not open FSM editor");}return true;}
                 float bw=(w-175)/4f;int[] modes={POLY,THINGS,POLY3D,PLAY};for(int i=0;i<4;i++)if(x>=5+i*bw&&x<5+(i+1)*bw){changeMode(modes[i]);return true;}
                 if(x>=w-166&&x<w-86){save();return true;}
                 if(x>=w-82){level=new Level();sectorEditor=new SectorEditor(level);pending.clear();selectedSector=-1;camX=level.playerX;camY=level.playerY;camAngle=level.facing;hint("Level reset");return true;}}
