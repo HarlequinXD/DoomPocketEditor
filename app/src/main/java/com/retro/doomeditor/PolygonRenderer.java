@@ -140,10 +140,10 @@ public final class PolygonRenderer {
         P first=new P(clipped.get(0));
         for(int i=1;i+1<clipped.size();i++)triangle(first,new P(clipped.get(i)),new P(clipped.get(i+1)),mat,light);
     }
-    private static void wall(Level.Vertex a,Level.Vertex b,float low,float high,int mat,float ox,float oy,float cs,float sn){
+    private static void wall(Level.Vertex a,Level.Vertex b,float low,float high,int mat,float ox,float oy,float cs,float sn,float brightness){
         if(high<=low+.001f)return;
         float length=(float)Math.hypot(b.x-a.x,b.y-a.y);
-        float light=Math.abs(b.x-a.x)>Math.abs(b.y-a.y)?.83f:1f;
+        float light=(Math.abs(b.x-a.x)>Math.abs(b.y-a.y)?.83f:1f)*brightness;
         ArrayList<V> q=new ArrayList<>(4);
         q.add(camera(a.x,a.y,high,0,high,ox,oy,cs,sn));
         q.add(camera(b.x,b.y,high,length,high,ox,oy,cs,sn));
@@ -203,8 +203,8 @@ public final class PolygonRenderer {
         for(int si=0;si<level.sectors.size();si++){
             Level.Sector s=level.sectors.get(si);
             if(s.loop.size()<3)continue;
-            currentSurface=si*3+1;plane(level,s,s.floor,s.floorMaterial,ox,oy,cs,sn,.85f);
-            currentSurface=si*3+2;plane(level,s,s.ceiling,s.ceilingMaterial,ox,oy,cs,sn,.65f);
+            currentSurface=si*3+1;plane(level,s,s.floor,s.floorMaterial,ox,oy,cs,sn,.85f*s.light/192f);
+            currentSurface=si*3+2;plane(level,s,s.ceiling,s.ceilingMaterial,ox,oy,cs,sn,.65f*s.light/192f);
         }
         for(Level.LineDef line:PortalTopology.build(level)){
             if(line.from<0||line.to<0||line.from>=level.vertices.size()||line.to>=level.vertices.size()||line.front<0||line.front>=level.sectors.size())continue;
@@ -218,12 +218,12 @@ public final class PolygonRenderer {
             if(line.back>=0&&line.back<level.sectors.size()){
                 Level.Sector back=level.sectors.get(line.back);
                 currentSurface=100000+index*2;
-                wall(a,b,Math.min(front.floor,back.floor),Math.max(front.floor,back.floor),lower,ox,oy,cs,sn);
+                wall(a,b,Math.min(front.floor,back.floor),Math.max(front.floor,back.floor),lower,ox,oy,cs,sn,front.light/192f);
                 currentSurface=100000+index*2+1;
-                wall(a,b,Math.min(front.ceiling,back.ceiling),Math.max(front.ceiling,back.ceiling),upper,ox,oy,cs,sn);
+                wall(a,b,Math.min(front.ceiling,back.ceiling),Math.max(front.ceiling,back.ceiling),upper,ox,oy,cs,sn,front.light/192f);
             }else{
                 currentSurface=100000+index*2;
-                wall(a,b,front.floor,front.ceiling,lower,ox,oy,cs,sn);
+                wall(a,b,front.floor,front.ceiling,lower,ox,oy,cs,sn,front.light/192f);
             }
         }
         if(bitmap==null)bitmap=Bitmap.createBitmap(W,H,Bitmap.Config.ARGB_8888);

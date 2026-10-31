@@ -489,6 +489,10 @@ public class EditorView extends View {
         if(mode==POLY){
             String[] names=SECTOR_TOOLS[toolPage];
             for(int i=0;i<names.length;i++)button(c,i,names[i],toolPage==0&&((i==0&&polygonTool==0)||(i==1&&polygonTool==1)||(i==2&&polygonTool==2)));
+            if(selectedSector>=0&&selectedSector<level.sectors.size()){
+                Level.Sector inspect=level.sectors.get(selectedSector);
+                label(c,"S"+(selectedSector+1)+" F:"+inspect.floor+" C:"+inspect.ceiling+" L:"+inspect.light,x+7,h-26,Math.min(12,w*.015f),0xffc2f3de);
+            }
             label(c,"PAGE "+(toolPage+1)+"/3  |  SECTORS "+level.sectors.size(),x+7,h-10,Math.min(10,w*.014f),0xffa9bfcd);
         }else if(mode==MAP){
             button(c,0,"WALL",brush==1);
@@ -546,13 +550,15 @@ public class EditorView extends View {
     private void sectorAction(int row){
         int id=toolPage*12+row;
         if(row==11){toolPage=(toolPage+1)%3;hint("Tools page "+(toolPage+1));return;}
-        if(id==0||id==1||id==2){polygonTool=id;pending.clear();hint(id==2?"Drag to draw rectangle":id==1?"Select vertex or sector":"Tap corners to draw");return;}
+        if(id==0||id==1||id==2){polygonTool=id;pending.clear();hint(id==2?"APPLY first and opposite corners":id==1?"Move cursor and APPLY to select":"Move cursor and APPLY each corner");return;}
         if(id==3){closeSector();return;}
         if(id==4){if(!pending.isEmpty()){pending.remove(pending.size()-1);hint("Point removed");}else if(sectorEditor.undo()){restoreEditor();hint("Undo");}return;}
         if(id==5){pending.clear();hint("Cancelled");return;}
         if(id==10){if(sectorEditor.undo()){restoreEditor();hint("Undo");}return;}
         if(id==12){if(sectorEditor.redo()){restoreEditor();hint("Redo");}return;}
-        if(id==13){hint(sectorEditor.validateMap());return;}
+        if(id==13){
+            java.util.ArrayList<String> issues=MapValidator.check(level);
+            hint(issues.isEmpty()?"Map validation: no issues":issues.size()+" issue(s): "+issues.get(0));return;}
         if(id==14){int n=sectorEditor.cleanOrphans();if(n>0)autoSave();hint("Cleaned "+n+" unused vertices");return;}
         if(id==32){hint("Snap: whole grid corners only");return;}
         if(id==33){changeMode(POLY3D);hint("Tap 3D view to select visible sector");return;}
@@ -580,7 +586,9 @@ public class EditorView extends View {
         if(id==27||id==28){int current=materialSurface==0?sec.wallMaterial:materialSurface==1?sec.floorMaterial:sec.ceilingMaterial;
             changed=sectorEditor.setMaterial(selectedSector,materialSurface,(current+(id==27?1:5))%6);}
         if(id==29)changed=sectorEditor.setHeights(selectedSector,sec.floor+.25f,sec.ceiling);
-        if(id==30||id==31){hint("Per-sector lighting needs a Level format upgrade");return;}
+        if(id==30||id==31){
+            sec.light=Math.max(16,Math.min(255,sec.light+(id==30?16:-16)));
+            autoSave();hint("Sector brightness: "+sec.light+"/255");invalidate();return;}
         if(changed){autoSave();hint("Map updated");}else if(!sectorEditor.error.isEmpty())hint(sectorEditor.error);
     }
     private void applyMap(float x,float y){
