@@ -15,15 +15,21 @@ public final class FSMGraph {
     public String start="",active="";
     public float elapsed;
     public boolean running;
+    private boolean pendingFinish;
+    /** Distinct event names used by any transition, in first-seen order. */
+    public ArrayList<String> events(){ArrayList<String> out=new ArrayList<>();for(Node n:nodes)for(String e:n.transitions.keySet())if(!out.contains(e))out.add(e);return out;}
+    public int transitionCount(){int c=0;for(Node n:nodes)c+=n.transitions.size();return c;}
     public final HashMap<String,Float> variables=new HashMap<>();
     public Node add(String name,float x,float y){Node n=new Node(UUID.randomUUID().toString(),name,x,y);nodes.add(n);if(start.isEmpty())start=n.id;return n;}
     public Node find(String id){for(Node n:nodes)if(n.id.equals(id))return n;return null;}
-    public void reset(){active=start;elapsed=0;running=find(active)!=null;variables.clear();}
-    public void event(String event){if(!running)return;Node n=find(active);if(n==null)return;String dest=n.transitions.get(event);if(dest!=null&&find(dest)!=null){active=dest;elapsed=0;}}
+    public void reset(){active=start;elapsed=0;pendingFinish=false;running=find(active)!=null;variables.clear();}
+    public void event(String event){if(!running)return;Node n=find(active);if(n==null)return;String dest=n.transitions.get(event);if(dest!=null&&find(dest)!=null){active=dest;elapsed=0;pendingFinish=false;}}
     /** Execute actions once on entry, or after WAIT duration. Call once per frame. */
     public void tick(float dt,Level level){if(!running)return;Node n=find(active);if(n==null){running=false;return;}
         float previous=elapsed;elapsed+=Math.max(0,Math.min(dt,.1f));
         if(previous==0){
+            // PlayMaker semantics: instant actions finish on entry and send FINISHED.
+            if("NONE".equals(n.action)||"SET_LIGHT".equals(n.action)||"SET_VARIABLE".equals(n.action))pendingFinish=true;
             if("SET_LIGHT".equals(n.action)){
                 try{String[] a=n.argument.split(",");int index=Integer.parseInt(a[0].trim());int brightness=Integer.parseInt(a[1].trim());
                     if(index>=0&&index<level.sectors.size())level.sectors.get(index).light=Math.max(0,Math.min(255,brightness));}catch(Exception ignored){}
@@ -32,6 +38,7 @@ public final class FSMGraph {
                 try{String[] a=n.argument.split(",");variables.put(a[0].trim(),Float.parseFloat(a[1].trim()));}catch(Exception ignored){}
             }
         }
+        if(pendingFinish&&previous>0){pendingFinish=false;String a=active;event("FINISHED");if(!a.equals(active))return;}
         if("WAIT".equals(n.action)){
             try{if(elapsed>=Float.parseFloat(n.argument.trim()))event("FINISHED");}catch(Exception ignored){}
         }
