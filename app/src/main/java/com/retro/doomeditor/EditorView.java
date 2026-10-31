@@ -191,7 +191,7 @@ public class EditorView extends View {
     private float applyCY(){return h-96f;}
     private int dpadHit(float x,float y){
         float dx=x-dpadCX(),dy=y-dpadCY();
-        float spacing=90f, radius=40f;
+        float spacing=108f, radius=54f;
         for(int i=0;i<4;i++){
             float bx=(i==1?spacing:i==3?-spacing:0);
             float by=(i==2?spacing:i==0?-spacing:0);
@@ -230,11 +230,11 @@ public class EditorView extends View {
     }
     private void drawCursorControls(Canvas c){
         if(mode!=POLY&&mode!=THINGS)return;
-        float cx=dpadCX(),cy=dpadCY(),r=39;
+        float cx=dpadCX(),cy=dpadCY(),r=52;
         for(int i=0;i<4;i++){
-            float bx=cx+(i==1?90:i==3?-90:0),by=cy+(i==2?90:i==0?-90:0);
+            float bx=cx+(i==1?108:i==3?-108:0),by=cy+(i==2?108:i==0?-108:0);
             round(c,bx-r,by-r,bx+r,by+r,0xee3e5b6c);
-            label(c,new String[]{"▲","▶","▼","◀"}[i],bx-15,by+16,38,Color.WHITE);
+            label(c,new String[]{"▲","▶","▼","◀"}[i],bx-19,by+20,46,Color.WHITE);
         }
         round(c,applyCX()-56,applyCY()-48,applyCX()+56,applyCY()+48,0xff286d67);
         label(c,"APPLY",applyCX()-43,applyCY()+9,23,Color.WHITE);
