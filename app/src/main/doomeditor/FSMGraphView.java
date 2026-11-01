@@ -22,7 +22,7 @@ public class FSMGraphView extends View {
 
     private static final int H_BACK=1,H_ADD=2,H_LINK=3,H_START=4,H_DELETE=5,H_FIT=6,H_RUN=7,H_SAVE=8,H_NEWDEF=9,
             H_NAME=20,H_ADD_ACTION=21,H_ADD_TR=23,H_ADD_GLOBAL=24,H_ACTION_BACK=25,H_ACT_UP=26,H_ACT_DOWN=27,H_ACT_TOGGLE=28,H_ACT_DEL=29,
-            H_CANCEL_LINK=30,H_BROWSER_CLOSE=31,H_BROWSER_SEARCH=32,H_DUP_STATE=33,
+            H_CANCEL_LINK=30,H_BROWSER_CLOSE=31,H_BROWSER_SEARCH=32,H_DUP_STATE=33,H_ANIM=34,H_EDIT_SPRITE=35,
             H_DEL_TR=100,H_ACTION=150,H_DEL_GLOBAL=200,H_PARAM=250,H_SEND=300,H_DEF=400,H_CAT=900,H_PICK=1000;
     private static final float NODE_W=190,TITLE_H=28,ACT_H=20,ROW_H=24,PAD=5,TAB_H=18;
 
@@ -295,6 +295,14 @@ public class FSMGraphView extends View {
         ui.text(c,String.valueOf(graph.nodes.size()),l+dp(12),iy+dp(26),17,Ui.TEXT,1,-1);ui.text(c,"States",l+dp(12),iy+dp(44),10.5f,Ui.TEXT_3);
         ui.text(c,String.valueOf(acts),l+cw+dp(12),iy+dp(26),17,Ui.TEXT,1,-1);ui.text(c,"Actions",l+cw+dp(12),iy+dp(44),10.5f,Ui.TEXT_3);
         iy+=dp(66);
+        caption(c,l,"Sprite & animation clips");
+        CustomSprite cs=project.sprite(def.customSprite);
+        ui.round(c,l,iy,rr,iy+dp(30),dp(6),Ui.SURFACE_2);ui.icon(c,Icons.PIXEL,l+dp(16),iy+dp(15),14,0xff8fbcff);
+        ui.textMid(c,ui.ellipsize(cs!=null?cs.name+" (custom)":Sprites.NAMES[Math.max(0,Math.min(Sprites.COUNT-1,def.sprite))]+" (built-in)",12,1,rr-l-dp(40)),l+dp(32),iy+dp(15),12,Ui.TEXT,1,-1);iy+=dp(38);
+        float cx2=l;for(String cn:project.clipNames(def)){boolean has=cs!=null&&cs.clip(cn)!=null;float cw2=ui.measure(cn,10.5f,1)+dp(18);if(cx2+cw2>rr){cx2=l;iy+=dp(26);}
+            ui.round(c,cx2,iy,cx2+cw2,iy+dp(22),dp(11),has?0x333d8bfd:Ui.SURFACE_2);ui.textMid(c,cn,cx2+cw2*.5f,iy+dp(11),10.5f,has?0xff8fbcff:Ui.TEXT_3,1,0);cx2+=cw2+dp(5);}
+        iy+=dp(30);
+        r.set(l,iy,rr,iy+dp(32));ui.button(c,r,Icons.PIXEL,cs!=null?"Edit Sprite & Clips":"Draw a Custom Sprite",Ui.NORMAL);ihit(r,H_EDIT_SPRITE);iy+=dp(44);
         caption(c,l,"Start state");FSMGraph.Node start=graph.find(graph.start);
         ui.round(c,l,iy,rr,iy+dp(34),dp(6),Ui.SURFACE_2);ui.icon(c,Icons.FLAG,l+dp(16),iy+dp(17),14,Ui.GREEN);ui.textMid(c,start==null?"None":start.name,l+dp(32),iy+dp(17),12.5f,Ui.TEXT,1,-1);iy+=dp(44);
         caption(c,l,"Global events");
@@ -312,6 +320,12 @@ public class FSMGraphView extends View {
         float half=(rr-l-dp(6))/2f;
         r.set(l,iy,l+half,iy+dp(30));ui.button(c,r,Icons.FLAG,"Set start",n.id.equals(graph.start)?Ui.DISABLED:Ui.NORMAL);ihit(r,H_START);
         r.set(l+half+dp(6),iy,rr,iy+dp(30));ui.button(c,r,Icons.COPY,"Duplicate",Ui.NORMAL);ihit(r,H_DUP_STATE);iy+=dp(40);
+        caption(c,l,"Animation in this state");
+        String anim=stateAnimation(n);
+        r.set(l,iy,rr,iy+dp(36));ui.round(c,r,dp(6),Ui.SURFACE_2);ui.outline(c,r,dp(6),0x14ffffff,dp(1));
+        ui.icon(c,Icons.FILM,l+dp(17),iy+dp(18),15,anim==null?Ui.TEXT_3:0xff8fbcff);
+        ui.textMid(c,anim==null?"Keep current":anim.equals("")?"Automatic":anim,l+dp(34),iy+dp(18),12.5f,anim==null?Ui.TEXT_2:Ui.TEXT,1,-1);
+        ui.icon(c,Icons.CHEVRON_DOWN,rr-dp(16),iy+dp(18),14,Ui.TEXT_2);ihit(r,H_ANIM);iy+=dp(44);
         caption(c,l,"Actions · run together each frame");
         for(int i=0;i<n.actions.size();i++){FSMGraph.Action a=n.actions.get(i);Actions.Spec s=Actions.get(a.type);if(s==null)continue;
             r.set(l,iy,rr,iy+dp(42));ui.round(c,r,dp(7),Ui.SURFACE_2);ui.outline(c,r,dp(7),0x14ffffff,dp(1));
@@ -346,7 +360,7 @@ public class FSMGraphView extends View {
             if(pm.type==Actions.T_FLOAT&&v.equals("0")&&b.length()>0)continue;
             if(b.length()>0)b.append(" · ");
             if(pm.type==Actions.T_BOOL)b.append(pm.label);else if(pm.type==Actions.T_EVENT)b.append("→ ").append(v);
-            else if(pm.type==Actions.T_CHOICE||pm.type==Actions.T_ENTITY||pm.type==Actions.T_MATERIAL||pm.type==Actions.T_SECTOR||pm.type==Actions.T_TEXT)b.append(display(pm,v));
+            else if(pm.type==Actions.T_CHOICE||pm.type==Actions.T_CLIP||pm.type==Actions.T_ENTITY||pm.type==Actions.T_MATERIAL||pm.type==Actions.T_SECTOR||pm.type==Actions.T_TEXT)b.append(display(pm,v));
             else b.append(pm.label.toLowerCase()).append(' ').append(display(pm,v));
             if(b.length()>60)break;}
         return b.length()==0?s.category:b.toString();
@@ -375,7 +389,7 @@ public class FSMGraphView extends View {
             if(pm.type==Actions.T_BOOL){boolean on=v.equals("true");float tx=rr-dp(44),ty=iy+dp(15);ui.round(c,tx,ty,tx+dp(32),ty+dp(16),dp(8),on?Ui.ACCENT:Ui.SURFACE_3);p.setColor(0xffffffff);c.drawCircle(on?tx+dp(24):tx+dp(8),ty+dp(8),dp(6),p);
                 ui.text(c,on?"Yes":"No",l+dp(10),iy+dp(36),12.5f,Ui.TEXT,1,-1);}
             else{String shown=display(pm,v);boolean empty=v.isEmpty();ui.text(c,ui.ellipsize(empty?(pm.type==Actions.T_EVENT?"No event":"Not set"):shown,12.5f,1,rr-l-dp(44)),l+dp(10),iy+dp(36),12.5f,empty?Ui.TEXT_3:pm.type==Actions.T_EVENT?Ui.AMBER:Ui.TEXT,1,-1);
-                ui.icon(c,pm.type==Actions.T_CHOICE||pm.type==Actions.T_EVENT||pm.type==Actions.T_ENTITY||pm.type==Actions.T_MATERIAL||pm.type==Actions.T_VAR?Icons.CHEVRON_DOWN:Icons.PEN,rr-dp(16),iy+dp(23),13,Ui.TEXT_3);}
+                ui.icon(c,pm.type==Actions.T_CHOICE||pm.type==Actions.T_CLIP||pm.type==Actions.T_EVENT||pm.type==Actions.T_ENTITY||pm.type==Actions.T_MATERIAL||pm.type==Actions.T_VAR?Icons.CHEVRON_DOWN:Icons.PEN,rr-dp(16),iy+dp(23),13,Ui.TEXT_3);}
             ihit(r,H_PARAM+i);iy+=dp(52);}
         iy+=dp(4);
         float half=(rr-l-dp(6))/2f;
@@ -500,11 +514,31 @@ public class FSMGraphView extends View {
             case H_BROWSER_SEARCH:if(host!=null)host.prompt("Search actions","Try: light, door, damage, chase, button…",browserQuery,false,t->{browserQuery=t.trim();browserScroll=0;refreshBrowser();invalidate();});break;
             case H_ADD_GLOBAL:if(selected!=null){FSMGraph.Node n=selected;pickEvent("Global event to "+n.name,"",ev->{if(!ev.isEmpty())graph.globals.put(ev,n.id);});}break;
             case H_ACTION_BACK:selectedAction=-1;inspScroll=0;break;
+            case H_ANIM:if(selected!=null)chooseStateAnimation(selected);break;
+            case H_EDIT_SPRITE:if(host!=null)host.openSprites(def.id);break;
             case H_ACT_UP:if(selected!=null&&selectedAction>0){FSMGraph.Action a=selected.actions.remove(selectedAction);selected.actions.add(selectedAction-1,a);selectedAction--;}break;
             case H_ACT_DOWN:if(selected!=null&&selectedAction<selected.actions.size()-1){FSMGraph.Action a=selected.actions.remove(selectedAction);selected.actions.add(selectedAction+1,a);selectedAction++;}break;
             case H_ACT_TOGGLE:if(selected!=null&&selectedAction>=0){FSMGraph.Action a=selected.actions.get(selectedAction);a.enabled=!a.enabled;}break;
             case H_ACT_DEL:if(selected!=null&&selectedAction>=0){selected.actions.remove(selectedAction);selectedAction=-1;}break;
         }
+    }
+    /** Clip played on entering the state: null = no animation action, "" = automatic, else the clip name. */
+    private String stateAnimation(FSMGraph.Node n){
+        for(FSMGraph.Action a:n.actions){if(a.type.equals("play_animation"))return a.params.get("clip");if(a.type.equals("auto_animation"))return "";}
+        return null;
+    }
+    private void chooseStateAnimation(FSMGraph.Node n){
+        if(host==null)return;
+        java.util.ArrayList<String> clips=project.clipNames(def);
+        String[] items=new String[clips.size()+3];items[0]="Keep current animation";items[1]="Automatic (idle, walk, attack, pain, death)";
+        for(int i=0;i<clips.size();i++)items[i+2]=clips.get(i);items[items.length-1]="Draw or edit clips in the Sprite Editor…";
+        String cur=stateAnimation(n);int checked=cur==null?0:cur.isEmpty()?1:2+clips.indexOf(cur);
+        host.choose("Animation for "+n.name,items,checked,k->{
+            if(k==items.length-1){host.openSprites(def.id);return;}
+            n.actions.removeIf(a->a.type.equals("play_animation")||a.type.equals("auto_animation"));
+            if(k==1)n.actions.add(0,new FSMGraph.Action("auto_animation"));
+            else if(k>=2)n.actions.add(0,new FSMGraph.Action("play_animation").set("clip",clips.get(k-2)));
+            selectedAction=-1;invalidate();});
     }
     private boolean nodeAtWorld(float x,float y){for(FSMGraph.Node n:graph.nodes)if(Math.abs(n.x-x)<40&&Math.abs(n.y-y)<40)return true;return false;}
     private void newEntity(){
@@ -541,6 +575,9 @@ public class FSMGraphView extends View {
             case Actions.T_ENTITY:{String[] names=new String[project.defs.size()+1];names[0]="(any / none)";int checked=0;
                 for(int k=0;k<project.defs.size();k++){names[k+1]=project.defs.get(k).name;if(project.defs.get(k).id.equals(v))checked=k+1;}
                 host.choose(pm.label,names,checked,k->a.params.put(pm.key,k==0?"":project.defs.get(k-1).id));break;}
+            case Actions.T_CLIP:{java.util.ArrayList<String> clips=project.clipNames(def);String[] items=new String[clips.size()+1];
+                for(int k=0;k<clips.size();k++)items[k]=clips.get(k);items[clips.size()]="Draw or edit clips in the Sprite Editor…";
+                host.choose(pm.label,items,clips.indexOf(v),k->{if(k==clips.size())host.openSprites(def.id);else a.params.put(pm.key,clips.get(k));});break;}
             case Actions.T_MATERIAL:{int cur=0;try{cur=Integer.parseInt(v);}catch(NumberFormatException ignored){}host.choose(pm.label,Textures.NAMES,cur,k->a.params.put(pm.key,String.valueOf(k)));break;}
             case Actions.T_SECTOR:{int cur=0;try{cur=Integer.parseInt(v);}catch(NumberFormatException ignored){}
                 host.prompt(pm.label,"Sector number as shown in the editor",String.valueOf(cur+1),true,t->{try{a.params.put(pm.key,String.valueOf(Math.max(0,Math.round(Float.parseFloat(t))-1)));}catch(NumberFormatException ignored){}});break;}

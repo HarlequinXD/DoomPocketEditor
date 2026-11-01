@@ -42,6 +42,32 @@ final class Project {
         return Sprites.get(builtin,frame);
     }
 
+    /** Sprite for a live actor: the FSM-chosen animation clip if any, otherwise the automatic frame. */
+    Sprites.Sprite actorSprite(Actor a,int autoFrame,float worldTime){
+        if(a.animClip!=null&&a.def!=null&&a.sprite==a.def.sprite){
+            CustomSprite cs=sprite(a.def.customSprite);
+            if(cs!=null){CustomSprite.Clip c=cs.clip(a.animClip);if(c!=null&&!c.frames.isEmpty())return cs.frameAt(c,animIndex(c,a));}
+            return Sprites.get(a.sprite,builtinFrame(a.animClip,a.animTime));
+        }
+        return spriteFor(a.def,a.sprite,autoFrame,worldTime,a.deadTime);
+    }
+    static int animIndex(CustomSprite.Clip c,Actor a){int n=c.frames.size();int i=(int)(a.animTime*c.fps);boolean loop=a.animLoop<0?c.loop:a.animLoop==1;return loop?i%n:Math.min(n-1,i);}
+    /** Built-in sprites only have a few poses; map clip names onto them. */
+    static int builtinFrame(String clip,float t){
+        String n=clip.toLowerCase(java.util.Locale.US);
+        if(n.contains("walk")||n.contains("run")||n.contains("move"))return ((int)(t*6)&1)==0?Sprites.F_WALK1:Sprites.F_WALK2;
+        if(n.contains("attack")||n.contains("shoot")||n.contains("fire")||n.contains("melee"))return Sprites.F_ATTACK;
+        if(n.contains("pain")||n.contains("hurt"))return Sprites.F_PAIN;
+        if(n.contains("death")||n.contains("die")||n.contains("dead"))return Sprites.F_DEAD;
+        return Sprites.F_IDLE;
+    }
+    /** Clip names an entity type can play: its custom sprite's clips plus the standard ones. */
+    java.util.ArrayList<String> clipNames(EntityDef d){
+        java.util.ArrayList<String> out=new java.util.ArrayList<>();CustomSprite cs=d==null?null:sprite(d.customSprite);
+        if(cs!=null)for(CustomSprite.Clip c:cs.clips)if(!out.contains(c.name))out.add(c.name);
+        for(String s:CustomSprite.STANDARD_CLIPS)if(!out.contains(s))out.add(s);
+        return out;
+    }
     JSONObject toJson()throws Exception{
         JSONObject o=new JSONObject();o.put("version",6);
         JSONObject m=new JSONObject();m.put("name",name);m.put("template",template);m.put("created",(double)created);o.put("meta",m);

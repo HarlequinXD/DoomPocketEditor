@@ -10,6 +10,8 @@ final class Actor {
     float painTimer,attackTimer,walkPhase,moveDist,deadTime,reactTimer;
     int sectorHint=-1;
     Actor target;
+    /** Animation chosen by the FSM (null = automatic: idle/walk/attack/pain/death picked by the engine). */
+    String animClip;float animTime,animSpeed=1;int animLoop=-1,lastAnimFrame=-1;
     FsmRuntime fsm;
     // Projectiles
     int projectileType=-1;Actor owner;int dmgMin,dmgMax;

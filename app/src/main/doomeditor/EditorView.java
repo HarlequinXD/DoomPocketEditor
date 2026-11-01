@@ -152,29 +152,33 @@ public class EditorView extends View {
 
     private void drawTopBar(Canvas c){
         ui.rect(c,0,0,w,toolbarH,Ui.SURFACE);ui.hline(c,0,w,toolbarH-dp(1),Ui.BORDER);
-        float cy=toolbarH*.5f,lx=dp(12),ls=dp(28);
-        ui.round(c,lx,cy-ls*.5f,lx+ls,cy+ls*.5f,dp(7),Ui.ACCENT);ui.icon(c,Icons.LOGO,lx+ls*.5f,cy,17,0xffffffff);
-        float tx=lx+ls+dp(10);boolean wide=w>dp(760);float brandEnd=tx;
-        if(wide){String pn=ui.ellipsize(project.name,13,1,dp(110));ui.text(c,pn,tx,cy-dp(1),13,Ui.TEXT,1,-1);ui.text(c,"Projects",tx,cy+dp(13),9.5f,Ui.TEXT_3,1,-1);brandEnd=tx+Math.max(ui.measure(pn,13,1),dp(50));}
-        ui.hit(0,0,brandEnd+dp(8),toolbarH,H_LOGO);
-        float bh=dp(32),top=cy-bh*.5f,x=w-dp(10);
+        float cy=toolbarH*.5f,bh=dp(32),top=cy-bh*.5f;
+        // back to projects + project name (same pattern as the FSM and Sprite editors)
+        r.set(dp(8),top,dp(8)+bh,top+bh);ui.button(c,r,Icons.ARROW_LEFT,null,Ui.GHOST);ui.hit(r,H_LOGO);
+        boolean wide=w>dp(760);
+        String pn=ui.ellipsize(project.name,15,1,wide?dp(150):dp(90));
+        ui.textMid(c,pn,dp(48),cy,15,Ui.TEXT,1,-1);
+        float x0=dp(48)+ui.measure(pn,15,1)+dp(14);
+        // right-hand actions
+        float x=w-dp(10);
         boolean armed=System.currentTimeMillis()<resetArmedUntil;float resetW=armed?dp(96):bh;
         r.set(x-resetW,top,x,top+bh);ui.button(c,r,Icons.RESET,armed?"Confirm":null,Ui.DANGER);ui.hit(r,H_RESET);x-=resetW+dp(8);
         float saveW=wide?dp(84):bh;r.set(x-saveW,top,x,top+bh);ui.button(c,r,Icons.SAVE,wide?"Save":null,Ui.PRIMARY);ui.hit(r,H_SAVE);x-=saveW+dp(8);
-        boolean roomy=w>dp(980);
-        float fsmW=roomy?dp(106):bh;r.set(x-fsmW,top,x,top+bh);ui.button(c,r,Icons.GRAPH,roomy?"FSM":null,Ui.NORMAL);ui.hit(r,H_FSM);x-=fsmW+dp(8);
-        float spW=roomy?dp(106):bh;r.set(x-spW,top,x,top+bh);ui.button(c,r,Icons.PIXEL,roomy?"Sprites":null,Ui.NORMAL);ui.hit(r,H_SPRITES);
-        float availL=brandEnd+dp(20),availR=x-spW-dp(20);
-        float segW=Math.min(dp(124),(availR-availL)/4f),total=segW*4,sxx=availL+((availR-availL)-total)*.5f,sh=dp(36),st=cy-sh*.5f;
-        ui.round(c,sxx,st,sxx+total,st+sh,dp(9),Ui.BG);ui.outline(c,sxx,st,sxx+total,st+sh,dp(9),Ui.DIVIDER,dp(1));
-        boolean labels=segW>=dp(78);
-        for(int i=0;i<4;i++){boolean on=mode==MODES[i];float l=sxx+i*segW+dp(3),rr=sxx+(i+1)*segW-dp(3);
-            if(on)ui.round(c,l,st+dp(3),rr,st+sh-dp(3),dp(7),Ui.SURFACE_3);
-            int ic=on?0xff8fbcff:Ui.TEXT_3,tc=on?Ui.TEXT:Ui.TEXT_2;
-            if(labels){float tw=ui.measure(MODE_NAMES[i],12.5f,1),iw=dp(16),gap=dp(7),start=(l+rr)*.5f-(iw+gap+tw)*.5f;
-                ui.icon(c,MODE_ICONS[i],start+iw*.5f,cy,16,ic);ui.textMid(c,MODE_NAMES[i],start+iw+gap,cy,12.5f,tc,1,-1);}
-            else ui.icon(c,MODE_ICONS[i],(l+rr)*.5f,cy,18,ic);
-            ui.hit(sxx+i*segW,0,sxx+(i+1)*segW,toolbarH,H_MODE+i);}
+        boolean roomy=w>dp(1000);
+        float fsmW=roomy?ui.measure("FSM",12.5f,1)+dp(46):bh;r.set(x-fsmW,top,x,top+bh);ui.button(c,r,Icons.GRAPH,roomy?"FSM":null,Ui.NORMAL);ui.hit(r,H_FSM);x-=fsmW+dp(8);
+        float spW=roomy?ui.measure("Sprites",12.5f,1)+dp(46):bh;r.set(x-spW,top,x,top+bh);ui.button(c,r,Icons.PIXEL,roomy?"Sprites":null,Ui.NORMAL);ui.hit(r,H_SPRITES);x-=spW+dp(14);
+        ui.vline(c,x+dp(6),top+dp(4),top+bh-dp(4),Ui.BORDER);
+        // mode tabs as individual buttons; the active one uses the highlighted style
+        ui.vline(c,x0-dp(7),top+dp(4),top+bh-dp(4),Ui.BORDER);
+        float avail=x-x0,gap=dp(6),full=0;
+        for(String n:MODE_NAMES)full+=ui.measure(n,12.5f,1)+dp(46);
+        boolean labels=full+gap*3<=avail;
+        float bx=x0;
+        for(int i=0;i<4;i++){
+            float bw=labels?ui.measure(MODE_NAMES[i],12.5f,1)+dp(46):Math.min(dp(44),(avail-gap*3)/4f);
+            r.set(bx,top,bx+bw,top+bh);ui.button(c,r,MODE_ICONS[i],labels?MODE_NAMES[i]:null,mode==MODES[i]?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_MODE+i);
+            bx+=bw+gap;
+        }
     }
     private void drawToast(Canvas c){
         if(System.currentTimeMillis()>=messageUntil||message.isEmpty())return;
@@ -323,10 +327,8 @@ public class EditorView extends View {
         float x0=mapR(),pad=dp(10),l=x0+pad,rr=w-pad;
         ui.rect(c,x0,toolbarH,w,h,Ui.SURFACE);ui.vline(c,x0,toolbarH,h,Ui.BORDER);
         if(mode==POLY){
-            float tt=toolbarH+dp(10),th=dp(30),tw=(rr-l)/3f;
-            ui.round(c,l,tt,rr,tt+th,dp(8),Ui.BG);
-            for(int i=0;i<3;i++){float a=l+i*tw,b=a+tw;if(i==toolPage)ui.round(c,a+dp(3),tt+dp(3),b-dp(3),tt+th-dp(3),dp(6),Ui.SURFACE_3);
-                ui.textMid(c,PAGE_NAMES[i],(a+b)*.5f,tt+th*.5f,12,i==toolPage?Ui.TEXT:Ui.TEXT_3,1,0);ui.hit(a,tt,b,tt+th,H_PAGE+i);}
+            float tt=toolbarH+dp(10),th=dp(30),tg=dp(5),tw=(rr-l-tg*2)/3f;
+            for(int i=0;i<3;i++){float a=l+i*(tw+tg);r.set(a,tt,a+tw,tt+th);ui.button(c,r,-1,PAGE_NAMES[i],i==toolPage?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_PAGE+i);}
             float cardH=dp(70),gridTop=tt+th+dp(10),gridBottom=h-cardH-dp(18);
             float rowH=Math.min(dp(38),(gridBottom-gridTop)/6f),colW=(rr-l)/2f,gap=dp(3);
             int[] tools=PAGES[toolPage];
@@ -380,9 +382,9 @@ public class EditorView extends View {
         c.restoreToCount(save);
         if(maxScroll>0){float bar=(bottom-top)*(bottom-top)/(bottom-top+maxScroll);float by=top+(bottom-top-bar)*defScroll/maxScroll;ui.round(c,pw-dp(5),by,pw-dp(2),by+bar,dp(2),0x33ffffff);}
     }
-    private String[] propLabels(EntityDef d){return new String[]{"Name","Type","Sprite","Health","Speed","Radius","Height","Solid","Shootable"};}
+    private String[] propLabels(EntityDef d){return new String[]{"Name","Type","Sprite","Health","Speed","Radius","Height","Solid","Shootable","Animations"};}
     private String propValue(EntityDef d,int i){switch(i){case 0:return d.name;case 1:return EntityDef.KIND_NAMES[d.kind];case 2:{CustomSprite cs=project.sprite(d.customSprite);return cs!=null?cs.name+" (custom)":Sprites.NAMES[Math.max(0,Math.min(Sprites.COUNT-1,d.sprite))];}
-        case 3:return String.valueOf(d.health);case 4:return fmt(d.speed);case 5:return fmt(d.radius);case 6:return fmt(d.height);case 7:return d.solid?"Yes":"No";default:return d.shootable?"Yes":"No";}}
+        case 3:return String.valueOf(d.health);case 4:return fmt(d.speed);case 5:return fmt(d.radius);case 6:return fmt(d.height);case 7:return d.solid?"Yes":"No";case 8:return d.shootable?"Yes":"No";default:{CustomSprite cs=project.sprite(d.customSprite);return cs==null?"Built-in poses":cs.clips.size()+" clips";}}}
     private void drawPropertyPanel(Canvas c,float x0,float l,float rr){
         EntityDef d=currentDef();if(d==null)return;
         float top=toolbarH,bottom=h;
@@ -407,7 +409,7 @@ public class EditorView extends View {
         for(int i=0;i<labels.length;i++){
             r.set(l,y,rr,y+dp(32));ui.round(c,r,dp(6),i%2==0?Ui.SURFACE_2:0x00000000);
             ui.textMid(c,labels[i],l+dp(10),y+dp(16),12,Ui.TEXT_2,0,-1);
-            String v=propValue(d,i);boolean toggle=i>=7;
+            String v=propValue(d,i);boolean toggle=i==7||i==8;
             if(toggle){float tx=rr-dp(42),ty=y+dp(8);boolean on=v.equals("Yes");ui.round(c,tx,ty,tx+dp(32),ty+dp(16),dp(8),on?Ui.ACCENT:Ui.SURFACE_3);p.setColor(0xffffffff);c.drawCircle(on?tx+dp(24):tx+dp(8),ty+dp(8),dp(6),p);}
             else ui.textMid(c,ui.ellipsize(v,12,1,(rr-l)*.5f),rr-dp(10),y+dp(16),12,Ui.TEXT,1,1);
             clipHit(r,H_PROP+i,top,bottom);y+=dp(34);
@@ -608,6 +610,7 @@ public class EditorView extends View {
         EntityDef d=currentDef();if(d==null)return;
         if(i==7){d.solid=!d.solid;changed(null);return;}
         if(i==8){d.shootable=!d.shootable;changed(null);return;}
+        if(i==9){openSprites(d.id);return;}
         if(host==null)return;
         switch(i){
             case 0:host.prompt("Entity name",null,d.name,false,t->{if(!t.trim().isEmpty()){d.name=t.trim();changed(null);}});break;
@@ -758,7 +761,7 @@ public class EditorView extends View {
             Sprites.Sprite s;boolean bright=false;
             if(a.projectileType>=0){s=Sprites.effect(a.projectileType==1?Sprites.FX_ROCKET:a.projectileType==2?Sprites.FX_PLASMA:Sprites.FX_FIREBALL,0,true);bright=true;}
             else{int f=a.def!=null&&(a.def.kind==EntityDef.MONSTER||a.def.kind==EntityDef.PLAYER)?a.frame():a.sprite==Sprites.TORCH?((int)(world.time*8)&1):a.alive?Sprites.F_IDLE:Sprites.F_DEAD;
-                s=project.spriteFor(a.def,a.sprite,f,world.time,a.deadTime);}
+                s=project.actorSprite(a,f,world.time);}
             spriteList.add(sd(pool++).set(a.x,a.y,a.z+a.bob-(a.projectileType>=0?.2f:0),s,-1,bright));}
         for(World.Effect e:world.effects){int f=Math.min(2,(int)(e.t/e.life*3));spriteList.add(sd(pool++).set(e.x,e.y,e.z-.2f,Sprites.effect(e.type,f,true),-1,e.type!=Sprites.FX_BLOOD));}
         view3d.set(0,0,w,h);

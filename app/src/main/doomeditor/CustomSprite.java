@@ -50,6 +50,9 @@ final class CustomSprite {
         else i=(int)(time*c.fps)%n;
         return wrap(c.frames.get(Math.max(0,i)));
     }
+    Sprites.Sprite frameAt(Clip c,int index){if(c==null||c.frames.isEmpty())return null;return wrap(c.frames.get(Math.max(0,Math.min(c.frames.size()-1,index))));}
+    /** Seconds one pass of the clip takes. */
+    static float length(Clip c){return c==null||c.frames.isEmpty()?0:c.frames.size()/Math.max(.1f,c.fps);}
     android.graphics.Bitmap thumbnail(){
         Clip c=clip("Idle");if(c==null||c.frames.isEmpty())c=clips.isEmpty()?null:clips.get(0);
         android.graphics.Bitmap b=android.graphics.Bitmap.createBitmap(w,h,android.graphics.Bitmap.Config.ARGB_8888);

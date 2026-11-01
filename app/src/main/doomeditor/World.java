@@ -101,6 +101,7 @@ final class World {
             physics(a,dt);
             if(a.painTimer>0)a.painTimer-=dt;if(a.attackTimer>0)a.attackTimer-=dt;
             if(!a.alive)a.deadTime+=dt;
+            if(a.animClip!=null)a.animTime+=dt*a.animSpeed;
             if(a.projectileType>=0)projectileStep(a,dt);
         }
         if(!spawned.isEmpty()){for(Actor a:spawned){actors.add(a);if(a.fsm!=null)a.fsm.start();}spawned.clear();}
@@ -261,7 +262,7 @@ final class World {
         t.health-=amount;
         if(src!=null&&src!=t&&!t.isPlayer&&src.alive)t.target=src;
         if(t.health<=0){
-            t.health=0;t.alive=false;t.shootable=false;t.solid=false;t.vx*=.3f;t.vy*=.3f;
+            t.health=0;t.alive=false;t.shootable=false;t.solid=false;t.vx*=.3f;t.vy*=.3f;t.animClip=null;
             if(t.isPlayer){sound(SoundFx.PLAYER_DEATH,t);}
             else{if(t.def.countKill)kills++;}
             if(t.fsm!=null)t.fsm.send("DIED");
@@ -448,6 +449,25 @@ final class World {
         if(s.special==Level.SP_EXIT&&onFloor)exitLevel();
         if(s.special==Level.SP_SECRET&&!secretFound[ps]){secretFound[ps]=true;secrets++;centerPrint("A secret is revealed!",2.5f);sound(SoundFx.SECRET,player);}
     }
+
+    // ------------------------------------------------------------------ animation
+    private CustomSprite.Clip clipOf(Actor a){if(a.animClip==null||a.def==null)return null;CustomSprite cs=project.sprite(a.def.customSprite);return cs==null?null:cs.clip(a.animClip);}
+    void playAnim(Actor a,String clip,float speed,int loop,boolean restart){
+        if(clip==null||clip.isEmpty()){a.animClip=null;return;}
+        if(restart||!clip.equals(a.animClip)){a.animTime=0;a.lastAnimFrame=-1;}
+        a.animClip=clip;a.animSpeed=Math.max(0,speed);a.animLoop=loop;
+    }
+    /** True once a play-once clip has shown its last frame (looping clips never finish). */
+    boolean animFinished(Actor a){
+        if(a.animClip==null)return true;
+        CustomSprite.Clip c=clipOf(a);
+        boolean loop=a.animLoop<0?(c==null||c.loop):a.animLoop==1;
+        if(loop)return false;
+        float len=c!=null?CustomSprite.length(c):.6f;
+        return a.animTime>=len;
+    }
+    /** Current frame number (0-based) of the actor's animation. */
+    int animFrame(Actor a){CustomSprite.Clip c=clipOf(a);if(c==null)return a.animClip==null?0:(int)(a.animTime*6);return Project.animIndex(c,a);}
 
     // ------------------------------------------------------------------ entities & feedback
     Actor spawn(String defId,float x,float y,float angle){

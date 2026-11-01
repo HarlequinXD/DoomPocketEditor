@@ -216,15 +216,41 @@ public class SpriteEditorView extends View {
         ui.caption(c,"Clips",L+dp(10),T+dp(19),Ui.TEXT_3);
         r.set(R-dp(34),T+dp(5),R-dp(8),T+dp(29));ui.button(c,r,Icons.PLUS,null,sprite==null?Ui.DISABLED:Ui.NORMAL);ui.hit(r,H_ADDCLIP);
         if(sprite==null)return;
-        float top=T+dp(32),rowH=dp(28);float max=Math.max(0,sprite.clips.size()*rowH-(B-top-dp(4)));clipScroll=clamp(clipScroll,0,max);
+        float top=T+dp(32),rowH=dp(36);float max=Math.max(0,sprite.clips.size()*rowH-(B-top-dp(4)));clipScroll=clamp(clipScroll,0,max);
         int save=c.save();c.clipRect(L,top,R-dp(1),B);
         for(int i=0;i<sprite.clips.size();i++){CustomSprite.Clip cl=sprite.clips.get(i);float y=top+i*rowH-clipScroll;if(y+rowH<top||y>B)continue;
             boolean on=i==clipIndex;r.set(L+dp(6),y+dp(1),R-dp(6),y+rowH-dp(2));if(on){ui.round(c,r,dp(6),Ui.ACCENT_SOFT);ui.outline(c,r,dp(6),0x993d8bfd,dp(1));}
-            ui.icon(c,Icons.FILM,r.left+dp(12),r.centerY(),12,on?0xff8fbcff:Ui.TEXT_3);
-            ui.textMid(c,ui.ellipsize(cl.name,12,1,r.width()-dp(56)),r.left+dp(24),r.centerY(),12,on?Ui.TEXT:Ui.TEXT_2,1,-1);
-            ui.textMid(c,String.valueOf(cl.frames.size()),r.right-dp(8),r.centerY(),10.5f,Ui.TEXT_3,1,1);
+            ui.icon(c,cl.loop?Icons.RESET:Icons.FILM,r.left+dp(12),r.centerY(),12,on?0xff8fbcff:Ui.TEXT_3);
+            ui.text(c,ui.ellipsize(cl.name,12,1,r.width()-dp(30)),r.left+dp(24),r.top+dp(15),12,on?Ui.TEXT:Ui.TEXT_2,1,-1);
+            ui.text(c,ui.ellipsize(cl.frames.size()+"f · "+Math.round(cl.fps)+"fps · "+clipRole(cl.name),9.5f,0,r.width()-dp(30)),r.left+dp(24),r.top+dp(28),9.5f,clipRoleColor(cl.name),0,-1);
             float vt=Math.max(top,r.top),vb=Math.min(B,r.bottom);if(vb>vt)ui.hit(r.left,vt,r.right,vb,H_CLIP+i);}
         c.restoreToCount(save);
+    }
+    /** How the game uses a clip: standard names play automatically, others through the FSM. */
+    private String clipRole(String name){
+        String n=name.toLowerCase(java.util.Locale.US);
+        if(n.equals("idle")||n.equals("walk")||n.equals("attack")||n.equals("pain")||n.equals("death"))return "auto";
+        return usedInFsm(name)?"FSM":"unused";
+    }
+    private int clipRoleColor(String name){String r=clipRole(name);return r.equals("auto")?0xff8a99ad:r.equals("FSM")?0xff6fdcaa:Ui.AMBER;}
+    private boolean usedInFsm(String clip){
+        for(EntityDef d:project.defs){if(!sprite.id.equals(d.customSprite))continue;
+            for(FSMGraph.Node n:d.fsm.nodes)for(FSMGraph.Action a:n.actions)if(a.type.equals("play_animation")&&clip.equalsIgnoreCase(a.params.get("clip")))return true;}
+        return false;
+    }
+    static final String[] CLIP_PRESETS={"Idle","Walk","Run","Attack","Shoot","Melee","Pain","Death","Reload","Jump","Use","Open","Close","Spawn","Custom name…"};
+    private void addClip(){
+        if(sprite==null)return;
+        java.util.ArrayList<String> items=new java.util.ArrayList<>();
+        for(String pr:CLIP_PRESETS)if(pr.endsWith("…")||sprite.clip(pr)==null)items.add(pr);
+        java.util.function.Consumer<String> make=name->{
+            String nm=name.trim().isEmpty()?"Clip "+(sprite.clips.size()+1):name.trim();
+            CustomSprite.Clip c=new CustomSprite.Clip(nm);String l=nm.toLowerCase(java.util.Locale.US);
+            c.loop=l.equals("idle")||l.equals("walk")||l.equals("run");c.fps=l.equals("walk")?6:l.equals("run")?10:l.equals("death")?6:8;
+            c.frames.add(frame().clone());sprite.clips.add(c);clipIndex=sprite.clips.size()-1;frameIndex=0;sprite.touch();save();invalidate();};
+        if(host==null){make.accept("Clip");return;}
+        host.choose("Add animation clip",items.toArray(new String[0]),-1,k->{String pick=items.get(k);
+            if(pick.endsWith("…"))host.prompt("Clip name","Play it from any FSM state with the Play Animation action.","",false,make);else make.accept(pick);});
     }
     private void drawFrames(Canvas c,float L,float T,float R,float B){
         ui.rect(c,L,T,R,B,Ui.SURFACE);ui.hline(c,L,R,T,Ui.BORDER);
@@ -540,7 +566,9 @@ public class SpriteEditorView extends View {
     }
     private void clipMenu(int i){
         if(host==null)return;CustomSprite.Clip c=sprite.clips.get(i);
-        host.choose(c.name,new String[]{"Rename","Duplicate clip","Delete clip"},-1,k->{
+        host.choose(c.name,new String[]{"Rename","Duplicate clip","Delete clip",c.loop?"Loop: on (tap to play once)":"Loop: off (tap to loop)","Speed: "+Math.round(c.fps)+" fps…"},-1,k->{
+            if(k==3){c.loop=!c.loop;save();invalidate();return;}
+            if(k==4){host.choose("Frames per second",new String[]{"2","4","6","8","10","12","15","20","24"},-1,q->{c.fps=new int[]{2,4,6,8,10,12,15,20,24}[q];save();invalidate();});return;}
             if(k==0)host.prompt("Clip name","Idle, Walk, Attack, Pain and Death are used by the game automatically.",c.name,false,t->{if(!t.trim().isEmpty()){c.name=t.trim();save();}});
             else if(k==1){CustomSprite.Clip d=new CustomSprite.Clip(c.name+" copy");d.fps=c.fps;d.loop=c.loop;for(int[] f:c.frames)d.frames.add(f.clone());sprite.clips.add(i+1,d);sprite.touch();save();}
             else if(sprite.clips.size()>1){sprite.clips.remove(i);clipIndex=Math.max(0,i-1);frameIndex=0;sprite.touch();save();}
@@ -625,8 +653,7 @@ public class SpriteEditorView extends View {
             case H_CANCEL:cancelOp();break;
             case H_NEWBLANK:newBlankDialog();break;
             case H_NEWBUILTIN:if(pendingDef!=null&&host!=null)fromBuiltin(pendingDef.sprite);else newBuiltinDialog();break;
-            case H_ADDCLIP:if(sprite!=null){java.util.function.Consumer<String> add=t->{CustomSprite.Clip c=new CustomSprite.Clip(t.trim().isEmpty()?"Clip "+(sprite.clips.size()+1):t.trim());c.frames.add(new int[sprite.w*sprite.h]);sprite.clips.add(c);clipIndex=sprite.clips.size()-1;frameIndex=0;sprite.touch();save();invalidate();};
-                if(host!=null)host.prompt("New clip","Idle, Walk, Attack, Pain and Death are played by the game automatically.","Clip "+(sprite.clips.size()+1),false,add);else add.accept("");}break;
+            case H_ADDCLIP:addClip();break;
             case H_ADDFRAME:if(sprite!=null){cancelOp();clip().frames.add(frameIndex+1,new int[sprite.w*sprite.h]);frameIndex++;sprite.touch();save();}break;
             case H_DUPFRAME:if(sprite!=null){cancelOp();clip().frames.add(frameIndex+1,frame().clone());frameIndex++;sprite.touch();save();}break;
             case H_DELFRAME:if(sprite!=null&&clip().frames.size()>1){cancelOp();clip().frames.remove(frameIndex);frameIndex=Math.max(0,frameIndex-1);sprite.touch();save();}break;

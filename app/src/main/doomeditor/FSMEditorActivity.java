@@ -19,7 +19,7 @@ public class FSMEditorActivity extends Activity implements FSMGraphView.Host {
         view = new FSMGraphView(this, project, def, this);
         setContentView(view);
     }
-    @Override protected void onResume() { super.onResume(); getWindow().getDecorView().setSystemUiVisibility(5894 | 1024 | 512); }
+    @Override protected void onResume() { super.onResume(); getWindow().getDecorView().setSystemUiVisibility(5894 | 1024 | 512); view.invalidate(); }
     @Override protected void onPause() { super.onPause(); view.stopRun(); project.save(this); }
     @Override public void saved() { project.save(this); Toast.makeText(this, "Project saved", Toast.LENGTH_SHORT).show(); }
     @Override public void exit() { project.save(this); finish(); }
@@ -34,4 +34,10 @@ public class FSMEditorActivity extends Activity implements FSMGraphView.Host {
     @Override public void choose(String title, String[] items, int checked, java.util.function.IntConsumer done) { MainActivity.choose(this, title, items, checked, done, view::invalidate); }
     @Override public void confirm(String title, String message, String ok, Runnable yes) { MainActivity.confirm(this, title, message, ok, yes, view::invalidate); }
     @Override public void openFsm(String defId) { EntityDef d = project.def(defId); if (d != null) view.selectDef(d); }
+    @Override public void openSprites(String defId) {
+        project.save(this);
+        android.content.Intent i = new android.content.Intent(this, SpriteEditorActivity.class);
+        if (defId != null) i.putExtra("def", defId);
+        startActivity(i);
+    }
 }

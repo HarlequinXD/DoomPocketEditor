@@ -10,10 +10,10 @@ import java.util.LinkedHashMap;
  */
 final class Actions {
     private Actions(){}
-    static final int T_FLOAT=0,T_INT=1,T_BOOL=2,T_TEXT=3,T_EVENT=4,T_VAR=5,T_CHOICE=6,T_ENTITY=7,T_MATERIAL=8,T_SECTOR=9;
+    static final int T_FLOAT=0,T_INT=1,T_BOOL=2,T_TEXT=3,T_EVENT=4,T_VAR=5,T_CHOICE=6,T_ENTITY=7,T_MATERIAL=8,T_SECTOR=9,T_CLIP=10;
     static final int DONE=0,RUNNING=1;
-    static final String[] CATEGORIES={"Flow","Variables","Input","Weapons","Health","Movement","AI","World","Entities","Feedback"};
-    static final int[] CATEGORY_ICONS={Icons.GRAPH,Icons.TAG,Icons.MOVE,Icons.CROSSHAIR,Icons.HEART,Icons.ARROW_UP,Icons.SKULL,Icons.LAYERS,Icons.ENTITIES,Icons.INFO};
+    static final String[] CATEGORIES={"Flow","Animation","Variables","Input","Weapons","Health","Movement","AI","World","Entities","Feedback"};
+    static final int[] CATEGORY_ICONS={Icons.GRAPH,Icons.FILM,Icons.TAG,Icons.MOVE,Icons.CROSSHAIR,Icons.HEART,Icons.ARROW_UP,Icons.SKULL,Icons.LAYERS,Icons.ENTITIES,Icons.INFO};
     static final String WEAPONS="Fist|Pistol|Shotgun|Chaingun|Rocket Launcher";
     static final String AMMO="Bullets|Shells|Rockets";
     static final String BUTTONS="Fire|Use|Jump|Weapon|Alt";
@@ -41,7 +41,7 @@ final class Actions {
         int colon=spec.indexOf(':'),eq=spec.indexOf('=',colon);
         String key=spec.substring(0,colon),type=spec.substring(colon+1,eq<0?spec.length():eq),def=eq<0?"":spec.substring(eq+1);
         if(type.startsWith("c(")){String[] opts=type.substring(2,type.length()-1).split("\\|");return new Param(key,T_CHOICE,def.isEmpty()?opts[0]:def,opts);}
-        int t;switch(type){case "f":t=T_FLOAT;break;case "i":t=T_INT;break;case "b":t=T_BOOL;break;case "e":t=T_EVENT;break;case "v":t=T_VAR;break;case "E":t=T_ENTITY;break;case "M":t=T_MATERIAL;break;case "X":t=T_SECTOR;break;default:t=T_TEXT;}
+        int t;switch(type){case "f":t=T_FLOAT;break;case "i":t=T_INT;break;case "b":t=T_BOOL;break;case "e":t=T_EVENT;break;case "v":t=T_VAR;break;case "E":t=T_ENTITY;break;case "M":t=T_MATERIAL;break;case "A":t=T_CLIP;break;case "X":t=T_SECTOR;break;default:t=T_TEXT;}
         return new Param(key,t,def,null);
     }
     private static void def(String id,String name,String cat,int icon,String desc,Impl impl,String... params){
@@ -97,6 +97,19 @@ final class Actions {
         def("counter_event","Counter","Flow",Icons.PLUS,"Adds one to a variable each time the state is entered; sends an event when it reaches the count.",c->{
             float v=c.getVar("var")+1;c.setVar("var",v);if(v>=c.f("count"))c.send("event");return DONE;},"var:v=count","count:i=3","event:e=");
         def("debug_log","Debug Log","Flow",Icons.INFO,"Shows text in the message area while testing.",c->{c.w.message("[debug] "+c.s("text"),2);return DONE;},"text:t=Hello");
+
+        // ------------------------------------------------------------------ Animation
+        def("play_animation","Play Animation","Animation",Icons.FILM,"Plays one of the entity's sprite clips. Optionally sends an event when a play-once clip ends.",c->{
+            if(c.enter){int l=c.choice("loop","Clip setting|Loop|Play once");c.w.playAnim(c.self,c.s("clip"),c.f("speed"),l==0?-1:l==1?1:0,c.b("restart"));}
+            if(c.s("finishedEvent").isEmpty())return DONE;
+            if(c.w.animFinished(c.self)){c.send("finishedEvent");return DONE;}return RUNNING;},
+            "clip:A=Walk","loop:c(Clip setting|Loop|Play once)=Clip setting","speed:f=1","restart:b=true","finishedEvent:e=");
+        def("wait_animation","Wait For Animation","Animation",Icons.CLOCK,"Waits until the current play-once clip ends, then sends an event.",c->{
+            if(c.w.animFinished(c.self)){c.send("event");return DONE;}return RUNNING;},"event:e=FINISHED");
+        def("animation_frame_event","Animation Frame Event","Animation",Icons.ZAP,"Sends an event when the current clip reaches a frame, e.g. the frame where a punch lands.",c->{
+            int f=c.w.animFrame(c.self)+1;if(f!=c.self.lastAnimFrame){c.self.lastAnimFrame=f;if(f==c.i("frame"))c.send("event");}return RUNNING;},"frame:i=2","event:e=HIT");
+        def("set_animation_speed","Set Animation Speed","Animation",Icons.CHEVRONS,"Speeds up or slows down the current clip (1 = normal).",c->{c.self.animSpeed=Math.max(0,c.f("speed"));return DONE;},"speed:f=1");
+        def("auto_animation","Automatic Animation","Animation",Icons.RESET,"Hands animation back to the engine: idle, walk, attack, pain and death are chosen automatically.",c->{c.self.animClip=null;return DONE;});
 
         // ------------------------------------------------------------------ Variables
         def("set_float","Set Variable","Variables",Icons.TAG,"Sets a number variable. Prefix with g. for a global variable.",c->{c.setVar("var",c.f("value"));return c.doneOrRun();},"var:v=value","value:f=0","everyFrame:b=false");
