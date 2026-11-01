@@ -24,7 +24,7 @@ public class EditorView extends View {
     private static final int H_MODE=100,H_FSM=110,H_SAVE=111,H_RESET=112,H_PAGE=120,H_TOOL=200,H_APPLY=520,H_MAT=400,
             H_RAISE=500,H_LOWER=501,H_LIGHTUP=502,H_LIGHTDN=503,H_FLY=504,H_UP=505,H_DOWN=506,H_EDITFSM3D=507,H_START3D=508,
             H_FIRE=510,H_USE=511,H_JUMP=512,H_WEAPON=513,H_EXITPLAY=514,H_RETRY=530,H_BACK=531,
-            H_NEWDEF=590,H_LOGO=593,H_SPRITES=594,H_EDITSPRITE=813,H_ZOOMIN=591,H_ZOOMOUT=592,H_DEF=600,H_PROP=700,H_ETOOL=800,H_EDITFSM=810,H_DUPDEF=811,H_DELDEF=812;
+            H_NEWDEF=590,H_LOGO=593,H_SPRITES=594,H_EDITSPRITE=813,H_ZOOMIN=591,H_ZOOMOUT=592,H_DEF=2000,H_PROP=700,H_ETOOL=800,H_EDITFSM=810,H_DUPDEF=811,H_DELDEF=812;
     // Sector tools (cursor + Apply) and immediate actions.
     private static final int DRAW=1,RECT=2,PREFAB=3,STAIRS=4,SELECT=5,MOVE=6,SPLIT=7,EXTRUDE=8,DUPLICATE=9,DELETE=10,SPECIAL=11,START=12;
     private static final int CLOSE=101,UNDO_PT=102,CANCEL=103,UNDO=104,REDO=105,VALIDATE=106,CLEAN=107,DESELECT=108,
@@ -891,7 +891,7 @@ public class EditorView extends View {
                     if(hid==H_ZOOMIN||hid==H_ZOOMOUT){zoom=Math.max(.35f,Math.min(4f,zoom*(hid==H_ZOOMIN?1.25f:.8f)));followCursor=true;}
                     else if(hid>=H_PAGE&&hid<H_PAGE+3){toolPage=hid-H_PAGE;}
                     else if(hid>=H_TOOL&&hid<H_TOOL+11&&mode==POLY){sectorAction(PAGES[toolPage][hid-H_TOOL]);}
-                    else if(hid>=H_DEF&&hid<H_DEF+500){int i=hid-H_DEF;if(i<project.defs.size()){selDef=project.defs.get(i).id;selThing=-1;propScroll=0;if(entityTool!=0){entityTool=0;}hint(project.defs.get(i).name+" · Apply to place");}}
+                    else if(hid>=H_DEF&&hid<H_DEF+1000){int i=hid-H_DEF;if(i<project.defs.size()){selDef=project.defs.get(i).id;selThing=-1;propScroll=0;if(entityTool!=0){entityTool=0;}hint(project.defs.get(i).name+" · Apply to place");}}
                     else if(hid==H_NEWDEF)newEntityType();
                     else if(hid>=H_PROP&&hid<H_PROP+20)propertyTap(hid-H_PROP);
                     else if(hid>=H_ETOOL&&hid<H_ETOOL+5){entityTool=hid-H_ETOOL;entStage=0;hint(ENTITY_TOOLS[entityTool]+" · move the cursor and tap Apply");}
