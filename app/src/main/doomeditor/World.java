@@ -295,7 +295,7 @@ final class World {
     // ------------------------------------------------------------------ AI helpers
     float dist(Actor a,Actor b){return (float)Math.hypot(a.x-b.x,a.y-b.y);}
     float angleTo(Actor a,Actor b){return (float)Math.atan2(b.y-a.y,b.x-a.x);}
-    void walk(Actor a,float angle,float speed){a.wishX=(float)Math.cos(angle)*speed;a.wishY=(float)Math.sin(angle)*speed;a.wishActive=true;}
+    void walk(Actor a,float angle,float speed){if(!a.alive)return;a.wishX=(float)Math.cos(angle)*speed;a.wishY=(float)Math.sin(angle)*speed;a.wishActive=true;}
     /** Line of sight from a's eyes to b's centre, blocked by walls and closed openings. */
     boolean lineOfSight(Actor a,Actor b){
         float z0=a.z+a.height*.8f,z1=b.z+b.height*.6f;
@@ -315,7 +315,7 @@ final class World {
     static float angleDiff(float a,float b){float d=a-b;while(d>Math.PI)d-=2*Math.PI;while(d<-Math.PI)d+=2*Math.PI;return d;}
     /** Doom-like chase: head for the target in 8 directions, picking a new direction when blocked. */
     void chase(Actor a,float speed,float dt){
-        Actor t=a.target;if(t==null)return;
+        Actor t=a.target;if(t==null||!a.alive)return;
         a.reactTimer-=dt;
         float want=angleTo(a,t);
         if(a.blocked||a.reactTimer<=0){
@@ -362,6 +362,7 @@ final class World {
     }
     /** Instant bullets with Doom-style vertical auto-aim. */
     void hitscan(Actor src,float angle,int dmin,int dmax,float spread,int pellets,float range){
+        if(src==null||!src.alive||src.removed)return;   // the dead don't shoot
         for(int p=0;p<pellets;p++){
             float a=angle+(rng.nextFloat()*2-1)*spread;
             float ex=src.x+(float)Math.cos(a)*range,ey=src.y+(float)Math.sin(a)*range;
@@ -382,11 +383,13 @@ final class World {
         }
     }
     boolean melee(Actor src,float range,int dmg){
+        if(src==null||!src.alive||src.removed)return false;
         Actor t=src.target;if(t==null||!t.alive)return false;
         if(dist(src,t)>range+t.radius||!lineOfSight(src,t))return false;
         damage(t,dmg,src);sound(SoundFx.PUNCH,src);return true;
     }
     void projectile(Actor src,int type,int dmin,int dmax,float speed){
+        if(src==null||!src.alive||src.removed)return;
         float ang=src.target!=null?angleTo(src,src.target):src.angle;
         Actor p=new Actor(null);p.projectileType=type;p.owner=src;p.dmgMin=dmin;p.dmgMax=dmax;p.radius=.15f;p.height=.3f;p.alive=true;p.noGravity=true;
         p.x=src.x+(float)Math.cos(ang)*(src.radius+.2f);p.y=src.y+(float)Math.sin(ang)*(src.radius+.2f);p.z=src.z+src.height*.6f;

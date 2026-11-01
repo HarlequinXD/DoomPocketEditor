@@ -45,7 +45,9 @@ final class FsmRuntime {
     void tick(World w,Actor self,float dt){
         if(state==null)return;
         // External events (DIED, DAMAGED, TOUCHED, USED, broadcasts...). Only one transition per frame.
-        while(!queue.isEmpty()){if(fire(queue.poll())){queue.clear();break;}}
+        // DIED always wins: if it arrived in the same frame as DAMAGED (shotgun pellets, chaingun bursts) it must not be dropped.
+        if(queue.contains("DIED")){queue.clear();fire("DIED");}
+        else while(!queue.isEmpty()){if(fire(queue.poll())){queue.clear();break;}}
         FSMGraph.Node s=state;
         ctx.w=w;ctx.self=self;ctx.fsm=this;ctx.dt=dt;ctx.enter=entering;
         inTick=true;pending=null;
@@ -61,11 +63,13 @@ final class FsmRuntime {
             try{r=spec.impl.run(ctx);}catch(RuntimeException ex){r=Actions.DONE;w.message("Action error in "+spec.name+": "+ex.getClass().getSimpleName(),3);}
             if(r==Actions.DONE)done[i]=true;else all=false;
             if(pending!=null)break;
+            if(!queue.isEmpty()&&queue.contains("DIED"))break;   // killed during this action
         }
         inTick=false;
         entering=false;
         if(state!=s)return;
         stateTime+=dt;
+        if(queue.contains("DIED")){queue.clear();pending=null;fire("DIED");return;}
         if(pending!=null){String ev=pending;pending=null;if(fire(ev))return;}
         if(all&&!finishedSent){finishedSent=true;fire("FINISHED");}
     }
