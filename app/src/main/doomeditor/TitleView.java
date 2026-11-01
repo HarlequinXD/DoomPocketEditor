@@ -30,7 +30,7 @@ public class TitleView extends View {
     private float w,h,scroll,downX,downY,lastY;private boolean dragged;private int downHit=-1;
     private long clock,last=System.nanoTime(),lastTouch=System.currentTimeMillis();
     private LinearGradient shade;private float shadeW=-1;
-    /** The orbiting backdrop is decoration: it runs at ~20 fps, pauses behind the New Project dialog,
+    /** The orbiting backdrop runs smoothly at the display rate, pauses behind the New Project dialog,
      *  settles after 40 s without a touch, and stays still in battery saver. */
     private boolean animating(){return !creating&&!Perf.saver(getContext())&&System.currentTimeMillis()-lastTouch<40000;}
 
@@ -55,7 +55,7 @@ public class TitleView extends View {
         drawBrand(c);
         drawProjects(c);
         if(creating)drawNewProject(c);
-        if(animating())postInvalidateDelayed(50);
+        if(animating())postInvalidateOnAnimation();
     }
     private void drawBrand(Canvas c){
         float x=dp(44),y=h*.2f;

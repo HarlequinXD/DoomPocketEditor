@@ -299,8 +299,8 @@ public class EditorView extends View {
         float tw=(R-gl-gap*(cols-1))/cols,th=Math.max(dp(44),Math.min(dp(96),(B-gt-gap*(rows-1))/rows));
         for(int i=0;i<EDITOR_NAMES.length;i++){int col=i%cols,row=i/cols;float x=gl+col*(tw+gap),y=gt+row*(th+gap);
             r.set(x,y,x+tw,y+th);drawEditorTile(c,r,i,H_TILE+i,false);}
-        // The live preview is decoration: ~20 fps, and it settles after 30 s without a touch (or straight away in battery saver).
-        if(homeAnimating())postInvalidateDelayed(50);
+        // Live preview runs every vsync (60 Hz) so it stays smooth, but settles after 30 s without a touch (or straight away in battery saver).
+        if(homeAnimating())postInvalidateOnAnimation();
     }
     private void drawEditorTile(Canvas c,RectF rr,int i,int hid,boolean current){
         ui.round(c,rr,dp(12),current?0xff26324a:Ui.SURFACE);ui.outline(c,rr,dp(12),current?Ui.ACCENT:Ui.BORDER,current?dp(2):dp(1));
