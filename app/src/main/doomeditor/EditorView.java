@@ -85,6 +85,7 @@ public class EditorView extends View {
     private String selDef="trooper";private int selThing=-1,entityTool=0,entStage=0;private float defScroll,propScroll,matScroll;
     private int scrollTarget=0; // 1 def list, 2 property panel, 3 texture browser
     // 3D
+    private float dockL;   // left edge of the 3D view's right-hand buttons
     private World walker;private boolean fly;private int sel3d=-1,selectedMaterial=0;private boolean flyUp,flyDown;
     private float joyOriginX,joyOriginY,joyX,joyY,moveX,moveY;private boolean joyVisible;private long joyReleaseTime;
     private int joyPointer=-1,lookPointer=-1,upPointer=-1,downPointer=-1;private float lookLastX,lookLastY,lookDownX,lookDownY;
@@ -865,7 +866,11 @@ public class EditorView extends View {
         float bh=dp(32),top=toolbarH+dp(10),x=w-dp(10);
         float fw2=dp(96);r.set(x-fw2,top,x,top+bh);ui.button(c,r,fly?Icons.LAYERS:Icons.ENTITIES,fly?"Fly":"Walk",fly?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_FLY);x-=fw2+dp(8);
         r.set(x-bh,top,x,top+bh);ui.button(c,r,Icons.FLAG,null,Ui.NORMAL);ui.hit(r,H_START3D);
-        if(fly){float bx=w-dp(14)-dp(56),by=h-dp(16)-dp(56);
+        // Right-hand dock: the sector panel (Raise/Lower/Light) takes the outer column; the fly
+        // Up/Down buttons move one column in when it is showing, so the two never overlap.
+        int sk=Renderer.kind(sel3d);boolean sectorPanel=sel3d>=0&&(sk==Renderer.ID_FLOOR||sk==Renderer.ID_CEIL||sk==Renderer.ID_WALL);
+        dockL=sectorPanel?w-dp(14)-dp(60):w;
+        if(fly){float bx=(sectorPanel?dockL-dp(12):w-dp(14))-dp(56),by=h-dp(16)-dp(56);dockL=bx;
             r.set(bx,by-dp(64),bx+dp(56),by-dp(8));ui.stackButton(c,r,Icons.ARROW_UP,"Up",flyUp?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_UP);
             r.set(bx,by,bx+dp(56),by+dp(56));ui.stackButton(c,r,Icons.ARROW_DOWN,"Down",flyDown?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_DOWN);}
         drawSelection3D(c,left);
@@ -910,17 +915,23 @@ public class EditorView extends View {
             Integer m=level.wallOverrides.get(Renderer.wallKey(level,l,v&1));int mat=m!=null?m:level.sectors.get(l.front).wallMaterial;t=((v&1)==1?"Upper wall":"Wall")+" · "+Textures.NAMES[Math.max(0,Math.min(Textures.COUNT-1,mat))];icon=Icons.WALL_TEX;}
         else{sector=v;if(sector>=level.sectors.size()){sel3d=-1;return;}Level.Sector s=level.sectors.get(sector);boolean fl=k==Renderer.ID_FLOOR;
             t=(fl?"Floor ":"Ceiling ")+fmt(fl?s.floor:s.ceiling)+" · sector "+(sector+1)+" · light "+s.light;icon=fl?Icons.FLOOR_TEX:Icons.CEIL_TEX;}
-        float tw=ui.measure(t,12.5f,1)+dp(50),cx=(left+w)*.5f,bt=h-dp(50);
+        float pr=Math.min(w,dockL-dp(10));   // keep the info pill clear of the right-hand buttons
+        float maxTw=pr-left-dp(24);
+        if(k==Renderer.ID_SPRITE)maxTw-=dp(100);
+        t=ui.ellipsize(t,12.5f,1,maxTw-dp(50));
+        float tw=ui.measure(t,12.5f,1)+dp(50),cx=(left+pr)*.5f,bt=h-dp(50);
         if(k==Renderer.ID_SPRITE)tw+=dp(100);
         ui.pill(c,cx-tw*.5f,bt,cx+tw*.5f,bt+dp(36),0xf2262c34);
         ui.icon(c,icon,cx-tw*.5f+dp(20),bt+dp(18),16,0xff8fbcff);ui.textMid(c,t,cx-tw*.5f+dp(36),bt+dp(18),12.5f,Ui.TEXT,1,-1);
         if(k==Renderer.ID_SPRITE){r.set(cx+tw*.5f-dp(100),bt+dp(5),cx+tw*.5f-dp(6),bt+dp(31));ui.button(c,r,Icons.GRAPH,"Edit FSM",Ui.PRIMARY);ui.hit(r,H_EDITFSM3D);}
         if(sector>=0){
-            float bw=dp(60),bh=dp(54),bx=w-dp(14)-bw,cy=(toolbarH+h)*.5f-dp(10);
-            if(k!=Renderer.ID_WALL){r.set(bx,cy-bh*2-dp(12),bx+bw,cy-bh-dp(12));ui.stackButton(c,r,Icons.ARROW_UP,"Raise",Ui.NORMAL);ui.hit(r,H_RAISE);
-                r.set(bx,cy-bh-dp(4),bx+bw,cy-dp(4));ui.stackButton(c,r,Icons.ARROW_DOWN,"Lower",Ui.NORMAL);ui.hit(r,H_LOWER);}
-            r.set(bx,cy+dp(4),bx+bw,cy+bh+dp(4));ui.stackButton(c,r,Icons.SUN,"Light +",Ui.NORMAL);ui.hit(r,H_LIGHTUP);
-            r.set(bx,cy+bh+dp(12),bx+bw,cy+bh*2+dp(12));ui.stackButton(c,r,Icons.SUN_DIM,"Light −",Ui.NORMAL);ui.hit(r,H_LIGHTDN);
+            // one column under the Fly/Start chips, shrunk to fit the screen height
+            int n=k!=Renderer.ID_WALL?4:2;float gap=dp(8),bw=dp(60),bx=w-dp(14)-bw,top=toolbarH+dp(10)+dp(32)+dp(14);
+            float bh=Math.max(dp(40),Math.min(dp(54),(h-dp(16)-top-gap*(n-1))/n)),y=top;
+            if(k!=Renderer.ID_WALL){r.set(bx,y,bx+bw,y+bh);ui.stackButton(c,r,Icons.ARROW_UP,"Raise",Ui.NORMAL);ui.hit(r,H_RAISE);y+=bh+gap;
+                r.set(bx,y,bx+bw,y+bh);ui.stackButton(c,r,Icons.ARROW_DOWN,"Lower",Ui.NORMAL);ui.hit(r,H_LOWER);y+=bh+gap;}
+            r.set(bx,y,bx+bw,y+bh);ui.stackButton(c,r,Icons.SUN,"Light +",Ui.NORMAL);ui.hit(r,H_LIGHTUP);y+=bh+gap;
+            r.set(bx,y,bx+bw,y+bh);ui.stackButton(c,r,Icons.SUN_DIM,"Light −",Ui.NORMAL);ui.hit(r,H_LIGHTDN);
         }
     }
     private void apply3DTexture(){
