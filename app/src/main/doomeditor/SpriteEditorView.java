@@ -84,11 +84,11 @@ public class SpriteEditorView extends View {
 
     // ---------------------------------------------------------------- layout
     private float leftW(){return Math.max(dp(132),Math.min(dp(172),w*.16f));}
-    private float rightW(){return Math.max(dp(150),Math.min(dp(196),w*.18f));}
+    private float rightW(){return Math.max(dp(128),Math.min(dp(160),w*.15f));}
     private float bottomH(){return Math.max(dp(98),Math.min(dp(132),h*.27f));}
     private float pixelSize(){
         if(sprite==null)return dp(8);
-        float cw=canvasR.width()-dp(24),ch=canvasR.height()-dp(24);
+        float cw=canvasR.width()-controlsW()*2-dp(8),ch=canvasR.height()-dp(24);if(cw<sprite.w*2)cw=canvasR.width()-dp(24);
         float fit=Math.max(1,Math.min(cw/sprite.w,ch/sprite.h));
         float base=(float)Math.floor(fit);if(base<1)base=fit;
         return Math.max(1,base*(float)Math.pow(1.5,zoomStep));
@@ -96,7 +96,7 @@ public class SpriteEditorView extends View {
     private float ox,oy;
     private void layoutCanvas(){
         float ps=pixelSize(),sw=sprite.w*ps,sh=sprite.h*ps;
-        ox=sw<=canvasR.width()-dp(16)?canvasR.centerX()-sw*.5f:clamp(canvasR.centerX()-(cursorX+.5f)*ps,canvasR.right-dp(8)-sw,canvasR.left+dp(8));
+        ox=sw<=canvasR.width()-controlsW()*2?canvasR.centerX()-sw*.5f:clamp(canvasR.centerX()-(cursorX+.5f)*ps,canvasR.right-dp(8)-sw,canvasR.left+dp(8));
         oy=sh<=canvasR.height()-dp(16)?canvasR.centerY()-sh*.5f:clamp(canvasR.centerY()-(cursorY+.5f)*ps,canvasR.bottom-dp(8)-sh,canvasR.top+dp(8));
     }
     private static float clamp(float v,float lo,float hi){return Math.max(lo,Math.min(hi,v));}
@@ -108,6 +108,7 @@ public class SpriteEditorView extends View {
         float L=leftW(),R=w-rightW(),B=h-bottomH();
         canvasR.set(L,toolbarH,R,B);
         drawCanvas(c);
+        drawCanvasControls(c);
         drawTools(c,0,toolbarH,L,B);
         drawClips(c,0,B,L,h);
         drawFrames(c,L,B,R,h);
@@ -157,12 +158,13 @@ public class SpriteEditorView extends View {
         // info chip
         int under=f[cursorY*sprite.w+cursorX];
         String info=cursorX+", "+cursorY+"   ·   "+sprite.w+"×"+sprite.h+"   ·   zoom "+Math.max(1,Math.round(ps/ui.dp))+"×";
-        float iw=ui.measure(info,11,1)+dp(40);ui.pill(c,canvasR.left+dp(10),canvasR.bottom-dp(34),canvasR.left+dp(10)+iw,canvasR.bottom-dp(10),0xe6262c34);
-        drawSwatch(c,canvasR.left+dp(22),canvasR.bottom-dp(22),dp(6),under);
-        ui.textMid(c,info,canvasR.left+dp(34),canvasR.bottom-dp(22),11,Ui.TEXT_2,1,-1);
+        float iw=ui.measure(info,11,1)+dp(40);ui.pill(c,canvasR.left+dp(10),canvasR.top+dp(10),canvasR.left+dp(10)+iw,canvasR.top+dp(34),0xe6262c34);
+        drawSwatch(c,canvasR.left+dp(22),canvasR.top+dp(22),dp(6),under);
+        ui.textMid(c,info,canvasR.left+dp(34),canvasR.top+dp(22),11,Ui.TEXT_2,1,-1);
         // live animation preview
         if(playing){CustomSprite.Clip cl2=clip();float t=(System.nanoTime()-playStart)*1e-9f;int n=cl2.frames.size(),i=cl2.loop?(int)(t*cl2.fps)%n:Math.min(n-1,(int)(t*cl2.fps));
-            float pw=Math.min(dp(120),canvasR.width()*.3f),phh=pw*sprite.h/sprite.w;if(phh>canvasR.height()*.6f){phh=canvasR.height()*.6f;pw=phh*sprite.w/sprite.h;}
+            float maxH=canvasR.height()-dp(56+14+12+30+12);
+            float pw=Math.min(dp(110),canvasR.width()*.22f),phh=pw*sprite.h/sprite.w;if(phh>maxH){phh=Math.max(dp(30),maxH);pw=phh*sprite.w/sprite.h;}
             float px=canvasR.right-pw-dp(14),py=canvasR.top+dp(12);
             ui.round(c,px-dp(6),py-dp(6),px+pw+dp(6),py+phh+dp(24),dp(8),0xee1b1e22);ui.outline(c,px-dp(6),py-dp(6),px+pw+dp(6),py+phh+dp(24),dp(8),Ui.BORDER,dp(1));
             r.set(px,py,px+pw,py+phh);c.drawBitmap(i==frameIndex?frameBmp:thumb(cl2.frames.get(i)),null,r,pixelPaint);
@@ -250,38 +252,47 @@ public class SpriteEditorView extends View {
             ui.hit(r,H_FRAME+i);}
         c.restoreToCount(save);
     }
-    private float dpadR(){return Math.min(dp(60),(rightW()-dp(24))*.5f);}
-    private float dpadCX(){return w-rightW()*.5f;}
-    private float dpadCY(){return h-dp(22)-dp(56)-dp(14)-dpadR();}
+    private float dpadR(){return Math.max(dp(40),Math.min(dp(58),canvasR.height()*.3f));}
+    private float dpadCX(){return canvasR.left+dp(14)+dpadR();}
+    private float dpadCY(){return canvasR.bottom-dp(14)-dpadR();}
+    private float drawW(){return dp(112);}
+    /** Horizontal room the on-canvas controls take on each side, so the sprite sits between them. */
+    private float controlsW(){return Math.max(dpadR()*2+dp(24),drawW()+dp(24));}
     private void drawRight(Canvas c,float L,float T,float R,float B){
         ui.rect(c,L,T,R,B,Ui.SURFACE);ui.vline(c,L,T,B,Ui.BORDER);
         float pad=dp(10),l=L+pad,rr=R-pad,y=T+dp(10);
         // toggles: grid, onion, mirror, pixel-perfect
-        float tw=(rr-l)/4f,th=dp(32);
-        Object[][] tg={{H_GRID,Icons.GRID,grid},{H_ONION,Icons.LAYERS,onion},{H_MIRROR,Icons.MIRROR,mirror},{H_PERFECT,Icons.PIXEL,perfect}};
-        for(int i=0;i<4;i++){r.set(l+i*tw+dp(1.5f),y,l+(i+1)*tw-dp(1.5f),y+th);ui.button(c,r,(Integer)tg[i][1],null,(Boolean)tg[i][2]?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,(Integer)tg[i][0]);}
-        y+=th+dp(8);
+        float tw=(rr-l)/2f,th=dp(32);
+        Object[][] tg={{H_GRID,Icons.GRID,grid,"Grid"},{H_ONION,Icons.LAYERS,onion,"Onion"},{H_MIRROR,Icons.MIRROR,mirror,"Mirror"},{H_PERFECT,Icons.PIXEL,perfect,"Perfect"}};
+        for(int i=0;i<4;i++){float tx=l+(i%2)*tw,ty=y+(i/2)*(th+dp(4));r.set(tx+dp(1.5f),ty,tx+tw-dp(1.5f),ty+th);ui.button(c,r,(Integer)tg[i][1],null,(Boolean)tg[i][2]?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,(Integer)tg[i][0]);}
+        y+=th*2+dp(4);
+        y+=dp(6);
         // brush size + zoom
         float third=(rr-l)/3f;
         r.set(l,y,l+third-dp(2),y+th);ui.button(c,r,-1,brush+"px",Ui.NORMAL);ui.hit(r,H_SIZE);
         r.set(l+third+dp(1),y,l+third*2-dp(1),y+th);ui.button(c,r,Icons.MINUS,null,Ui.NORMAL);ui.hit(r,H_ZOOMOUT);
         r.set(l+third*2+dp(2),y,rr,y+th);ui.button(c,r,Icons.PLUS,null,Ui.NORMAL);ui.hit(r,H_ZOOMIN);
         y+=th+dp(10);
-        ui.text(c,TOOL_NAMES[tool],l,y+dp(10),12,Ui.TEXT,1,-1);
-        ui.text(c,toolHint(),l,y+dp(26),10,Ui.TEXT_3);
+        ui.text(c,ui.ellipsize(TOOL_NAMES[tool],12,1,rr-l),l,y+dp(10),12,Ui.TEXT,1,-1);
+        float hy=y+dp(26);StringBuilder line=new StringBuilder();
+        for(String word:toolHint().split(" ")){String t=line.length()==0?word:line+" "+word;if(ui.measure(t,10,0)>rr-l&&line.length()>0){ui.text(c,line.toString(),l,hy,10,Ui.TEXT_3);hy+=dp(13);line=new StringBuilder(word);}else line=new StringBuilder(t);}
+        if(line.length()>0)ui.text(c,line.toString(),l,hy,10,Ui.TEXT_3);
+    }
+    /** D-pad (bottom-left) and Draw button (bottom-right) overlaid on the canvas. */
+    private void drawCanvasControls(Canvas c){
+        if(sprite==null)return;
         // 8-way D-pad
         float cx=dpadCX(),cy=dpadCY(),Rr=dpadR();
-        p.setStyle(Paint.Style.FILL);p.setColor(0x55000000);c.drawCircle(cx,cy+dp(3),Rr,p);p.setColor(0xff252a31);c.drawCircle(cx,cy,Rr,p);
+        p.setStyle(Paint.Style.FILL);p.setColor(0x55000000);c.drawCircle(cx,cy+dp(3),Rr,p);p.setColor(0xe6252a31);c.drawCircle(cx,cy,Rr,p);
         p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(1));p.setColor(0x24ffffff);c.drawCircle(cx,cy,Rr,p);c.drawCircle(cx,cy,Rr*.3f,p);p.setStyle(Paint.Style.FILL);
         if(dpadDir>=0){p.setColor(0x403d8bfd);r.set(cx-Rr,cy-Rr,cx+Rr,cy+Rr);c.drawArc(r,dpadDir*45-90-22.5f,45,true,p);p.setColor(0xff252a31);c.drawCircle(cx,cy,Rr*.3f,p);}
         for(int i=0;i<8;i++){double a=Math.toRadians(i*45-90);float ix=cx+(float)Math.cos(a)*Rr*.68f,iy=cy+(float)Math.sin(a)*Rr*.68f;
             if(i%2==0)ui.icon(c,new int[]{Icons.CHEVRON_UP,Icons.CHEVRON_RIGHT,Icons.CHEVRON_DOWN,Icons.CHEVRON_LEFT}[i/2],ix,iy,18,i==dpadDir?0xff8fbcff:Ui.TEXT);
             else{p.setColor(i==dpadDir?0xff8fbcff:Ui.TEXT_2);c.drawCircle(ix,iy,dp(2.5f),p);}}
-        // Draw button (+ cancel while a shape or selection is in progress)
-        float bt=h-dp(22)-dp(56),bw=rr-l;
+        // Draw button bottom-right of the canvas (+ cancel beside it while a shape or selection is in progress)
+        float rr=canvasR.right-dp(14),bt=canvasR.bottom-dp(14)-dp(56),dl=rr-drawW();
         boolean busy=stage>0||floating!=null;
-        float dl=busy?l+dp(62):l;
-        if(busy){r.set(l,bt,l+dp(56),bt+dp(56));ui.round(c,r,dp(12),Ui.SURFACE_2);ui.outline(c,r,dp(12),0x22ffffff,dp(1));ui.icon(c,Icons.CANCEL,r.centerX(),r.centerY()-dp(6),20,Ui.TEXT);ui.text(c,"Cancel",r.centerX(),r.centerY()+dp(16),9.5f,Ui.TEXT_2,1,0);ui.hit(r,H_CANCEL);}
+        if(busy){r.set(dl-dp(62),bt,dl-dp(6),bt+dp(56));ui.round(c,r,dp(12),Ui.SURFACE_2);ui.outline(c,r,dp(12),0x22ffffff,dp(1));ui.icon(c,Icons.CANCEL,r.centerX(),r.centerY()-dp(6),20,Ui.TEXT);ui.text(c,"Cancel",r.centerX(),r.centerY()+dp(16),9.5f,Ui.TEXT_2,1,0);ui.hit(r,H_CANCEL);}
         r.set(dl,bt,rr,bt+dp(56));
         boolean down=drawPointer>=0;
         ui.round(c,r.left,r.top+dp(3),r.right,r.bottom+dp(3),dp(12),0x66000000);
