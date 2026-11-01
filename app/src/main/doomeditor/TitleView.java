@@ -28,6 +28,21 @@ public class TitleView extends View {
     private ArrayList<ProjectStore.Meta> projects=new ArrayList<>();
     private boolean creating;private String newName="My Doom Game";private int template=0;
     private float w,h,scroll,downX,downY,lastY;private boolean dragged;private int downHit=-1;
+    /** Rounded-square path through the centre of the arena's outer lanes: centre (10,10), half-size 8, corner radius 3. */
+    private static final float LANE_C=10,LANE_H=8,LANE_R=3,LANE_S=2*(LANE_H-LANE_R),LANE_ARC=(float)(Math.PI*.5*LANE_R),LANE_LEN=4*(LANE_S+LANE_ARC);
+    private final float[] pose=new float[3];
+    /** Camera x, y and view angle at distance {@code d} along the lane loop (anticlockwise). */
+    void lanePose(float d){
+        d%=LANE_LEN;if(d<0)d+=LANE_LEN;
+        int side=(int)(d/(LANE_S+LANE_ARC));float u=d-side*(LANE_S+LANE_ARC);
+        // side 0 runs along +y on the east lane, then each side is rotated 90 degrees
+        float px,py,heading;
+        float e=LANE_H-LANE_R;
+        if(u<LANE_S){px=LANE_H;py=-e+u;heading=(float)(Math.PI*.5);}
+        else{float a=(u-LANE_S)/LANE_R;px=e+(float)Math.cos(a)*LANE_R;py=e+(float)Math.sin(a)*LANE_R;heading=(float)(Math.PI*.5)+a;}
+        double rot=side*Math.PI*.5;float cs=(float)Math.cos(rot),sn=(float)Math.sin(rot);
+        pose[0]=LANE_C+px*cs-py*sn;pose[1]=LANE_C+px*sn+py*cs;pose[2]=heading+(float)rot+.28f;
+    }
     private long clock,last=System.nanoTime(),lastTouch=System.currentTimeMillis();
     private LinearGradient shade;private float shadeW=-1;
     /** The orbiting backdrop runs smoothly at the display rate, pauses behind the New Project dialog,
@@ -46,9 +61,10 @@ public class TitleView extends View {
         w=getWidth();h=getHeight();ui.clearHits();
         long now=System.nanoTime();if(animating())clock+=Math.min(100_000_000L,now-last);last=now;
         float t=clock*1e-9f;
-        // Backdrop: slow orbit around the arena.
-        float ang=t*.12f,cx=10+(float)Math.cos(ang)*6.5f,cy=10+(float)Math.sin(ang)*6.5f;
-        r.set(0,0,w,h);renderer.render(c,backdrop,cx,cy,1.35f,ang+(float)Math.PI*.82f,.05f,r,sprites);
+        // Backdrop: a slow walk down the middle of the arena's outer lanes (a rounded square), looking ahead
+        // with a slight turn toward the centre. The camera stays 2 units from every wall and never enters a pillar.
+        lanePose(t*1.1f);
+        r.set(0,0,w,h);renderer.render(c,backdrop,pose[0],pose[1],1.35f,pose[2],.04f,r,sprites);
         if(shade==null||shadeW!=w){shadeW=w;shade=new LinearGradient(0,0,w,0,new int[]{0xf20d0f12,0xd90d0f12,0x800d0f12},new float[]{0,.45f,1},Shader.TileMode.CLAMP);}
         p.setColor(0xffffffff);p.setShader(shade);
         c.drawRect(0,0,w,h,p);p.setShader(null);
