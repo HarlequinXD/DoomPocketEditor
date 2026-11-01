@@ -31,20 +31,23 @@ final class DefaultContent {
         return l;
     }
 
-    static EntityDef player(){
-        EntityDef d=new EntityDef("player","Player",EntityDef.PLAYER,Sprites.PLAYER);
+    static EntityDef player(){return player(false);}
+    /** The player; {@code third} builds the third-person controller (orbit camera, camera-relative movement). */
+    static EntityDef player(boolean third){
+        EntityDef d=new EntityDef("player",third?"Player (Third Person)":"Player",EntityDef.PLAYER,Sprites.PLAYER);
         d.health=100;d.radius=.4f;d.height=1.4f;d.speed=6f;d.solid=true;d.shootable=true;
         FSMGraph g=d.fsm;
         FSMGraph.Node spawn=g.add("Spawn",0,0),play=g.add("Playing",260,0),shoot=g.add("Shooting",580,-60),use=g.add("Using",580,150),sw=g.add("Switch Weapon",580,290),jump=g.add("Jumping",260,330),dead=g.add("Dead",0,330),wait=g.add("Wait For Fire",0,500),restart=g.add("Restart",280,500);
+        if(third)spawn.add("third_person_camera").set("style","Orbit").set("distance","3.8").set("height","0.8").set("shoulder","0.35");
         spawn.add("select_weapon").set("weapon","Pistol");
         spawn.on("FINISHED",play);
-        controls(play);
+        controls(play,third);
         play.add("button_held").set("button","Fire").set("event","FIRE");
         play.add("button_pressed").set("button","Use").set("event","USE");
         play.add("button_pressed").set("button","Weapon").set("event","NEXT_WEAPON");
         play.add("button_pressed").set("button","Jump").set("event","JUMP");
         play.on("FIRE",shoot).on("USE",use).on("NEXT_WEAPON",sw).on("JUMP",jump);
-        controls(shoot);
+        controls(shoot,third);
         shoot.add("fire_weapon");
         shoot.on("READY",play).on("NO_AMMO",sw);
         use.add("use_now");use.on("FINISHED",play);
@@ -60,7 +63,8 @@ final class DefaultContent {
         g.start=spawn.id;
         return d;
     }
-    private static void controls(FSMGraph.Node n){n.add("move_joystick");n.add("look_touch");}
+    private static void controls(FSMGraph.Node n,boolean third){
+        if(third){n.add("move_camera_relative");n.add("orbit_camera_look");}else{n.add("move_joystick");n.add("look_touch");}}
 
     static EntityDef monster(String id,String name,int sprite,int health,float speed,boolean projectile){
         EntityDef d=new EntityDef(id,name,EntityDef.MONSTER,sprite);

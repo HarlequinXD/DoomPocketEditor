@@ -22,7 +22,7 @@ public class TitleView extends View {
     private final RectF r=new RectF();
     private final Renderer renderer=new Renderer();
     private final Level backdrop=Templates.arena();
-    private final Level[] previews={new Level(),Templates.arena(),Templates.empty()};
+    private final Level[] previews={new Level(),Templates.arena(),Templates.empty(),Templates.courtyard()};
     private final ArrayList<Renderer.SpriteDraw> sprites=new ArrayList<>();
     UiHost host;Listener listener;
     private ArrayList<ProjectStore.Meta> projects=new ArrayList<>();
@@ -94,17 +94,18 @@ public class TitleView extends View {
     static String ago(long t){long s=(System.currentTimeMillis()-t)/1000;if(s<60)return "just now";if(s<3600)return (s/60)+" min ago";if(s<86400)return (s/3600)+" h ago";return (s/86400)+" d ago";}
     private void drawNewProject(Canvas c){
         ui.rect(c,0,0,w,h,0xb3000000);
-        float pw=Math.min(w-dp(48),dp(720)),ph=Math.min(h-dp(32),dp(360)),L=(w-pw)*.5f,T=(h-ph)*.5f,R=L+pw,B=T+ph;
+        float pw=Math.min(w-dp(48),dp(820)),ph=Math.min(h-dp(32),dp(360)),L=(w-pw)*.5f,T=(h-ph)*.5f,R=L+pw,B=T+ph;
         ui.round(c,L,T+dp(4),R,B+dp(4),dp(14),0x80000000);ui.panel(c,L,T,R,B,dp(14));
         ui.text(c,"New project",L+dp(22),T+dp(36),17,Ui.TEXT,1,-1);
         ui.caption(c,"Game name",L+dp(22),T+dp(64),Ui.TEXT_3);
         r.set(L+dp(22),T+dp(72),R-dp(22),T+dp(110));ui.round(c,r,dp(8),Ui.BG);ui.outline(c,r,dp(8),Ui.BORDER,dp(1));
         ui.textMid(c,newName,r.left+dp(12),r.centerY(),14,Ui.TEXT,1,-1);ui.icon(c,Icons.PEN,r.right-dp(18),r.centerY(),15,Ui.TEXT_3);ui.hit(r,H_NAME);
         ui.caption(c,"Template",L+dp(22),T+dp(134),Ui.TEXT_3);
-        float ct=T+dp(142),cb=B-dp(64),cw=(pw-dp(44)-dp(20))/3f;
-        for(int i=0;i<3;i++){float x=L+dp(22)+i*(cw+dp(10));r.set(x,ct,x+cw,cb);boolean on=template==i;
+        float ct=T+dp(142),cb=B-dp(64);int nt=ProjectStore.TEMPLATES.length;float cw=(pw-dp(44)-dp(10)*(nt-1))/nt;
+        for(int i=0;i<nt;i++){float x=L+dp(22)+i*(cw+dp(10));r.set(x,ct,x+cw,cb);boolean on=template==i;
             ui.round(c,r,dp(10),on?0xff26324a:Ui.SURFACE_2);ui.outline(c,r,dp(10),on?Ui.ACCENT:0x14ffffff,on?dp(2):dp(1));
             float mh=Math.max(dp(30),(cb-ct)-dp(70));drawMiniMap(c,previews[i],x+dp(10),ct+dp(10),x+cw-dp(10),ct+dp(10)+mh);
+            if(i==3){float bx=x+dp(24),by=ct+dp(24);p.setColor(0xe0151a22);c.drawCircle(bx,by,dp(12),p);ui.icon(c,Icons.CAMERA,bx,by,14,Ui.ACCENT);}
             ui.text(c,ProjectStore.TEMPLATES[i],x+dp(12),ct+mh+dp(30),13,Ui.TEXT,1,-1);
             ui.text(c,ui.ellipsize(ProjectStore.TEMPLATE_DESC[i],10.5f,0,cw-dp(24)),x+dp(12),ct+mh+dp(48),10.5f,Ui.TEXT_3);
             if(on){p.setColor(Ui.ACCENT);c.drawCircle(r.right-dp(14),r.top+dp(14),dp(9),p);ui.icon(c,Icons.CHECK,r.right-dp(14),r.top+dp(14),12,0xffffffff);}
@@ -135,7 +136,7 @@ public class TitleView extends View {
     private void action(int id){
         if(creating){
             if(id==H_NAME&&host!=null)host.prompt("Game name",null,newName,false,t->{if(!t.trim().isEmpty())newName=t.trim();});
-            else if(id>=H_TEMPLATE&&id<H_TEMPLATE+3)template=id-H_TEMPLATE;
+            else if(id>=H_TEMPLATE&&id<H_TEMPLATE+ProjectStore.TEMPLATES.length)template=id-H_TEMPLATE;
             else if(id==H_CANCEL)creating=false;
             else if(id==H_CREATE){Project p=ProjectStore.create(getContext(),newName,template);Project.set(p);creating=false;if(listener!=null)listener.openProject(p.id);}
             invalidate();return;

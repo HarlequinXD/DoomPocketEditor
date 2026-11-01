@@ -37,19 +37,31 @@ final class Project {
     String uniqueId(String base){String b=base.toLowerCase().replaceAll("[^a-z0-9]+","_");if(b.isEmpty())b="entity";String id=b;int n=2;while(def(id)!=null||sprite(id)!=null)id=b+"_"+(n++);return id;}
     int countPlaced(String defId){int c=0;for(Level.Thing t:level.things)if(defId.equals(t.def))c++;return c;}
     /** Sprite frame for an entity type, preferring its custom sprite. */
-    Sprites.Sprite spriteFor(EntityDef d,int builtin,int frame,float time,float deadTime){
-        if(d!=null&&builtin==d.sprite){CustomSprite cs=sprite(d.customSprite);if(cs!=null){Sprites.Sprite s=cs.frameFor(frame,time,deadTime);if(s!=null)return s;}}
+    Sprites.Sprite spriteFor(EntityDef d,int builtin,int frame,float time,float deadTime){return spriteFor(d,builtin,frame,time,deadTime,0f);}
+    Sprites.Sprite spriteFor(EntityDef d,int builtin,int frame,float time,float deadTime,float viewDelta){
+        if(d!=null&&builtin==d.sprite){CustomSprite cs=sprite(d.customSprite);if(cs!=null){Sprites.Sprite s=cs.frameFor(frame,time,deadTime,CustomSprite.viewIndex(viewDelta,cs.angles));if(s!=null)return s;}}
+        if(Sprites.hasBack(builtin)&&Math.abs(viewDelta)>Math.PI*.5f&&frame!=Sprites.F_DEAD)return Sprites.getBack(builtin,frame);
         return Sprites.get(builtin,frame);
     }
 
     /** Sprite for a live actor: the FSM-chosen animation clip if any, otherwise the automatic frame. */
-    Sprites.Sprite actorSprite(Actor a,int autoFrame,float worldTime){
+    Sprites.Sprite actorSprite(Actor a,int autoFrame,float worldTime){return actorSprite(a,autoFrame,worldTime,0f);}
+    /**
+     * As above, seen from a camera at {@code viewDelta} radians from the actor's facing (0 = camera in front).
+     * Custom sprites with 4 or 8 angles pick the matching view; built-in humanoids show their rear when seen from behind.
+     */
+    Sprites.Sprite actorSprite(Actor a,int autoFrame,float worldTime,float viewDelta){
+        CustomSprite cs=a.def!=null&&a.sprite==a.def.sprite?sprite(a.def.customSprite):null;
+        boolean back=cs==null&&Sprites.hasBack(a.sprite)&&Math.abs(viewDelta)>Math.PI*.5f;
+        int view=cs==null?0:CustomSprite.viewIndex(viewDelta,cs.angles);
         if(a.animClip!=null&&a.def!=null&&a.sprite==a.def.sprite){
-            CustomSprite cs=sprite(a.def.customSprite);
-            if(cs!=null){CustomSprite.Clip c=cs.clip(a.animClip);if(c!=null&&!c.frames.isEmpty())return cs.frameAt(c,animIndex(c,a));}
-            return Sprites.get(a.sprite,builtinFrame(a.animClip,a.animTime));
+            if(cs!=null){CustomSprite.Clip c=cs.clip(a.animClip);if(c!=null&&!c.frames.isEmpty())return cs.frameAt(c,animIndex(c,a),view);}
+            int f=builtinFrame(a.animClip,a.animTime);
+            return back?Sprites.getBack(a.sprite,f):Sprites.get(a.sprite,f);
         }
-        return spriteFor(a.def,a.sprite,autoFrame,worldTime,a.deadTime);
+        if(cs!=null){Sprites.Sprite s=cs.frameFor(autoFrame,worldTime,a.deadTime,view);if(s!=null)return s;}
+        if(back&&autoFrame!=Sprites.F_DEAD)return Sprites.getBack(a.sprite,autoFrame);
+        return Sprites.get(a.sprite,autoFrame);
     }
     static int animIndex(CustomSprite.Clip c,Actor a){int n=c.frames.size();int i=(int)(a.animTime*c.fps);boolean loop=a.animLoop<0?c.loop:a.animLoop==1;return loop?i%n:Math.min(n-1,i);}
     /** Built-in sprites only have a few poses; map clip names onto them. */

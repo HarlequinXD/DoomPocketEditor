@@ -13,8 +13,8 @@ import java.util.Collections;
 /** One JSON file per project in app storage, plus the "current project" pointer. */
 final class ProjectStore {
     private ProjectStore(){}
-    static final String[] TEMPLATES={"Starter level","Arena","Empty project"};
-    static final String[] TEMPLATE_DESC={"Two rooms, a monster and pickups. All 20 entity types.","Big open arena with platforms, pillars, monsters and weapons.","A blank map with just the player type. Build from scratch."};
+    static final String[] TEMPLATES={"Starter level","Arena","Empty project","Third person"};
+    static final String[] TEMPLATE_DESC={"Two rooms, a monster and pickups. All 20 entity types.","Big open arena with platforms, pillars, monsters and weapons.","A blank map with just the player type. Build from scratch.","Open courtyard with a third-person player: orbit camera, run where you push."};
 
     static final class Meta {String id,name,template;long created,modified;int sectors,entities,sprites;}
 
@@ -58,9 +58,12 @@ final class ProjectStore {
         switch(template){
             case 1:p=Project.fresh();p.level=Templates.arena();break;
             case 2:p=new Project();p.level=Templates.empty();p.defs.add(DefaultContent.player());break;
+            case 3:p=Project.fresh();p.level=Templates.courtyard();
+                for(int i=0;i<p.defs.size();i++)if(p.defs.get(i).kind==EntityDef.PLAYER){p.defs.set(i,DefaultContent.player(true));break;}
+                break;
             default:p=Project.fresh();
         }
-        p.id=newId();p.name=name;p.template=TEMPLATES[Math.max(0,Math.min(2,template))];p.created=System.currentTimeMillis();
+        p.id=newId();p.name=name;p.template=TEMPLATES[Math.max(0,Math.min(TEMPLATES.length-1,template))];p.created=System.currentTimeMillis();
         p.saveNow(c);setCurrent(c,p.id);return p;
     }
     static void delete(Context c,String id){file(c,id).delete();if(id.equals(currentId(c)))c.getSharedPreferences("app",0).edit().remove("current").apply();}

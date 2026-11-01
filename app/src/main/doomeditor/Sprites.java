@@ -17,7 +17,8 @@ final class Sprites {
     static final float PPU=32f;
 
     static final class Sprite {final int w,h;final int[] px;final boolean bright;Sprite(int w,int h,boolean bright){this.w=w;this.h=h;px=new int[w*h];this.bright=bright;}}
-    private static Sprite[][] sprites;
+    private static Sprite[][] sprites,backs;
+    private static boolean buildingBack;
     private static Sprite[][] effects;
     private static Sprite[] weapons,flashes;
 
@@ -25,12 +26,19 @@ final class Sprites {
         if(sprites!=null)return;
         sprites=new Sprite[COUNT][FRAMES];
         for(int s=0;s<COUNT;s++)for(int f=0;f<FRAMES;f++)sprites[s][f]=make(s,f);
+        // Rear views for the humanoids, used when the camera is behind them (third person).
+        backs=new Sprite[COUNT][];buildingBack=true;
+        for(int s:new int[]{PLAYER,TROOPER,SERGEANT,IMP,DEMON}){backs[s]=new Sprite[FRAMES];for(int f=0;f<FRAMES;f++)backs[s][f]=make(s,f);}
+        buildingBack=false;
         effects=new Sprite[7][3];
         for(int e=0;e<7;e++)for(int f=0;f<3;f++)effects[e][f]=effect(e,f);
         weapons=new Sprite[5];flashes=new Sprite[5];
         for(int i=0;i<5;i++){weapons[i]=weapon(i);flashes[i]=flash(i);}
     }
     static Sprite get(int id,int frame){init();return sprites[Math.max(0,Math.min(COUNT-1,id))][Math.max(0,Math.min(FRAMES-1,frame))];}
+    /** Rear view of a sprite if it has one (humanoids), otherwise the normal view. */
+    static Sprite getBack(int id,int frame){init();int i=Math.max(0,Math.min(COUNT-1,id));Sprite[] b=backs[i];return b==null?get(id,frame):b[Math.max(0,Math.min(FRAMES-1,frame))];}
+    static boolean hasBack(int id){init();return id>=0&&id<COUNT&&backs[id]!=null;}
     static Sprite effect(int id,int frame,boolean dummy){init();return effects[Math.max(0,Math.min(6,id))][Math.max(0,Math.min(2,frame))];}
     static Sprite weaponSprite(int w){init();return weapons[Math.max(0,Math.min(4,w))];}
     static Sprite flashSprite(int w){init();return flashes[Math.max(0,Math.min(4,w))];}
@@ -82,21 +90,30 @@ final class Sprites {
         // arms
         if(frame==F_ATTACK){
             rect(s,7,20,10,26,body);rect(s,24,20,27,26,body);rect(s,10,23,24,26,body);
-            if(style==1||style==4){rect(s,13,22,21,24,0xff3a3a3a);}
+            if((style==1||style==4||style==0)&&!buildingBack){rect(s,13,22,21,24,0xff3a3a3a);}
             if(style==2){oval(s,17,20,4,4,0xffffb030);oval(s,17,20,2,2,0xffffff90);}
         }else{
             int sw=frame==F_WALK1?1:frame==F_WALK2?-1:0;
             rect(s,6,19+sw,9,32+sw,body);rect(s,25,19-sw,28,32-sw,body);
             rect(s,6,31+sw,9,33+sw,skin);rect(s,25,31-sw,28,33-sw,skin);
-            if(style==1||style==4)rect(s,24,26,31,28,0xff3a3a3a);
+            if(style==1||style==4||style==0)rect(s,24,26,31,28,0xff3a3a3a);
+        }
+        boolean back=buildingBack;
+        if(back){
+            // rear: spine shading, backpack for the marine, no face
+            rect(s,16,19,18,32,shade(body,.75f));
+            if(style==0){rect(s,11,19,23,30,0xff4a4636);rect(s,11,19,23,20,0xff5e5844);rect(s,12,27,22,28,0xff3a3628);rect(s,13,22,21,23,0xff3a3628);}
+            if(style==1||style==4){rect(s,12,20,22,22,0xff3a3a3a);}
+            if(style==3){for(int y=20;y<=32;y+=3)rect(s,15,y,19,y+1,shade(body,.6f));}
         }
         // head
-        oval(s,17,11,style==3?7:5.5f,style==3?7:6.5f,skin);
-        if(style==3){rect(s,12,13,22,16,0xff3a0a0a);for(int x=12;x<=22;x+=2)px(s,x,13,0xfff0f0e0);}
-        px(s,15,10,eye);px(s,19,10,eye);px(s,14,10,eye);px(s,20,10,eye);
+        oval(s,17,11,style==3?7:5.5f,style==3?7:6.5f,back?shade(skin,.82f):skin);
+        if(!back){
+            if(style==3){rect(s,12,13,22,16,0xff3a0a0a);for(int x=12;x<=22;x+=2)px(s,x,13,0xfff0f0e0);}
+            px(s,15,10,eye);px(s,19,10,eye);px(s,14,10,eye);px(s,20,10,eye);}
         if(style==2){line(s,10,18,6,13,0xffe8e0c0);line(s,24,18,28,13,0xffe8e0c0);px(s,13,5,0xffe8e0c0);px(s,21,5,0xffe8e0c0);}
-        if(style==0){rect(s,11,4,23,8,shade(body,.8f));rect(s,13,8,21,9,0xff2a3a2a);}
-        if(style==4){rect(s,12,4,22,6,0xff302820);}
+        if(style==0){if(back){oval(s,17,9,6,5.5f,shade(body,.8f));rect(s,12,12,22,14,shade(body,.65f));}else{rect(s,11,4,23,8,shade(body,.8f));rect(s,13,8,21,9,0xff2a3a2a);}}
+        if(style==4){rect(s,12,4,22,back?9:6,0xff302820);}
         finish(s,style*13+frame);
         if(frame==F_PAIN)for(int i=0;i<s.px.length;i++)if((s.px[i]>>>24)!=0){int c=s.px[i];s.px[i]=Textures.rgb(((c>>16)&255)*.6f+100,((c>>8)&255)*.5f+20,(c&255)*.5f+20);}
         return s;

@@ -666,7 +666,7 @@ public class EditorView extends View {
         renderer.highlight=sel3d;
         spriteList.clear();int pool=0;
         for(int i=0;i<level.things.size();i++){Level.Thing t=level.things.get(i);EntityDef d=project.def(t.def);if(d==null)continue;
-            spriteList.add(sd(pool++).set(t.x,t.y,floorAtLevel(t.x,t.y),project.spriteFor(d,d.sprite,Sprites.F_IDLE,walker.time,0),Renderer.id(Renderer.ID_SPRITE,i),false));}
+            spriteList.add(sd(pool++).set(t.x,t.y,floorAtLevel(t.x,t.y),project.spriteFor(d,d.sprite,Sprites.F_IDLE,walker.time,0,World.angleDiff((float)Math.atan2(cam.y-t.y,cam.x-t.x),t.angle)),Renderer.id(Renderer.ID_SPRITE,i),false));}
         renderer.render(c,level,cam.x,cam.y,walker.viewZ,cam.angle,cam.pitch,view3d,spriteList);
         // crosshair
         float cx=view3d.centerX(),cy=view3d.centerY();p.setColor(0xccffffff);c.drawCircle(cx,cy,dp(2),p);
@@ -757,21 +757,27 @@ public class EditorView extends View {
         world.tick(dt);
         Actor pl=world.player;
         spriteList.clear();int pool=0;
-        for(Actor a:world.actors){if(a==pl||!a.visible||a.removed)continue;
+        boolean tp=world.thirdPerson();
+        float cx=world.camX(),cy=world.camY();
+        for(Actor a:world.actors){if((a==pl&&!tp)||!a.visible||a.removed)continue;
             Sprites.Sprite s;boolean bright=false;
             if(a.projectileType>=0){s=Sprites.effect(a.projectileType==1?Sprites.FX_ROCKET:a.projectileType==2?Sprites.FX_PLASMA:Sprites.FX_FIREBALL,0,true);bright=true;}
             else{int f=a.def!=null&&(a.def.kind==EntityDef.MONSTER||a.def.kind==EntityDef.PLAYER)?a.frame():a.sprite==Sprites.TORCH?((int)(world.time*8)&1):a.alive?Sprites.F_IDLE:Sprites.F_DEAD;
-                s=project.actorSprite(a,f,world.time);}
+                // which side of the actor the camera sees (sprite angles / rear views)
+                float view=World.angleDiff((float)Math.atan2(cy-a.y,cx-a.x),a.angle);
+                s=project.actorSprite(a,f,world.time,view);}
             spriteList.add(sd(pool++).set(a.x,a.y,a.z+a.bob-(a.projectileType>=0?.2f:0),s,-1,bright));}
         for(World.Effect e:world.effects){int f=Math.min(2,(int)(e.t/e.life*3));spriteList.add(sd(pool++).set(e.x,e.y,e.z-.2f,Sprites.effect(e.type,f,true),-1,e.type!=Sprites.FX_BLOOD));}
         view3d.set(0,0,w,h);
         renderer.highlight=-1;
-        renderer.renderScene(world.level,world.camX(),world.camY(),world.camZ(),pl.angle,pl.pitch,w,h,spriteList);
-        if(pl.alive){float b=world.bob();int si=world.sectorIndex(pl);renderer.weapon(world.weapon,(float)Math.cos(world.bobPhase*Math.PI*.5f)*Math.min(1,(float)Math.hypot(pl.vx,pl.vy)/6f),b*8,world.weaponRaise,world.weaponFlash>0,si<0?160:world.level.sectors.get(si).light);}
+        renderer.renderScene(world.level,cx,cy,world.camZ(),world.camAngle(),world.camPitch(),w,h,spriteList);
+        if(pl.alive&&!tp){float b=world.bob();int si=world.sectorIndex(pl);renderer.weapon(world.weapon,(float)Math.cos(world.bobPhase*Math.PI*.5f)*Math.min(1,(float)Math.hypot(pl.vx,pl.vy)/6f),b*8,world.weaponRaise,world.weaponFlash>0,si<0?160:world.level.sectors.get(si).light);}
         if(world.damageFlash>0)renderer.tint(0xffff2020,world.damageFlash*.6f);
         if(world.pickupFlash>0)renderer.tint(world.flashColor,world.pickupFlash*.35f);
         if(!pl.alive)renderer.tint(0xff800000,.35f);
         renderer.present(c,view3d);
+        if(tp&&pl.alive){float mx=w*.5f,my=h*.5f;p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(1.5f));p.setColor(0xccffffff);
+            c.drawCircle(mx,my,dp(6),p);p.setStyle(Paint.Style.FILL);c.drawCircle(mx,my,dp(1.5f),p);}
         drawHud(c);
         if(!world.levelComplete){drawJoystick(c);drawPlayButtons(c);}
         else drawComplete(c);

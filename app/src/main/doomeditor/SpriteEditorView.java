@@ -32,7 +32,7 @@ public class SpriteEditorView extends View {
     private static final int H_BACK=1,H_SPRITE=2,H_MENU=3,H_UNDO=4,H_REDO=5,H_APPLY=6,H_SAVE=7,H_COLOR=8,H_GRID=9,H_ONION=10,H_MIRROR=11,H_SIZE=12,H_PERFECT=13,
             H_ZOOMIN=14,H_ZOOMOUT=15,H_DRAW=16,H_CANCEL=17,H_ADDCLIP=18,H_ADDFRAME=19,H_DUPFRAME=20,H_DELFRAME=21,H_PLAY=22,H_FPS=23,H_LOOP=24,
             H_NEWBLANK=25,H_NEWBUILTIN=26,H_PICK_OK=27,H_PICK_CANCEL=28,H_PICK_HEX=29,H_PICK_SV=30,H_PICK_HUE=31,H_PICK_ALPHA=32,H_SWAPCOL=33,
-            H_TOOL=100,H_PAL=200,H_CLIP=300,H_FRAME=500,H_RECENT=800;
+            H_ANGLES=34,H_VIEW=900,H_TOOL=100,H_PAL=200,H_CLIP=300,H_FRAME=500,H_RECENT=800;
 
     final Project project;
     CustomSprite sprite;
@@ -59,7 +59,7 @@ public class SpriteEditorView extends View {
     private float w,h,toolbarH,downX,downY,lastX,lastY,clipScroll,frameScroll;private boolean dragged;private int downHit=-1,scrollZone;
     // colour picker
     boolean pickerOpen;private float pickH,pickS,pickV,pickA;private int pickTarget;private final ArrayList<Integer> recent=new ArrayList<>();
-    private Bitmap frameBmp,onionBmp;private int bmpVersion=-1;
+    private Bitmap frameBmp,onionBmp,refBmp;private int bmpVersion=-1;
     private final HashMap<int[],Bitmap> thumbCache=new HashMap<>();private int thumbVersion=-1;private CustomSprite thumbSprite;
     private Bitmap thumb(int[] px){
         if(thumbSprite!=sprite||thumbVersion!=sprite.version){thumbCache.clear();thumbSprite=sprite;thumbVersion=sprite.version;}
@@ -77,9 +77,13 @@ public class SpriteEditorView extends View {
         if(s!=null)open(s);
     }
     EntityDef pendingDef;
-    void open(CustomSprite s){sprite=s;clipIndex=0;frameIndex=0;cursorX=s.w/2;cursorY=s.h/2;stage=0;floating=null;undo.clear();redo.clear();bmpVersion=-1;frameBmp=null;onionBmp=null;zoomStep=0;invalidate();}
+    void open(CustomSprite s){sprite=s;clipIndex=0;frameIndex=0;view=0;cursorX=s.w/2;cursorY=s.h/2;stage=0;floating=null;undo.clear();redo.clear();bmpVersion=-1;frameBmp=null;onionBmp=null;zoomStep=0;invalidate();}
     private CustomSprite.Clip clip(){if(sprite==null)return null;clipIndex=Math.max(0,Math.min(sprite.clips.size()-1,clipIndex));return sprite.clips.get(clipIndex);}
-    private int[] frame(){CustomSprite.Clip c=clip();if(c==null)return null;if(c.frames.isEmpty())c.frames.add(new int[sprite.w*sprite.h]);frameIndex=Math.max(0,Math.min(c.frames.size()-1,frameIndex));return c.frames.get(frameIndex);}
+    /** View angle being edited (0 = front); see {@link CustomSprite#angles}. */
+    int view;
+    /** Frames of the current clip for the view being edited. */
+    private java.util.ArrayList<int[]> list(){CustomSprite.Clip c=clip();if(c==null)return null;view=Math.max(0,Math.min(sprite.angles-1,view));return c.view(view);}
+    private int[] frame(){CustomSprite.Clip c=clip();if(c==null)return null;if(c.frames.isEmpty())c.insertFrame(0,0,new int[sprite.w*sprite.h],false,sprite.angles);java.util.ArrayList<int[]> l=list();frameIndex=Math.max(0,Math.min(l.size()-1,frameIndex));return l.get(frameIndex);}
     private float dp(float v){return ui.dp(v);}
 
     // ---------------------------------------------------------------- layout
@@ -128,8 +132,19 @@ public class SpriteEditorView extends View {
         for(int y=0;y<sprite.h;y+=step)for(int x=0;x<sprite.w;x+=step){boolean dark=((x/step)+(y/step))%2==0;
             ui.rect(c,ox+x*ps,oy+y*ps,ox+Math.min(sprite.w,x+step)*ps,oy+Math.min(sprite.h,y+step)*ps,dark?0xff2a2e35:0xff353a42);}
         int[] f=frame();
-        if(onion&&frameIndex>0){if(onionBmp==null)onionBmp=Bitmap.createBitmap(sprite.w,sprite.h,Bitmap.Config.ARGB_8888);onionBmp.setPixels(clip().frames.get(frameIndex-1),0,sprite.w,0,0,sprite.w,sprite.h);
+        if(onion&&frameIndex>0){if(onionBmp==null)onionBmp=Bitmap.createBitmap(sprite.w,sprite.h,Bitmap.Config.ARGB_8888);onionBmp.setPixels(list().get(frameIndex-1),0,sprite.w,0,0,sprite.w,sprite.h);
             r.set(ox,oy,ox+sw,oy+sh);c.drawBitmap(onionBmp,null,r,fadePaint);}
+        if(view>0&&sprite.angles>1&&sprite.isBlank(f)){
+            // empty view: ghost the mirrored opposite side (what the game will show) or the front, as a drawing guide
+            CustomSprite.Clip gc=clip();int m=CustomSprite.mirrorView(view,sprite.angles);int[] g=sprite.pixels(gc,m,frameIndex);boolean mir=m!=view&&g!=null&&!sprite.isBlank(g);
+            if(!mir)g=sprite.pixels(gc,0,frameIndex);
+            if(g!=null&&!sprite.isBlank(g)){int[] gp=g;if(mir){gp=new int[g.length];for(int y=0;y<sprite.h;y++)for(int x=0;x<sprite.w;x++)gp[y*sprite.w+(sprite.w-1-x)]=g[y*sprite.w+x];}
+                if(refBmp==null||refBmp.getWidth()!=sprite.w||refBmp.getHeight()!=sprite.h)refBmp=Bitmap.createBitmap(sprite.w,sprite.h,Bitmap.Config.ARGB_8888);
+                refBmp.setPixels(gp,0,sprite.w,0,0,sprite.w,sprite.h);r.set(ox,oy,ox+sw,oy+sh);c.drawBitmap(refBmp,null,r,fadePaint);}
+            String note=mir?"Empty view · game shows "+CustomSprite.viewName(m,sprite.angles)+" mirrored":"Empty view · game shows Front";
+            float nw=ui.measure(note,10,1)+dp(20);r.set(canvasR.centerX()-nw*.5f,canvasR.top+dp(46),canvasR.centerX()+nw*.5f,canvasR.top+dp(68));
+            ui.round(c,r,dp(11),0xcc15181c);ui.textMid(c,note,r.centerX(),r.centerY(),10,Ui.TEXT_2,1,0);
+        }
         if(frameBmp==null||frameBmp.getWidth()!=sprite.w||frameBmp.getHeight()!=sprite.h)frameBmp=Bitmap.createBitmap(sprite.w,sprite.h,Bitmap.Config.ARGB_8888);
         frameBmp.setPixels(f,0,sprite.w,0,0,sprite.w,sprite.h);
         r.set(ox,oy,ox+sw,oy+sh);c.drawBitmap(frameBmp,null,r,pixelPaint);
@@ -167,7 +182,7 @@ public class SpriteEditorView extends View {
             float pw=Math.min(dp(110),canvasR.width()*.22f),phh=pw*sprite.h/sprite.w;if(phh>maxH){phh=Math.max(dp(30),maxH);pw=phh*sprite.w/sprite.h;}
             float px=canvasR.right-pw-dp(14),py=canvasR.top+dp(12);
             ui.round(c,px-dp(6),py-dp(6),px+pw+dp(6),py+phh+dp(24),dp(8),0xee1b1e22);ui.outline(c,px-dp(6),py-dp(6),px+pw+dp(6),py+phh+dp(24),dp(8),Ui.BORDER,dp(1));
-            r.set(px,py,px+pw,py+phh);c.drawBitmap(i==frameIndex?frameBmp:thumb(cl2.frames.get(i)),null,r,pixelPaint);
+            r.set(px,py,px+pw,py+phh);c.drawBitmap(i==frameIndex?frameBmp:thumb(cl2.view(view).get(i)),null,r,pixelPaint);
             ui.textMid(c,cl2.name+" · "+(i+1)+"/"+n,px+pw*.5f,py+phh+dp(10),10,Ui.TEXT_2,1,0);}
         c.restoreToCount(save);
     }
@@ -256,27 +271,69 @@ public class SpriteEditorView extends View {
         ui.rect(c,L,T,R,B,Ui.SURFACE);ui.hline(c,L,R,T,Ui.BORDER);
         if(sprite==null){ui.caption(c,"Frames",L+dp(12),T+dp(19),Ui.TEXT_3);return;}
         CustomSprite.Clip cl=clip();
-        ui.caption(c,"Frames · "+cl.name,L+dp(12),T+dp(19),Ui.TEXT_3);
         float x=R-dp(8),bh=dp(26),bt=T+dp(5);
+        java.util.ArrayList<int[]> vl=list();
         Object[][] btn={{H_DELFRAME,Icons.TRASH,cl.frames.size()>1?Ui.DANGER:Ui.DISABLED},{H_DUPFRAME,Icons.COPY,Ui.NORMAL},{H_LOOP,Icons.RESET,cl.loop?Ui.ACTIVE:Ui.NORMAL}};
         for(Object[] b:btn){r.set(x-bh,bt,x,bt+bh);ui.button(c,r,(Integer)b[1],null,(Integer)b[2]);ui.hit(r,(Integer)b[0]);x-=bh+dp(6);}
         String fps=Math.round(cl.fps)+" fps";float fw=ui.measure(fps,11,1)+dp(18);r.set(x-fw,bt,x,bt+bh);ui.button(c,r,-1,fps,Ui.NORMAL);ui.hit(r,H_FPS);x-=fw+dp(6);
-        float pw=dp(64);r.set(x-pw,bt,x,bt+bh);ui.button(c,r,playing?Icons.STOP:Icons.PLAY,playing?"Stop":"Play",playing?Ui.SUCCESS:Ui.NORMAL);ui.hit(r,H_PLAY);
+        float pw=dp(64);r.set(x-pw,bt,x,bt+bh);ui.button(c,r,playing?Icons.STOP:Icons.PLAY,playing?"Stop":"Play",playing?Ui.SUCCESS:Ui.NORMAL);ui.hit(r,H_PLAY);x-=pw+dp(6);
+        String an=sprite.angles==1?"1 angle":sprite.angles+" angles";float aw=ui.measure(an,11,1)+dp(38);r.set(x-aw,bt,x,bt+bh);
+        ui.button(c,r,Icons.CAMERA,an,sprite.angles>1?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_ANGLES);x-=aw+dp(10);
+        String cap=sprite.angles>1?cl.name+" · "+CustomSprite.viewName(view,sprite.angles):"Frames · "+cl.name;
+        ui.caption(c,ui.ellipsize(cap,10,1,Math.max(dp(20),x-L-dp(12))),L+dp(12),T+dp(19),Ui.TEXT_3);
         float top=T+dp(36),cellH=B-top-dp(10),cellW=Math.max(dp(40),cellH*Math.min(1.2f,(float)sprite.w/sprite.h)),gap=dp(8);
-        float content=(cl.frames.size()+1)*(cellW+gap);float max=Math.max(0,content-(R-L-dp(20)));frameScroll=clamp(frameScroll,0,max);
+        if(sprite.angles>1){float cs=cellH;drawCompass(c,L+dp(10),top,L+dp(10)+cs,top+cs,cl);L+=cs+dp(12);ui.vline(c,L-dp(2),top,top+cs,Ui.BORDER);}
+        float content=(vl.size()+1)*(cellW+gap);float max=Math.max(0,content-(R-L-dp(20)));frameScroll=clamp(frameScroll,0,max);
         int save=c.save();c.clipRect(L,top-dp(2),R,B);
         float playIdx=-1;if(playing){float t=(System.nanoTime()-playStart)*1e-9f;int n=cl.frames.size();playIdx=cl.loop?(int)(t*cl.fps)%n:Math.min(n-1,(int)(t*cl.fps));}
         for(int i=0;i<=cl.frames.size();i++){float fx=L+dp(12)+i*(cellW+gap)-frameScroll;if(fx+cellW<L||fx>R)continue;
             r.set(fx,top,fx+cellW,top+cellH);
             if(i==cl.frames.size()){ui.round(c,r,dp(6),0x00000000);ui.outline(c,r,dp(6),0x33ffffff,dp(1.5f));ui.icon(c,Icons.PLUS,r.centerX(),r.centerY(),18,Ui.TEXT_2);ui.hit(r,H_ADDFRAME);continue;}
             swatchRect(c,r.left,r.top,r.right,r.bottom,0,dp(6));
-            Bitmap tb=i==frameIndex&&frameBmp!=null?frameBmp:thumb(cl.frames.get(i));
+            int[] tpx=vl.get(i);boolean mirrored=view>0&&sprite.usesMirror(cl,i,view);
+            if(mirrored){int[] mp=sprite.pixels(cl,CustomSprite.mirrorView(view,sprite.angles),i);tpx=mirroredCopy(mp);}
+            Bitmap tb=i==frameIndex&&frameBmp!=null&&!mirrored?frameBmp:thumb(tpx);
             float sc=Math.min((cellW-dp(6))/sprite.w,(cellH-dp(14))/sprite.h),dw=sprite.w*sc,dh=sprite.h*sc;
             RectF d=new RectF(r.centerX()-dw*.5f,r.top+dp(3),r.centerX()+dw*.5f,r.top+dp(3)+dh);c.drawBitmap(tb,null,d,pixelPaint);
             boolean on=i==frameIndex;ui.outline(c,r,dp(6),on?Ui.ACCENT:i==playIdx?Ui.GREEN:0x26ffffff,on||i==playIdx?dp(2.5f):dp(1));
             ui.round(c,r.left+dp(3),r.bottom-dp(15),r.left+dp(19),r.bottom-dp(3),dp(3),0xcc15181c);ui.textMid(c,String.valueOf(i+1),r.left+dp(11),r.bottom-dp(9),9,Ui.TEXT,1,0);
+            if(mirrored){ui.round(c,r.right-dp(19),r.top+dp(3),r.right-dp(3),r.top+dp(19),dp(3),0xcc15181c);ui.icon(c,Icons.MIRROR,r.right-dp(11),r.top+dp(11),11,Ui.TEXT_2);}
             ui.hit(r,H_FRAME+i);}
         c.restoreToCount(save);
+    }
+    private final java.util.HashMap<int[],int[]> mirrorThumbs=new java.util.HashMap<>();
+    private int mirrorThumbVersion=-1;
+    private int[] mirroredCopy(int[] px){
+        if(mirrorThumbVersion!=sprite.version){mirrorThumbs.clear();mirrorThumbVersion=sprite.version;}
+        int[] m=mirrorThumbs.get(px);if(m==null){m=new int[px.length];for(int y=0;y<sprite.h;y++)for(int x=0;x<sprite.w;x++)m[y*sprite.w+(sprite.w-1-x)]=px[y*sprite.w+x];mirrorThumbs.put(px,m);}return m;
+    }
+    /**
+     * Top-down picker for the view being drawn: the entity sits in the middle facing down (towards you);
+     * each dot is a camera position. Filled dots have art, ring dots reuse the mirrored opposite side.
+     */
+    private void drawCompass(Canvas c,float L,float T,float R,float B,CustomSprite.Clip cl){
+        float cx=(L+R)*.5f,cy=(T+B)*.5f,rad=Math.min(R-L,B-T)*.5f;
+        ui.round(c,L,T,R,B,dp(8),Ui.SURFACE_2);rad-=dp(2);
+        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(1));p.setColor(0x33ffffff);c.drawCircle(cx,cy,rad*.72f,p);p.setStyle(Paint.Style.FILL);
+        // the entity, facing down
+        p.setColor(Ui.TEXT_3);c.drawCircle(cx,cy,rad*.13f,p);
+        android.graphics.Path ar=new android.graphics.Path();ar.moveTo(cx-rad*.12f,cy+rad*.12f);ar.lineTo(cx+rad*.12f,cy+rad*.12f);ar.lineTo(cx,cy+rad*.34f);ar.close();c.drawPath(ar,p);
+        int n=sprite.angles;
+        for(int v=0;v<n;v++){double th=Math.PI*.5+v*Math.PI*2/n;float dx=cx+(float)Math.cos(th)*rad*.72f,dy=cy+(float)Math.sin(th)*rad*.72f;
+            boolean on=v==view,has=v==0||!sprite.isBlank(cl.view(v).get(Math.max(0,Math.min(cl.frames.size()-1,frameIndex))));
+            float base=Math.min(dp(8),rad*(n>4?.19f:.24f)),dr=on?base*1.35f:base;
+            p.setColor(on?Ui.ACCENT:has?0xff7c8796:0xff15181c);c.drawCircle(dx,dy,dr,p);
+            if(!has){p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(1.5f));p.setColor(on?0xffffffff:0xff5a6270);c.drawCircle(dx,dy,dr-dp(1),p);p.setStyle(Paint.Style.FILL);}
+            if(on||rad>dp(44))ui.textMid(c,CustomSprite.viewShort(v,n),dx,dy,on?(n>4?7.5f:8.5f):7f,on?0xffffffff:has?0xff15181c:Ui.TEXT_3,1,0);
+            ui.hit(dx-dp(14),dy-dp(14),dx+dp(14),dy+dp(14),H_VIEW+v);}
+    }
+    private void chooseAngles(){
+        if(host==null||sprite==null)return;
+        String[] items={"1 angle — always faces the camera","4 angles — front, right, back, left","8 angles — Doom-style rotations"};
+        host.choose("Sprite angles",items,sprite.angles==8?2:sprite.angles==4?1:0,k->{
+            int n=CustomSprite.ANGLE_OPTIONS[k];if(n==sprite.angles)return;
+            Runnable go=()->{cancelOp();sprite.setAngles(n);view=Math.min(view,n-1);undo.clear();redo.clear();save();invalidate();};
+            if(n<sprite.angles)host.confirm("Use "+n+(n==1?" angle":" angles")+"?","Views that don't exist with "+n+(n==1?" angle":" angles")+" will be removed from every clip.","Remove views",go);else go.run();});
     }
     private float dpadR(){return Math.max(dp(40),Math.min(dp(58),canvasR.height()*.3f));}
     private float dpadCX(){return canvasR.left+dp(14)+dpadR();}
@@ -547,7 +604,7 @@ public class SpriteEditorView extends View {
                 case 6:{beginEdit();int[] src=f.clone();for(int y=0;y<H;y++)for(int x=0;x<W;x++){if((src[y*W+x]>>>24)!=0)continue;
                     boolean edge=(x>0&&(src[y*W+x-1]>>>24)!=0)||(x<W-1&&(src[y*W+x+1]>>>24)!=0)||(y>0&&(src[(y-1)*W+x]>>>24)!=0)||(y<H-1&&(src[(y+1)*W+x]>>>24)!=0);if(edge)f[y*W+x]=0xff141010;}endEdit();break;}
                 case 7:beginEdit();java.util.Arrays.fill(f,0);endEdit();break;
-                case 8:{CustomSprite.Clip c=clip();for(int k=0;k<c.frames.size();k++)if(k!=frameIndex)System.arraycopy(f,0,c.frames.get(k),0,f.length);sprite.touch();save();break;}
+                case 8:{java.util.ArrayList<int[]> l=list();for(int k=0;k<l.size();k++)if(k!=frameIndex)System.arraycopy(f,0,l.get(k),0,f.length);sprite.touch();save();break;}
                 case 9:host.choose("Resize canvas (keeps pixels, anchored bottom-centre)",SIZES,-1,k->resize(SIZE_WH[k][0],SIZE_WH[k][1]));break;
                 case 10:host.prompt("Rename sprite",null,sprite.name,false,t->{if(!t.trim().isEmpty()){sprite.name=t.trim();save();}});break;
                 case 11:{try{CustomSprite c=CustomSprite.fromJson(sprite.toJson());c.id=project.uniqueId(sprite.name+" copy");c.name=sprite.name+" copy";project.sprites.add(c);open(c);save();}catch(Exception ignored){}break;}
@@ -560,8 +617,8 @@ public class SpriteEditorView extends View {
     }
     private void resize(int nw,int nh){
         int ow=sprite.w,oh=sprite.h,dx=(nw-ow)/2,dy=nh-oh;
-        for(CustomSprite.Clip c:sprite.clips)for(int k=0;k<c.frames.size();k++){int[] src=c.frames.get(k),dst=new int[nw*nh];
-            for(int y=0;y<oh;y++)for(int x=0;x<ow;x++){int nx=x+dx,ny=y+dy;if(nx>=0&&ny>=0&&nx<nw&&ny<nh)dst[ny*nw+nx]=src[y*ow+x];}c.frames.set(k,dst);}
+        for(CustomSprite.Clip c:sprite.clips)for(int v=0;v<sprite.angles;v++){java.util.ArrayList<int[]> l=c.view(v);for(int k=0;k<l.size();k++){int[] src=l.get(k),dst=new int[nw*nh];
+            for(int y=0;y<oh;y++)for(int x=0;x<ow;x++){int nx=x+dx,ny=y+dy;if(nx>=0&&ny>=0&&nx<nw&&ny<nh&&y*ow+x<src.length)dst[ny*nw+nx]=src[y*ow+x];}l.set(k,dst);}}
         sprite.w=nw;sprite.h=nh;sprite.touch();undo.clear();redo.clear();frameBmp=null;onionBmp=null;cursorX=Math.min(cursorX+dx,nw-1);cursorY=Math.max(0,Math.min(cursorY+dy,nh-1));save();invalidate();
     }
     private void clipMenu(int i){
@@ -570,7 +627,7 @@ public class SpriteEditorView extends View {
             if(k==3){c.loop=!c.loop;save();invalidate();return;}
             if(k==4){host.choose("Frames per second",new String[]{"2","4","6","8","10","12","15","20","24"},-1,q->{c.fps=new int[]{2,4,6,8,10,12,15,20,24}[q];save();invalidate();});return;}
             if(k==0)host.prompt("Clip name","Idle, Walk, Attack, Pain and Death are used by the game automatically.",c.name,false,t->{if(!t.trim().isEmpty()){c.name=t.trim();save();}});
-            else if(k==1){CustomSprite.Clip d=new CustomSprite.Clip(c.name+" copy");d.fps=c.fps;d.loop=c.loop;for(int[] f:c.frames)d.frames.add(f.clone());sprite.clips.add(i+1,d);sprite.touch();save();}
+            else if(k==1){CustomSprite.Clip d=new CustomSprite.Clip(c.name+" copy");d.fps=c.fps;d.loop=c.loop;for(int[] f:c.frames)d.frames.add(f.clone());for(int v=1;v<sprite.angles;v++){java.util.ArrayList<int[]> dl=d.view(v),sl=c.view(v);for(int q=0;q<sl.size();q++)dl.set(q,sl.get(q).clone());}sprite.clips.add(i+1,d);sprite.touch();save();}
             else if(sprite.clips.size()>1){sprite.clips.remove(i);clipIndex=Math.max(0,i-1);frameIndex=0;sprite.touch();save();}
             invalidate();});
     }
@@ -628,6 +685,7 @@ public class SpriteEditorView extends View {
             else if(id>=H_RECENT&&id<H_RECENT+12){int c=recent.get(id-H_RECENT);float[] hsv=new float[3];Color.colorToHSV(c,hsv);pickH=hsv[0];pickS=hsv[1];pickV=hsv[2];pickA=(c>>>24)/255f;}
             invalidate();return;
         }
+        if(id>=H_VIEW&&id<H_VIEW+8){if(sprite!=null&&id-H_VIEW<sprite.angles){cancelOp();view=id-H_VIEW;}invalidate();return;}
         if(id>=H_RECENT)return;
         if(id>=H_FRAME){int i=id-H_FRAME;if(sprite!=null&&i<clip().frames.size()){cancelOp();frameIndex=i;}invalidate();return;}
         if(id>=H_CLIP){int i=id-H_CLIP;if(sprite!=null&&i<sprite.clips.size()){if(i==clipIndex)clipMenu(i);else{cancelOp();clipIndex=i;frameIndex=0;playStart=System.nanoTime();}}invalidate();return;}
@@ -654,10 +712,11 @@ public class SpriteEditorView extends View {
             case H_NEWBLANK:newBlankDialog();break;
             case H_NEWBUILTIN:if(pendingDef!=null&&host!=null)fromBuiltin(pendingDef.sprite);else newBuiltinDialog();break;
             case H_ADDCLIP:addClip();break;
-            case H_ADDFRAME:if(sprite!=null){cancelOp();clip().frames.add(frameIndex+1,new int[sprite.w*sprite.h]);frameIndex++;sprite.touch();save();}break;
-            case H_DUPFRAME:if(sprite!=null){cancelOp();clip().frames.add(frameIndex+1,frame().clone());frameIndex++;sprite.touch();save();}break;
-            case H_DELFRAME:if(sprite!=null&&clip().frames.size()>1){cancelOp();clip().frames.remove(frameIndex);frameIndex=Math.max(0,frameIndex-1);sprite.touch();save();}break;
+            case H_ADDFRAME:if(sprite!=null){cancelOp();clip().insertFrame(frameIndex+1,view,new int[sprite.w*sprite.h],false,sprite.angles);frameIndex++;sprite.touch();save();}break;
+            case H_DUPFRAME:if(sprite!=null){cancelOp();clip().insertFrame(frameIndex+1,view,frame().clone(),true,sprite.angles);frameIndex++;sprite.touch();save();}break;
+            case H_DELFRAME:if(sprite!=null&&clip().frames.size()>1){cancelOp();clip().removeFrame(frameIndex);frameIndex=Math.max(0,frameIndex-1);sprite.touch();save();}break;
             case H_PLAY:playing=!playing;playStart=System.nanoTime();break;
+            case H_ANGLES:chooseAngles();break;
             case H_LOOP:if(sprite!=null){clip().loop=!clip().loop;save();}break;
             case H_FPS:if(sprite!=null&&host!=null)host.choose("Frames per second",new String[]{"2","4","6","8","10","12","15","20","24"},-1,k->{clip().fps=new int[]{2,4,6,8,10,12,15,20,24}[k];save();invalidate();});break;
         }

@@ -12,8 +12,9 @@ final class Actions {
     private Actions(){}
     static final int T_FLOAT=0,T_INT=1,T_BOOL=2,T_TEXT=3,T_EVENT=4,T_VAR=5,T_CHOICE=6,T_ENTITY=7,T_MATERIAL=8,T_SECTOR=9,T_CLIP=10;
     static final int DONE=0,RUNNING=1;
-    static final String[] CATEGORIES={"Flow","Animation","Variables","Input","Weapons","Health","Movement","AI","World","Entities","Feedback"};
-    static final int[] CATEGORY_ICONS={Icons.GRAPH,Icons.FILM,Icons.TAG,Icons.MOVE,Icons.CROSSHAIR,Icons.HEART,Icons.ARROW_UP,Icons.SKULL,Icons.LAYERS,Icons.ENTITIES,Icons.INFO};
+    static final String CAM_STYLES="Orbit|Shoulder|Chase";
+    static final String[] CATEGORIES={"Flow","Animation","Variables","Input","Weapons","Health","Movement","Camera","AI","World","Entities","Feedback"};
+    static final int[] CATEGORY_ICONS={Icons.GRAPH,Icons.FILM,Icons.TAG,Icons.MOVE,Icons.CROSSHAIR,Icons.HEART,Icons.ARROW_UP,Icons.CAMERA,Icons.SKULL,Icons.LAYERS,Icons.ENTITIES,Icons.INFO};
     static final String WEAPONS="Fist|Pistol|Shotgun|Chaingun|Rocket Launcher";
     static final String AMMO="Bullets|Shells|Rockets";
     static final String BUTTONS="Fire|Use|Jump|Weapon|Alt";
@@ -256,6 +257,43 @@ final class Actions {
         def("set_sprite","Set Sprite","Entities",Icons.ENTITIES,"Changes the sprite this entity shows.",c->{c.self.sprite=Actions.indexOf(Sprites.NAMES_JOINED,c.s("sprite"));return DONE;},"sprite:c("+Sprites.NAMES_JOINED+")=Trooper");
         def("count_entities","Count Entities","Entities",Icons.LIST,"Stores how many living entities of a type exist.",c->{c.setVar("store",c.w.count(c.s("entity")));return c.doneOrRun();},"entity:E=trooper","store:v=count","everyFrame:b=false");
         def("spawn_effect","Spawn Effect","Entities",Icons.SPARKLE,"Shows a visual effect at this entity.",c->{c.w.effect(c.choice("effect","Puff|Blood|Explosion|Teleport"),c.self.x,c.self.y,c.self.z+c.self.height*.5f);return DONE;},"effect:c(Puff|Blood|Explosion|Teleport)=Explosion");
+
+        // ------------------------------------------------------------------ Camera (first / third person)
+        def("third_person_camera","Third Person Camera","Camera",Icons.CAMERA,"Switches the player's view to a third-person camera. Orbit: swipe to circle the camera, the player runs where you push. Shoulder: over-the-shoulder aiming. Chase: the camera swings behind the player.",c->{
+            c.w.thirdPersonCamera(c.choice("style",CAM_STYLES),c.f("distance"),c.f("height"),c.f("shoulder"),c.f("smoothing"));return DONE;},
+            "style:c("+CAM_STYLES+")=Orbit","distance:f=3.8","height:f=0.8","shoulder:f=0.35","smoothing:f=8");
+        def("first_person_camera","First Person Camera","Camera",Icons.CROSSHAIR,"Switches back to the classic Doom first-person view with the weapon on screen.",c->{c.w.firstPersonCamera();return DONE;});
+        def("toggle_camera_view","Toggle Camera View","Camera",Icons.CAMERA,"Flips between first and third person (bind it to a button event).",c->{
+            if(c.w.thirdPerson())c.w.firstPersonCamera();else c.w.thirdPersonCamera(c.choice("style",CAM_STYLES),c.f("distance"),-99,-99,-1);return DONE;},
+            "style:c("+CAM_STYLES+")=Orbit","distance:f=3.2");
+        def("set_camera_style","Set Camera Style","Camera",Icons.CAMERA,"Changes the third-person style without leaving third person.",c->{
+            if(c.w.thirdPerson())c.w.thirdPersonCamera(c.choice("style",CAM_STYLES),-1,-99,-99,-1);return DONE;},"style:c("+CAM_STYLES+")=Shoulder");
+        def("set_camera_distance","Set Camera Distance","Camera",Icons.FIT,"Moves the third-person camera nearer or further (e.g. zoom in while aiming). Speed 0 snaps.",c->{
+            c.w.setCameraDistance(c.f("distance"),c.f("speed"));return DONE;},"distance:f=2","speed:f=8");
+        def("set_camera_offset","Set Camera Offset","Camera",Icons.MOVE,"Sets the camera height above the head and the over-the-shoulder offset (negative = left shoulder).",c->{
+            c.w.camHeight=c.f("height");c.w.camShoulder=c.f("shoulder");return DONE;},"height:f=0.55","shoulder:f=0.35");
+        def("orbit_camera_look","Orbit Camera Look","Camera",Icons.CAMERA,"Swipe to look. In Orbit style this circles the camera around the player; otherwise it turns the player like Look With Touch.",c->{
+            float sens=c.f("sensitivity"),inv=c.b("invertY")?-1:1;World w=c.w;
+            if(w.thirdPerson()&&w.camStyle==World.CS_ORBIT&&c.self==w.player){
+                w.camYaw+=w.input.lookX*.0065f*sens;w.camOrbitPitch=Math.max(-.9f,Math.min(.6f,w.camOrbitPitch-w.input.lookY*.0045f*sens*inv));}
+            else{c.self.angle+=w.input.lookX*.0065f*sens;c.self.pitch=Math.max(-.55f,Math.min(.55f,c.self.pitch-w.input.lookY*.0045f*sens*inv));}
+            return RUNNING;},"sensitivity:f=1","invertY:b=false");
+        def("move_camera_relative","Move Relative To Camera","Camera",Icons.PERSON,"Third-person movement: the joystick moves the player relative to the camera, and the player turns to face where they run (Orbit). In Shoulder/Chase it walks and strafes like the first-person controls.",c->{
+            World w=c.w;float spd=c.f("speed")*(w.input.held(Input.ALT)?1.6f:1f);float fw=-w.input.moveY,st=w.input.moveX;
+            boolean orbit=w.thirdPerson()&&w.camStyle==World.CS_ORBIT&&c.self==w.player;
+            if(!orbit&&w.camStyle==World.CS_CHASE&&w.thirdPerson()){c.self.angle+=st*2.4f*c.dt;st=0;}
+            float yaw=orbit?w.camYaw:c.self.angle;float cs=(float)Math.cos(yaw),sn=(float)Math.sin(yaw);
+            float vx=(cs*fw-sn*st),vy=(sn*fw+cs*st),m=(float)Math.hypot(vx,vy);
+            c.self.wishX=vx*spd;c.self.wishY=vy*spd;c.self.wishActive=true;
+            if(orbit&&m>.15f)w.turnToward(c.self,(float)Math.atan2(vy,vx),c.f("turnSpeed"),c.dt);
+            return RUNNING;},"speed:f=6","turnSpeed:f=12");
+        def("face_movement","Face Movement Direction","Camera",Icons.ARROW_UP,"Smoothly turns this entity to face the direction it is moving.",c->{
+            float sp=(float)Math.hypot(c.self.vx,c.self.vy);if(sp>.4f)c.w.turnToward(c.self,(float)Math.atan2(c.self.vy,c.self.vx),c.f("turnSpeed"),c.dt);return RUNNING;},"turnSpeed:f=10");
+        def("face_camera","Face Camera Direction","Camera",Icons.CROSSHAIR,"Turns the player to face where the camera looks (e.g. before an attack). Turn speed 0 is instant.",c->{
+            World w=c.w;float yaw=w.thirdPerson()?w.camYaw:c.self.angle;w.turnToward(c.self,yaw,c.f("turnSpeed"),c.dt);
+            return c.f("turnSpeed")<=0||Math.abs(World.angleDiff(yaw,c.self.angle))<.05f?DONE:RUNNING;},"turnSpeed:f=0");
+        def("is_third_person","Is Third Person?","Camera",Icons.CAMERA,"Sends one event if the camera is in third person, another if first person.",c->{
+            c.send(c.w.thirdPerson()?"thirdEvent":"firstEvent");return DONE;},"thirdEvent:e=","firstEvent:e=");
 
         // ------------------------------------------------------------------ Feedback
         def("show_message","Show Message","Feedback",Icons.INFO,"Shows a message at the top of the screen, like Doom pickups.",c->{c.w.message(c.s("text"),c.f("seconds"));return DONE;},"text:t=Hello","seconds:f=3");

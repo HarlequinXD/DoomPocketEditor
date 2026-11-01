@@ -117,14 +117,95 @@ final class World {
         if(player.onGround)bobPhase+=dt*speed*1.6f;
         float target=player.z+EYE*(player.alive?1:.25f);
         if(target>viewZ)viewZ+=Math.min(target-viewZ,Math.max(dt*4f,(target-viewZ)*dt*12f));else viewZ=target;
+        updateCamera(dt);
         if(damageFlash>0)damageFlash-=dt*1.5f;if(pickupFlash>0)pickupFlash-=dt*2f;if(shakeTime>0)shakeTime-=dt;
         if(messageTime>0)messageTime-=dt;if(centerTime>0)centerTime-=dt;
         input.endFrame();
     }
-    float bob(){float s=Math.min(1,(float)Math.hypot(player.vx,player.vy)/6f);return (float)Math.sin(bobPhase*Math.PI)*.06f*s;}
-    float camX(){return player.x+(shakeTime>0?(rng.nextFloat()-.5f)*shakeStrength*.3f:0);}
-    float camY(){return player.y+(shakeTime>0?(rng.nextFloat()-.5f)*shakeStrength*.3f:0);}
-    float camZ(){return viewZ+bob();}
+    float bob(){if(camMode==CAM_THIRD)return 0;float s=Math.min(1,(float)Math.hypot(player.vx,player.vy)/6f);return (float)Math.sin(bobPhase*Math.PI)*.06f*s;}
+    float camX(){return (camMode==CAM_THIRD?rigX:player.x)+(shakeTime>0?(rng.nextFloat()-.5f)*shakeStrength*.3f:0);}
+    float camY(){return (camMode==CAM_THIRD?rigY:player.y)+(shakeTime>0?(rng.nextFloat()-.5f)*shakeStrength*.3f:0);}
+    float camZ(){return camMode==CAM_THIRD?rigZ:viewZ+bob();}
+    float camAngle(){return camMode==CAM_THIRD?rigAngle:player.angle;}
+    float camPitch(){return camMode==CAM_THIRD?rigPitch:player.pitch;}
+    boolean thirdPerson(){return camMode==CAM_THIRD;}
+
+    // ------------------------------------------------------------------ camera rig (first / third person)
+    static final int CAM_FIRST=0,CAM_THIRD=1;
+    /** Orbit: the camera turns freely and the player turns to face where they run.
+     *  Shoulder: over-the-shoulder, the player always faces the camera direction.
+     *  Chase: the camera swings round behind the player's facing. */
+    static final String[] CAM_STYLES={"Orbit","Shoulder","Chase"};
+    static final int CS_ORBIT=0,CS_SHOULDER=1,CS_CHASE=2;
+    int camMode=CAM_FIRST,camStyle=CS_ORBIT;
+    float camDist=3.2f,camTargetDist=3.2f,camDistRate=0,camHeight=.55f,camShoulder=0f,camSmooth=8f;
+    float camYaw,camOrbitPitch=-.18f;
+    float rigX,rigY,rigZ,rigAngle,rigPitch,rigLen=-1,chaseYaw;
+    private boolean rigReady;
+    /** Switches to a third-person camera; values below zero keep the current setting. */
+    void thirdPersonCamera(int style,float dist,float height,float shoulder,float smooth){
+        boolean was=camMode==CAM_THIRD;camMode=CAM_THIRD;camStyle=Math.max(0,Math.min(2,style));
+        if(dist>=0){camDist=camTargetDist=Math.max(.8f,dist);camDistRate=0;}if(height>-50)camHeight=height;if(shoulder>-50)camShoulder=shoulder;if(smooth>=0)camSmooth=smooth;
+        if(!was){camYaw=chaseYaw=player.angle;camOrbitPitch=Math.max(-.6f,Math.min(.45f,player.pitch-.18f));rigLen=-1;}
+        updateCamera(0);
+    }
+    void firstPersonCamera(){
+        if(camMode==CAM_THIRD&&camStyle==CS_ORBIT){player.angle=camYaw;player.pitch=Math.max(-.55f,Math.min(.55f,camOrbitPitch+.18f));}
+        camMode=CAM_FIRST;
+    }
+    void setCameraDistance(float d,float speed){camTargetDist=Math.max(.8f,Math.min(12f,d));camDistRate=Math.max(0,speed);if(speed<=0)camDist=camTargetDist;}
+    /** Yaw the camera looks along (where the player aims in third person). */
+    float aimYaw(){return camMode==CAM_THIRD&&camStyle==CS_ORBIT?camYaw:player.angle;}
+    /** Rotates the player toward an angle at up to turnSpeed radians/sec (instant if turnSpeed<=0). */
+    void turnToward(Actor a,float angle,float turnSpeed,float dt){
+        float d=angleDiff(angle,a.angle);if(turnSpeed<=0){a.angle=angle;return;}
+        float m=turnSpeed*dt;a.angle+=Math.max(-m,Math.min(m,d));
+    }
+    /** Places the camera behind the player, pulled in along the ray when walls or low openings are in the way. */
+    void updateCamera(float dt){
+        if(camMode!=CAM_THIRD||player==null){rigReady=false;return;}
+        if(camDistRate>0&&camDist!=camTargetDist){float m=camDistRate*dt;camDist+=Math.max(-m,Math.min(m,camTargetDist-camDist));}
+        float yaw,pitch;
+        if(camStyle==CS_ORBIT){yaw=camYaw;pitch=camOrbitPitch;}
+        else if(camStyle==CS_CHASE){float k=dt<=0||!rigReady?1:Math.min(1,dt*Math.max(.5f,camSmooth)*.5f);chaseYaw+=angleDiff(player.angle,chaseYaw)*k;yaw=chaseYaw;pitch=player.pitch-.15f;}
+        else{yaw=player.angle;pitch=player.pitch;}
+        camYaw=yaw;
+        float cs=(float)Math.cos(yaw),sn=(float)Math.sin(yaw),cp=(float)Math.cos(pitch),sp=(float)Math.sin(pitch);
+        float px=player.x,py=player.y,pz=Math.min(ceilAt(px,py)-.12f,viewZ+camHeight*.35f);
+        // shoulder offset (to the right of the view direction)
+        float sh=camStyle==CS_ORBIT?camShoulder*.6f:camShoulder;
+        float rx=sn*sh,ry=-cs*sh;
+        float bx=px+rx,by=py+ry;
+        float tShoulder=sh==0?1:clearT(px,py,pz,bx,by,pz);if(tShoulder<1){bx=px+rx*tShoulder*.8f;by=py+ry*tShoulder*.8f;}
+        float dx=-cs*cp*camDist,dy=-sn*cp*camDist,dz=camHeight*.65f-sp*camDist;
+        float t=clearT(bx,by,pz,bx+dx,by+dy,pz+dz);
+        float full=camDist,len=Math.max(.25f,t*full-.22f);if(t>=1)len=full;
+        if(rigLen<0||len<rigLen||dt<=0)rigLen=len;else rigLen+=(len-rigLen)*Math.min(1,dt*4f);
+        float f=rigLen/full;
+        float x=bx+dx*f,y=by+dy*f,z=pz+dz*f;
+        int s=level.sectorAt(x,y);if(s<0){x=bx;y=by;s=level.sectorAt(x,y);}
+        if(s>=0){Level.Sector sec=level.sectors.get(s);z=Math.max(sec.floor+.15f,Math.min(sec.ceiling-.15f,z));}
+        if(!rigReady||dt<=0||camSmooth<=0){rigX=x;rigY=y;rigZ=z;}
+        else{float k=Math.min(1,dt*camSmooth*2.2f);rigX+=(x-rigX)*k;rigY+=(y-rigY)*k;rigZ+=(z-rigZ)*k;
+            if(level.sectorAt(rigX,rigY)<0||clearT(px,py,pz,rigX,rigY,rigZ)<1){rigX=x;rigY=y;rigZ=z;}}
+        rigAngle=yaw;
+        // look at a point ahead of the player so the crosshair lines up with the aim
+        float ax=px+cs*8,ay=py+sn*8,az=pz+sp*8;
+        rigAngle=(float)Math.atan2(ay-rigY,ax-rigX);
+        rigPitch=Math.max(-1.1f,Math.min(1.1f,(float)Math.atan2(az-rigZ,Math.hypot(ax-rigX,ay-rigY))));
+        rigReady=true;
+    }
+    /** Fraction of a 3D segment that is clear of walls, closed openings and floors/ceilings. */
+    private float clearT(float x0,float y0,float z0,float x1,float y1,float z1){
+        float best=1;
+        for(Level.LineDef l:lines){Level.Vertex p=level.vertices.get(l.from),q=level.vertices.get(l.to);
+            float t=segHit(x0,y0,x1,y1,p.x,p.y,q.x,q.y);if(t<0||t>=best)continue;
+            if(l.back<0){best=t;continue;}
+            Level.Sector a=level.sectors.get(l.front),b=level.sectors.get(l.back);float z=z0+(z1-z0)*t;
+            float lo=Math.max(a.floor,b.floor)+.1f,hi=Math.min(a.ceiling,b.ceiling)-.1f;
+            if(hi<=lo||z<lo||z>hi)best=t;}
+        return best;
+    }
 
     // ------------------------------------------------------------------ physics
     int sectorIndex(Actor a){
@@ -344,6 +425,7 @@ final class World {
         int at=W_AMMO[weapon];
         if(at>=0&&ammo[at]<=0){sound(SoundFx.OOF,player);return FIRE_NO_AMMO;}
         if(at>=0)ammo[at]--;
+        if(camMode==CAM_THIRD&&camStyle==CS_ORBIT)player.angle=camYaw;   // shoot where the camera looks
         weaponCooldown=W_COOLDOWN[weapon];
         sound(W_SOUND[weapon],player);
         if(weapon==0){Actor t=nearestInFront(1.3f);if(t!=null)damage(t,W_DMIN[0]+rng.nextInt(W_DMAX[0]-W_DMIN[0]+1),player);return FIRE_OK;}
@@ -375,6 +457,7 @@ final class World {
     // ------------------------------------------------------------------ use, touch, specials
     /** Use whatever is directly in front: a door/lift linedef or an entity. */
     void use(Actor a){
+        if(a==player&&camMode==CAM_THIRD&&camStyle==CS_ORBIT)a.angle=camYaw;
         float ex=a.x+(float)Math.cos(a.angle)*USE_RANGE,ey=a.y+(float)Math.sin(a.angle)*USE_RANGE;
         Actor bestA=null;float bestT=1;
         for(Actor o:actors){if(o==a||o.removed||o.projectileType>=0)continue;

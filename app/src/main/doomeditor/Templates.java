@@ -36,4 +36,22 @@ final class Templates {
         for(Level.Thing t:l.things)t.angle=(float)Math.atan2(l.playerY-t.y,l.playerX-t.x);
         return l;
     }
+
+    /** Open-air courtyard sized for a third-person camera: wide lanes, four pillars and a raised centre. */
+    static Level courtyard(){
+        Level l=Level.empty();
+        for(int gy=0;gy<6;gy++)for(int gx=0;gx<6;gx++){
+            int x0=gx*4,y0=gy*4;
+            boolean pillar=(gx==1||gx==4)&&(gy==1||gy==4),centre=(gx==2||gx==3)&&(gy==2||gy==3),edge=gx==0||gy==0||gx==5||gy==5;
+            if(pillar)rect(l,x0,y0,x0+4,y0+4,4f,4f,6,6,6,192);
+            else if(centre)rect(l,x0,y0,x0+4,y0+4,.5f,8,11,Textures.SKY,0,240);
+            else rect(l,x0,y0,x0+4,y0+4,0,8,edge?9:2,Textures.SKY,9,(gx+gy)%2==0?216:196);
+        }
+        l.playerX=2f;l.playerY=12f;l.facing=0;
+        String[][] things={{"imp","22","2"},{"imp","22","22"},{"trooper","12","2"},{"trooper","12","22"},{"trooper","21","12"},{"demon","18","12"},
+            {"shotgun","12","12"},{"medkit","11","13"},{"armor","2","2"},{"shells","6","12"},{"clip","12","6"},{"barrel","8","2"},{"barrel","8","22"},{"stimpack","2","22"}};
+        for(String[] t:things)l.things.add(new Level.Thing(Float.parseFloat(t[1]),Float.parseFloat(t[2]),t[0]));
+        for(Level.Thing t:l.things)t.angle=(float)Math.atan2(l.playerY-t.y,l.playerX-t.x);
+        return l;
+    }
 }
