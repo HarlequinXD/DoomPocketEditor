@@ -24,16 +24,19 @@ final class Ui {
     private final RectF tmp=new RectF();
 
     /** Touch target registered while drawing, so drawing and hit-testing always agree. */
-    static final class Hit { final RectF r; final int id; Hit(RectF r,int id){this.r=r;this.id=id;} }
+    static final class Hit { final RectF r=new RectF(); int id; }
     final ArrayList<Hit> hits=new ArrayList<>();
+    /** Hit objects are reused from frame to frame instead of allocating hundreds per frame. */
+    private final ArrayList<Hit> hitPool=new ArrayList<>();
+    private Hit nextHit(){int n=hits.size();Hit h;if(n<hitPool.size())h=hitPool.get(n);else{h=new Hit();hitPool.add(h);}hits.add(h);return h;}
 
     Ui(Context ctx){dp=ctx.getResources().getDisplayMetrics().density;}
     float dp(float v){return v*dp;}
     static int brighten(int c){int a=c>>>24;int r=Math.min(255,((c>>16)&255)*5/4+20),g=Math.min(255,((c>>8)&255)*5/4+20),b=Math.min(255,(c&255)*5/4+20);return (a<<24)|(r<<16)|(g<<8)|b;}
 
     void clearHits(){hits.clear();}
-    void hit(RectF r,int id){hits.add(new Hit(new RectF(r),id));}
-    void hit(float l,float t,float r,float b,int id){hits.add(new Hit(new RectF(l,t,r,b),id));}
+    void hit(RectF r,int id){Hit h=nextHit();h.r.set(r);h.id=id;}
+    void hit(float l,float t,float r,float b,int id){Hit h=nextHit();h.r.set(l,t,r,b);h.id=id;}
     /** Last registered target under the point wins (drawn on top). */
     int hitAt(float x,float y){for(int i=hits.size()-1;i>=0;i--)if(hits.get(i).r.contains(x,y))return hits.get(i).id;return -1;}
 

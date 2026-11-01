@@ -8,7 +8,7 @@ import android.media.AudioTrack;
 final class SoundFx {
     static final int PISTOL=0,SHOTGUN=1,CHAINGUN=2,ROCKET=3,EXPLODE=4,PUNCH=5,DOOR=6,SWITCH=7,PICKUP=8,WEAPON_PICKUP=9,ITEM=10,
             PLAYER_PAIN=11,PLAYER_DEATH=12,MONSTER_SIGHT=13,MONSTER_PAIN=14,MONSTER_DEATH=15,FIREBALL=16,TELEPORT=17,SECRET=18,OOF=19,BEEP=20,COUNT=21;
-    private static final int RATE=22050,VOICES=8,BUF=512;
+    private static final int RATE=22050,VOICES=8,BUF=512,IDLE_BUFFERS=RATE/2/BUF;   // ~0.5 s of silence before pausing
     private final short[][] clips=new short[COUNT][];
     private final short[][] voice=new short[VOICES][];
     private final int[] pos=new int[VOICES];
@@ -23,6 +23,7 @@ final class SoundFx {
         if(id<0||id>=COUNT||!running)return;
         int slot=0;for(int i=0;i<VOICES;i++){if(voice[i]==null){slot=i;break;}if(pos[i]>pos[slot])slot=i;}
         voice[slot]=clips[id];pos[slot]=0;vol[slot]=Math.max(0,Math.min(1,volume));
+        notifyAll();   // wake the mixer if it is idling
     }
     void start(){
         if(running)return;
@@ -34,15 +35,29 @@ final class SoundFx {
         }catch(Throwable t){running=false;track=null;}
     }
     void stop(){
-        running=false;
+        running=false;synchronized(this){notifyAll();}
         try{if(thread!=null)thread.join(200);}catch(InterruptedException ignored){}
         try{if(track!=null){track.stop();track.release();}}catch(Throwable ignored){}
         track=null;thread=null;
     }
+    /**
+     * Mixes active voices into the stream. When nothing has played for about half a second the track is
+     * paused and the thread sleeps until the next sound, so the audio hardware can power down between
+     * shots instead of streaming silence the whole time you play.
+     */
     private void loop(){
-        short[] out=new short[BUF];
+        short[] out=new short[BUF];int silent=0;boolean paused=false;
         while(running){
             synchronized(this){
+                boolean any=false;for(int v=0;v<VOICES;v++)if(voice[v]!=null){any=true;break;}
+                if(!any){
+                    if(++silent>=IDLE_BUFFERS){
+                        if(!paused){try{track.pause();track.flush();}catch(Throwable ignored){}paused=true;}
+                        try{wait(250);}catch(InterruptedException e){return;}
+                        continue;
+                    }
+                }else silent=0;
+                if(paused&&any){try{track.play();}catch(Throwable ignored){}paused=false;}
                 for(int i=0;i<BUF;i++){
                     float mix=0;
                     for(int v=0;v<VOICES;v++){short[] c=voice[v];if(c==null)continue;mix+=c[pos[v]]*vol[v];if(++pos[v]>=c.length)voice[v]=null;}

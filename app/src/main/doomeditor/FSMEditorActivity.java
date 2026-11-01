@@ -13,6 +13,7 @@ public class FSMEditorActivity extends Activity implements FSMGraphView.Host {
     @Override public void onCreate(Bundle b) {
         super.onCreate(b);
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        PerfDisplay.limitRefreshRate(this);   // 60 Hz is plenty for this app and saves battery on 120 Hz screens
         getWindow().getDecorView().setSystemUiVisibility(5894 | 1024 | 512);
         project = Project.get(this);
         String def = getIntent() != null ? getIntent().getStringExtra("def") : null;

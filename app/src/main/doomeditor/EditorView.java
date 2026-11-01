@@ -85,6 +85,7 @@ public class EditorView extends View {
     private String selDef="trooper";private int selThing=-1,entityTool=0,entStage=0;private float defScroll,propScroll,matScroll;
     private int scrollTarget=0; // 1 def list, 2 property panel, 3 texture browser
     // 3D
+    private ArrayList<Level.LineDef> mapLines;private long mapLinesSig;private Level mapLinesLevel;   // cached wall topology for the 2D map
     private float dockL;   // left edge of the 3D view's right-hand buttons
     private World walker;private boolean fly;private int sel3d=-1,selectedMaterial=0;private boolean flyUp,flyDown;
     private float joyOriginX,joyOriginY,joyX,joyY,moveX,moveY;private boolean joyVisible;private long joyReleaseTime;
@@ -107,8 +108,8 @@ public class EditorView extends View {
         setFocusable(true);
     }
     boolean exitPlay(){if(mode!=PLAY)return false;changeMode(returnMode);return true;}
-    void onPause(){sfx.stop();save(false);}
-    void onResume(){if(mode==PLAY)sfx.start();renderer.invalidate();invalidate();}
+    void onPause(){sfx.stop();flushSave();setKeepScreenOn(false);}
+    void onResume(){if(mode==PLAY){sfx.start();setKeepScreenOn(true);}lastInteraction=System.currentTimeMillis();renderer.invalidate();invalidate();}
 
     // ---------------------------------------------------------------- layout
     private float dp(float v){return ui.dp(v);}
@@ -143,7 +144,14 @@ public class EditorView extends View {
             drawError=ex.getClass().getSimpleName()+": "+ex.getMessage();invalidate();
         }
     }
+    private long frameStart;
+    /** Schedules the next animation frame: every vsync (60 Hz), or every 33 ms in battery saver. */
+    private void nextFrame(){
+        if(Perf.saver(getContext())){long spent=(System.nanoTime()-frameStart)/1_000_000L;postInvalidateDelayed(Math.max(1,Perf.gameFrameMs(getContext())-spent));}
+        else postInvalidateOnAnimation();
+    }
     private void drawFrame(Canvas c){
+        frameStart=System.nanoTime();
         w=getWidth();h=getHeight();toolbarH=mode==PLAY?0:dp(52);statusH=in2D()?dp(26):0;
         long now=System.nanoTime();float dt=Math.min(.05f,(now-lastFrame)*1e-9f);lastFrame=now;
         if(level!=project.level){level=project.level;sectorEditor=new SectorEditor(level);walker=null;}
@@ -217,11 +225,14 @@ public class EditorView extends View {
     private void moreMenu(){
         if(host==null)return;
         ArrayList<String> errs=MapValidator.check(level);
-        host.choose(project.name,new String[]{"Check map ("+(errs.isEmpty()?"no problems":errs.size()+" warning"+(errs.size()==1?"":"s"))+")","Save now","Reset level…","Back to projects"},-1,k->{
+        boolean sv=Perf.saver(getContext());
+        host.choose(project.name,new String[]{"Check map ("+(errs.isEmpty()?"no problems":errs.size()+" warning"+(errs.size()==1?"":"s"))+")","Save now",
+                sv?"Battery saver: ON (tap to turn off)":"Battery saver: off (30 fps, still backdrops)","Reset level…","Back to projects"},-1,k->{
             if(k==0)showMapCheck();
             else if(k==1)save(true);
-            else if(k==2)host.confirm("Reset the level?","This clears every sector and placed entity. Entity types, FSMs and sprites are kept.","Reset level",()->{resetLevel();invalidate();});
-            else if(k==3){save(false);if(onExitToTitle!=null)onExitToTitle.run();}
+            else if(k==2){Perf.setSaver(getContext(),!sv);hint(!sv?"Battery saver on · 30 fps game and 3D, still previews":"Battery saver off · 60 fps");lastInteraction=System.currentTimeMillis();}
+            else if(k==3)host.confirm("Reset the level?","This clears every sector and placed entity. Entity types, FSMs and sprites are kept.","Reset level",()->{resetLevel();invalidate();});
+            else if(k==4){save(false);if(onExitToTitle!=null)onExitToTitle.run();}
             invalidate();});
     }
     private void showMapCheck(){
@@ -231,9 +242,12 @@ public class EditorView extends View {
     }
 
     // ---------------------------------------------------------------- Home
+    private long lastInteraction=System.currentTimeMillis();
+    private boolean homeAnimating(){return !Perf.saver(getContext())&&System.currentTimeMillis()-lastInteraction<30000;}
+    private android.graphics.LinearGradient homeShade;private float homeShadeTop=-1;
     private long statsSig=-1;private int statWarnings,statStates;
     private final ArrayList<Renderer.SpriteDraw> homeSprites=new ArrayList<>();
-    private final RectF homePreview=new RectF();
+    private final RectF homePreview=new RectF();private long homeClock,homeLast=System.nanoTime();
     private void homeStats(){
         long sig=Renderer.signature(level)*31+level.things.size()*7+project.defs.size();
         if(sig==statsSig)return;statsSig=sig;
@@ -285,7 +299,8 @@ public class EditorView extends View {
         float tw=(R-gl-gap*(cols-1))/cols,th=Math.max(dp(44),Math.min(dp(96),(B-gt-gap*(rows-1))/rows));
         for(int i=0;i<EDITOR_NAMES.length;i++){int col=i%cols,row=i/cols;float x=gl+col*(tw+gap),y=gt+row*(th+gap);
             r.set(x,y,x+tw,y+th);drawEditorTile(c,r,i,H_TILE+i,false);}
-        postInvalidateOnAnimation();
+        // The live preview is decoration: ~20 fps, and it settles after 30 s without a touch (or straight away in battery saver).
+        if(homeAnimating())postInvalidateDelayed(50);
     }
     private void drawEditorTile(Canvas c,RectF rr,int i,int hid,boolean current){
         ui.round(c,rr,dp(12),current?0xff26324a:Ui.SURFACE);ui.outline(c,rr,dp(12),current?Ui.ACCENT:Ui.BORDER,current?dp(2):dp(1));
@@ -315,7 +330,9 @@ public class EditorView extends View {
             ui.icon(c,Icons.SECTORS,rr.centerX(),rr.centerY()-dp(16),32,Ui.TEXT_3);
             ui.textMid(c,level.sectors.isEmpty()?"No level yet — open Sectors to draw your first room":"Set a player start inside a sector",rr.centerX(),rr.centerY()+dp(18),12,Ui.TEXT_2,1,0);
             c.restoreToCount(save);return;}
-        float t=(System.nanoTime()%1_000_000_000_000L)*1e-9f;
+        // time only advances while animating, so a settled preview stays exactly where it stopped
+        long now=System.nanoTime();if(homeAnimating())homeClock+=Math.min(100_000_000L,now-homeLast);homeLast=now;
+        float t=homeClock*1e-9f;
         float ang=level.facing+(float)Math.sin(t*.22f)*1.1f;
         Level.Sector sec=level.sectors.get(si);
         homeSprites.clear();int pool=0;
@@ -324,7 +341,8 @@ public class EditorView extends View {
         renderer.highlight=-1;
         renderer.render(c,level,level.playerX,level.playerY,Math.min(sec.ceiling-.1f,sec.floor+World.EYE),ang,0,rr,homeSprites);
         // soft vignette at the bottom for the label
-        p.setShader(new android.graphics.LinearGradient(0,rr.bottom-dp(60),0,rr.bottom,0x00000000,0xb0000000,android.graphics.Shader.TileMode.CLAMP));p.setColor(0xffffffff);
+        if(homeShade==null||homeShadeTop!=rr.bottom){homeShadeTop=rr.bottom;homeShade=new android.graphics.LinearGradient(0,rr.bottom-dp(60),0,rr.bottom,0x00000000,0xb0000000,android.graphics.Shader.TileMode.CLAMP);}
+        p.setShader(homeShade);p.setColor(0xffffffff);
         c.drawRect(rr.left,rr.bottom-dp(60),rr.right,rr.bottom,p);p.setShader(null);
         ui.icon(c,Icons.CAMERA,rr.left+dp(18),rr.bottom-dp(16),14,0xccffffff);
         ui.textMid(c,"Live preview from the player start",rr.left+dp(32),rr.bottom-dp(16),11,0xddffffff,1,-1);
@@ -412,7 +430,8 @@ public class EditorView extends View {
             if(s.special!=Level.SP_NONE&&cell>dp(14)){float[] ce=centroid(s);ui.icon(c,s.special==Level.SP_DOOR?Icons.DOOR:s.special==Level.SP_LIFT?Icons.LAYERS:s.special==Level.SP_EXIT?Icons.FLAG:s.special==Level.SP_SECRET?Icons.HELP:Icons.ZAP,sx(ce[0]),sy(ce[1]),14,0x99ffffff);}
         }
         p.setStrokeCap(Paint.Cap.ROUND);
-        for(Level.LineDef line:PortalTopology.build(level)){
+        long ts=Renderer.signature(level);if(mapLines==null||ts!=mapLinesSig||mapLinesLevel!=level){mapLines=PortalTopology.build(level);mapLinesSig=ts;mapLinesLevel=level;}
+        for(Level.LineDef line:mapLines){
             Level.Vertex a=level.vertices.get(line.from),b=level.vertices.get(line.to);boolean portal=line.back>=0;
             p.setColor(portal?0xffd99a3e:0xffd6dce4);p.setStrokeWidth(portal?dp(1.5f):dp(2));c.drawLine(sx(a.x),sy(a.y),sx(b.x),sy(b.y),p);
         }
@@ -874,7 +893,7 @@ public class EditorView extends View {
             r.set(bx,by-dp(64),bx+dp(56),by-dp(8));ui.stackButton(c,r,Icons.ARROW_UP,"Up",flyUp?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_UP);
             r.set(bx,by,bx+dp(56),by+dp(56));ui.stackButton(c,r,Icons.ARROW_DOWN,"Down",flyDown?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_DOWN);}
         drawSelection3D(c,left);
-        if(joyVisible||flyUp||flyDown||Math.abs(cam.vz)>.01f||Math.hypot(cam.vx,cam.vy)>.01f||walker.viewZ!=cam.z+World.EYE)postInvalidateOnAnimation();
+        if(joyVisible||flyUp||flyDown||Math.abs(cam.vz)>.01f||Math.hypot(cam.vx,cam.vy)>.01f||walker.viewZ!=cam.z+World.EYE)nextFrame();
     }
     private float floorAtLevel(float x,float y){int s=level.sectorAt(x,y);return s<0?0:level.sectors.get(s).floor;}
     private Renderer.SpriteDraw sd(int i){while(spritePool.size()<=i)spritePool.add(new Renderer.SpriteDraw());return spritePool.get(i);}
@@ -981,7 +1000,7 @@ public class EditorView extends View {
         drawHud(c);
         if(!world.levelComplete){drawJoystick(c);drawPlayButtons(c);}
         else drawComplete(c);
-        postInvalidateOnAnimation();
+        nextFrame();
     }
     private void drawPlayButtons(Canvas c){
         float bar=dp(44);
@@ -1031,10 +1050,19 @@ public class EditorView extends View {
 
     // ---------------------------------------------------------------- save/mode
     void save(boolean showHint){
-        project.save(getContext());
+        flushSave();
         if(showHint){ArrayList<String> errors=MapValidator.check(level);hint(errors.isEmpty()?"Saved · map is valid":"Saved · "+errors.size()+" map warning(s)");}
     }
-    private void autoSave(){project.save(getContext());}
+    /**
+     * Edits are saved 1.5 s after the last change instead of after every single one: a save serialises
+     * the whole project (including sprite pixels), so rapid edits used to rewrite it many times a second.
+     * Leaving the editor, pausing the app or saving by hand always writes immediately.
+     */
+    private boolean saveQueued;
+    private final Runnable saveTask=this::runQueuedSave;
+    private void runQueuedSave(){if(saveQueued){saveQueued=false;project.save(getContext());}}
+    private void autoSave(){saveQueued=true;removeCallbacks(saveTask);postDelayed(saveTask,1500);}
+    private void flushSave(){removeCallbacks(saveTask);saveQueued=false;project.save(getContext());}
     private void resetLevel(){project.level=new Level();level=project.level;sectorEditor=new SectorEditor(level);pending.clear();selKind=0;walker=null;cancelStage();changed("Level reset");}
     private void changeMode(int next){
         if(mode==PLAY&&next!=PLAY){sfx.stop();world=null;}
@@ -1045,6 +1073,7 @@ public class EditorView extends View {
         mode=next;pending.clear();joyVisible=false;joyPointer=lookPointer=upPointer=downPointer=-1;moveX=moveY=0;flyUp=flyDown=false;dpadPointer=-1;
         lastFrame=System.nanoTime();
         if(next==PLAY)startPlay();
+        setKeepScreenOn(next==PLAY);   // the screen may sleep normally while editing
         if(next!=HOME)hint(next==PLAY?"Left: move · right: look · Fire, Use, Jump, Weapon on the right":next==POLY?"Pick a tool, move the cursor, tap Apply":next==THINGS?"Pick an entity type, then Apply to place it":"Left: move · right: look · double-tap a surface to texture it");
     }
 
@@ -1066,6 +1095,7 @@ public class EditorView extends View {
     private void openSprites(String defId){save(false);if(host!=null)host.openSprites(defId);}
     private boolean handleTouch(MotionEvent e){
         int a=e.getActionMasked(),idx=e.getActionIndex();float x=e.getX(idx),y=e.getY(idx);
+        lastInteraction=System.currentTimeMillis();
         if(launcherOpen){if(a==MotionEvent.ACTION_DOWN)launcherTap(ui.hitAt(x,y));invalidate();return true;}
         if(mode==PLAY)return playTouch(e,a,idx,x,y);
         if(a==MotionEvent.ACTION_DOWN&&y<toolbarH){toolbarTap(ui.hitAt(x,y));invalidate();return true;}

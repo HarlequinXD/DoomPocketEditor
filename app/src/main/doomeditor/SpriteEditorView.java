@@ -119,7 +119,8 @@ public class SpriteEditorView extends View {
         drawRight(c,R,toolbarH,w,h);
         drawTopBar(c);
         if(pickerOpen)drawPicker(c);
-        if(playing)postInvalidateOnAnimation();
+        // preview playback only needs to redraw as often as the clip changes frame (twice per frame period)
+        if(playing){CustomSprite.Clip pc=clip();float fps=pc==null?8:Math.max(1,pc.fps);postInvalidateDelayed(Math.max(16L,(long)(500/fps)));}
     }
     private void drawCanvas(Canvas c){
         int save=c.save();c.clipRect(canvasR);

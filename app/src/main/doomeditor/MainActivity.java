@@ -31,7 +31,7 @@ public class MainActivity extends Activity implements UiHost {
     }
     private void fullscreen() {
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        PerfDisplay.limitRefreshRate(this);   // 60 Hz is plenty for this app and saves battery on 120 Hz screens
         getWindow().getDecorView().setSystemUiVisibility(5894 | 1024 | 512);
     }
     /** Title screen and project manager. */

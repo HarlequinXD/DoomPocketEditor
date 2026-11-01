@@ -28,7 +28,11 @@ public class TitleView extends View {
     private ArrayList<ProjectStore.Meta> projects=new ArrayList<>();
     private boolean creating;private String newName="My Doom Game";private int template=0;
     private float w,h,scroll,downX,downY,lastY;private boolean dragged;private int downHit=-1;
-    private long start=System.nanoTime();
+    private long clock,last=System.nanoTime(),lastTouch=System.currentTimeMillis();
+    private LinearGradient shade;private float shadeW=-1;
+    /** The orbiting backdrop is decoration: it runs at ~20 fps, pauses behind the New Project dialog,
+     *  settles after 40 s without a touch, and stays still in battery saver. */
+    private boolean animating(){return !creating&&!Perf.saver(getContext())&&System.currentTimeMillis()-lastTouch<40000;}
 
     TitleView(Context c){super(c);ui=new Ui(c);p=ui.p;refresh();
         Project tmp=Project.fresh();
@@ -40,16 +44,18 @@ public class TitleView extends View {
 
     @Override protected void onDraw(Canvas c){
         w=getWidth();h=getHeight();ui.clearHits();
-        float t=(System.nanoTime()-start)*1e-9f;
+        long now=System.nanoTime();if(animating())clock+=Math.min(100_000_000L,now-last);last=now;
+        float t=clock*1e-9f;
         // Backdrop: slow orbit around the arena.
         float ang=t*.12f,cx=10+(float)Math.cos(ang)*6.5f,cy=10+(float)Math.sin(ang)*6.5f;
         r.set(0,0,w,h);renderer.render(c,backdrop,cx,cy,1.35f,ang+(float)Math.PI*.82f,.05f,r,sprites);
-        p.setColor(0xffffffff);p.setShader(new LinearGradient(0,0,w,0,new int[]{0xf20d0f12,0xd90d0f12,0x800d0f12},new float[]{0,.45f,1},Shader.TileMode.CLAMP));
+        if(shade==null||shadeW!=w){shadeW=w;shade=new LinearGradient(0,0,w,0,new int[]{0xf20d0f12,0xd90d0f12,0x800d0f12},new float[]{0,.45f,1},Shader.TileMode.CLAMP);}
+        p.setColor(0xffffffff);p.setShader(shade);
         c.drawRect(0,0,w,h,p);p.setShader(null);
         drawBrand(c);
         drawProjects(c);
         if(creating)drawNewProject(c);
-        postInvalidateOnAnimation();
+        if(animating())postInvalidateDelayed(50);
     }
     private void drawBrand(Canvas c){
         float x=dp(44),y=h*.2f;
@@ -128,6 +134,7 @@ public class TitleView extends View {
 
     @Override public boolean onTouchEvent(MotionEvent e){
         int a=e.getActionMasked();float x=e.getX(),y=e.getY();
+        boolean wasIdle=!animating();lastTouch=System.currentTimeMillis();if(wasIdle)invalidate();
         if(a==MotionEvent.ACTION_DOWN){downX=x;downY=lastY=y;dragged=false;downHit=ui.hitAt(x,y);return true;}
         if(a==MotionEvent.ACTION_MOVE){if(Math.abs(y-downY)>dp(8))dragged=true;if(dragged&&!creating){scroll-=y-lastY;invalidate();}lastY=y;return true;}
         if(a==MotionEvent.ACTION_UP&&!dragged&&downHit>=0&&ui.hitAt(x,y)==downHit)action(downHit);
