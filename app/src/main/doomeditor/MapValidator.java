@@ -8,7 +8,9 @@ public final class MapValidator {
         for(int i=0;i<level.sectors.size();i++){
             Level.Sector s=level.sectors.get(i);
             if(s.loop.size()<3){errors.add("Sector "+(i+1)+": fewer than three vertices");continue;}
-            if(s.ceiling-s.floor<.5f)errors.add("Sector "+(i+1)+": insufficient height");
+            float hgt=s.ceiling-s.floor;
+            if(hgt<-.01f)errors.add("Sector "+(i+1)+": ceiling is below the floor");
+            else if(hgt>.01f&&hgt<.5f&&s.special!=Level.SP_DOOR)errors.add("Sector "+(i+1)+": too low to walk under ("+Math.round(hgt*100)/100f+")");   // floor = ceiling is a solid block, which is fine
             float area=0;
             for(int j=0;j<s.loop.size();j++){
                 int ai=s.loop.get(j),bi=s.loop.get((j+1)%s.loop.size());

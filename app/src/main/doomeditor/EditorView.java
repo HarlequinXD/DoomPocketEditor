@@ -16,10 +16,18 @@ import java.util.ArrayList;
  * 3D View (grounded walk/fly camera with surface editing) and Play (the Doom game framework).
  */
 public class EditorView extends View {
-    private static final int THINGS=2, PLAY=3, POLY=4, POLY3D=5;
+    private static final int THINGS=2, PLAY=3, POLY=4, POLY3D=5, HOME=6;
     private static final int[] MODES={POLY,THINGS,POLY3D,PLAY};
     private static final String[] MODE_NAMES={"Sectors","Entities","3D View","Play"};
     private static final int[] MODE_ICONS={Icons.SECTORS,Icons.ENTITIES,Icons.CUBE,Icons.PLAY};
+    // Every editor in the app, in header / launcher order. Index 4 and 5 open their own screens.
+    static final String[] EDITOR_NAMES={"Sectors","Entities","3D View","Play","FSM","Sprites"};
+    static final int[] EDITOR_ICONS={Icons.SECTORS,Icons.ENTITIES,Icons.CUBE,Icons.PLAY,Icons.GRAPH,Icons.PIXEL};
+    static final int[] EDITOR_COLORS={0xff3d8bfd,0xfff0a030,0xff9b6dff,0xff3ecf8e,0xff2fb8c8,0xffef6b8a};
+    static final String[] EDITOR_DESC={"Rooms, doors & stairs","Monsters, items & types","Walk & paint surfaces","Test with the real engine","Behaviour & actions","Pixel art & animation"};
+    private static final int[] EDITOR_MODES={POLY,THINGS,POLY3D,PLAY,-1,-1};
+    private static final int H_ED=3000,H_SWITCH=3010,H_MORE=3011,H_LAUNCH=3020,H_LAUNCH_HOME=3027,H_LAUNCH_CLOSE=3028,H_TILE=3040,H_HOMEPLAY=3050,H_HOME3D=3051,H_HOMEFIX=3052;
+    private boolean launcherOpen;
     // Touch target ids registered while drawing.
     private static final int H_MODE=100,H_FSM=110,H_SAVE=111,H_RESET=112,H_PAGE=120,H_TOOL=200,H_APPLY=520,H_MAT=400,
             H_RAISE=500,H_LOWER=501,H_LIGHTUP=502,H_LIGHTDN=503,H_FLY=504,H_UP=505,H_DOWN=506,H_EDITFSM3D=507,H_START3D=508,
@@ -61,7 +69,7 @@ public class EditorView extends View {
     private final SoundFx sfx=new SoundFx();
     UiHost host;
     Runnable onExitToTitle;
-    private int mode=POLY,toolPage=0,tool=DRAW,stage=0;
+    private int mode=HOME,returnMode=POLY3D,toolPage=0,tool=DRAW,stage=0;
     private final ArrayList<float[]> pending=new ArrayList<>();
     // selection (Sectors)
     private int selKind=0,selSector=-1,selEdge=-1,selVertex=-1; // kind: 0 none,1 sector,2 edge,3 vertex
@@ -97,7 +105,7 @@ public class EditorView extends View {
         cursorX=Math.round(level.playerX);cursorY=Math.round(level.playerY);viewX=cursorX;viewY=cursorY;
         setFocusable(true);
     }
-    boolean exitPlay(){if(mode!=PLAY)return false;changeMode(POLY3D);return true;}
+    boolean exitPlay(){if(mode!=PLAY)return false;changeMode(returnMode);return true;}
     void onPause(){sfx.stop();save(false);}
     void onResume(){if(mode==PLAY)sfx.start();renderer.invalidate();invalidate();}
 
@@ -135,7 +143,7 @@ public class EditorView extends View {
         }
     }
     private void drawFrame(Canvas c){
-        w=getWidth();h=getHeight();toolbarH=mode==PLAY?0:dp(48);statusH=in2D()?dp(26):0;
+        w=getWidth();h=getHeight();toolbarH=mode==PLAY?0:dp(52);statusH=in2D()?dp(26):0;
         long now=System.nanoTime();float dt=Math.min(.05f,(now-lastFrame)*1e-9f);lastFrame=now;
         if(level!=project.level){level=project.level;sectorEditor=new SectorEditor(level);walker=null;}
         ui.clearHits();
@@ -146,39 +154,220 @@ public class EditorView extends View {
             drawInspector(c);drawCursorControls(c);drawStatusBar(c);
         }else if(mode==POLY3D){draw3D(c,dt);}
         else if(mode==PLAY){drawPlay(c,dt);}
+        else if(mode==HOME){drawHome(c,dt);}
         if(mode!=PLAY)drawTopBar(c);
         drawToast(c);
+        if(launcherOpen)drawLauncher(c);
     }
 
+    /** Index of the editor currently showing in this view, or -1 on the home screen. */
+    private int currentEditor(){for(int i=0;i<4;i++)if(EDITOR_MODES[i]==mode)return i;return -1;}
+    /**
+     * Shared header, the same pattern as the FSM and Sprite editors: back, a title that opens the editor
+     * launcher, then one icon button per editor and Save on the right.
+     */
     private void drawTopBar(Canvas c){
         ui.rect(c,0,0,w,toolbarH,Ui.SURFACE);ui.hline(c,0,w,toolbarH-dp(1),Ui.BORDER);
-        float cy=toolbarH*.5f,bh=dp(32),top=cy-bh*.5f;
-        // back to projects + project name (same pattern as the FSM and Sprite editors)
+        float cy=toolbarH*.5f,bh=dp(34),top=cy-bh*.5f;
         r.set(dp(8),top,dp(8)+bh,top+bh);ui.button(c,r,Icons.ARROW_LEFT,null,Ui.GHOST);ui.hit(r,H_LOGO);
-        boolean wide=w>dp(760);
-        String pn=ui.ellipsize(project.name,15,1,wide?dp(150):dp(90));
-        ui.textMid(c,pn,dp(48),cy,15,Ui.TEXT,1,-1);
-        float x0=dp(48)+ui.measure(pn,15,1)+dp(14);
-        // right-hand actions
-        float x=w-dp(10);
-        boolean armed=System.currentTimeMillis()<resetArmedUntil;float resetW=armed?dp(96):bh;
-        r.set(x-resetW,top,x,top+bh);ui.button(c,r,Icons.RESET,armed?"Confirm":null,Ui.DANGER);ui.hit(r,H_RESET);x-=resetW+dp(8);
-        float saveW=wide?dp(84):bh;r.set(x-saveW,top,x,top+bh);ui.button(c,r,Icons.SAVE,wide?"Save":null,Ui.PRIMARY);ui.hit(r,H_SAVE);x-=saveW+dp(8);
-        boolean roomy=w>dp(1000);
-        float fsmW=roomy?ui.measure("FSM",12.5f,1)+dp(46):bh;r.set(x-fsmW,top,x,top+bh);ui.button(c,r,Icons.GRAPH,roomy?"FSM":null,Ui.NORMAL);ui.hit(r,H_FSM);x-=fsmW+dp(8);
-        float spW=roomy?ui.measure("Sprites",12.5f,1)+dp(46):bh;r.set(x-spW,top,x,top+bh);ui.button(c,r,Icons.PIXEL,roomy?"Sprites":null,Ui.NORMAL);ui.hit(r,H_SPRITES);x-=spW+dp(14);
-        ui.vline(c,x+dp(6),top+dp(4),top+bh-dp(4),Ui.BORDER);
-        // mode tabs as individual buttons; the active one uses the highlighted style
-        ui.vline(c,x0-dp(7),top+dp(4),top+bh-dp(4),Ui.BORDER);
-        float avail=x-x0,gap=dp(6),full=0;
-        for(String n:MODE_NAMES)full+=ui.measure(n,12.5f,1)+dp(46);
-        boolean labels=full+gap*3<=avail;
-        float bx=x0;
-        for(int i=0;i<4;i++){
-            float bw=labels?ui.measure(MODE_NAMES[i],12.5f,1)+dp(46):Math.min(dp(44),(avail-gap*3)/4f);
-            r.set(bx,top,bx+bw,top+bh);ui.button(c,r,MODE_ICONS[i],labels?MODE_NAMES[i]:null,mode==MODES[i]?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_MODE+i);
-            bx+=bw+gap;
+        int ed=currentEditor();
+        // right-hand side first: Save, more, then the editor buttons
+        float x=w-dp(10);boolean wide=w>dp(820);
+        float saveW=wide?dp(84):bh;r.set(x-saveW,top,x,top+bh);ui.button(c,r,Icons.SAVE,wide?"Save":null,Ui.PRIMARY);ui.hit(r,H_SAVE);x-=saveW+dp(6);
+        r.set(x-bh,top,x,top+bh);ui.button(c,r,Icons.MORE,null,Ui.GHOST);ui.hit(r,H_MORE);x-=bh+dp(10);
+        ui.vline(c,x+dp(4),top+dp(5),top+bh-dp(5),Ui.BORDER);x-=dp(6);
+        float gap=dp(6);
+        for(int i=EDITOR_NAMES.length-1;i>=0;i--){r.set(x-bh,top,x,top+bh);ui.button(c,r,EDITOR_ICONS[i],null,i==ed?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_ED+i);x-=bh+gap;}
+        float right=x-dp(8);
+        // title: the editor switcher (icon, name, chevron) or the project on the home screen
+        float tl=dp(50);
+        if(ed>=0){
+            String nm=EDITOR_NAMES[ed];float tw=Math.min(right-tl,ui.measure(nm,15,1)+dp(78));
+            r.set(tl,top,tl+tw,top+bh);
+            ui.round(c,r,dp(8),Ui.SURFACE_2);ui.outline(c,r,dp(8),0x14ffffff,dp(1));
+            float ib=dp(24);ui.round(c,r.left+dp(5),cy-ib*.5f,r.left+dp(5)+ib,cy+ib*.5f,dp(6),EDITOR_COLORS[ed]);ui.icon(c,EDITOR_ICONS[ed],r.left+dp(5)+ib*.5f,cy,15,0xffffffff);
+            ui.textMid(c,ui.ellipsize(nm,15,1,tw-dp(70)),r.left+dp(38),cy,15,Ui.TEXT,1,-1);
+            ui.icon(c,Icons.CHEVRON_DOWN,r.right-dp(16),cy,15,Ui.TEXT_2);ui.hit(r,H_SWITCH);
+            float px=r.right+dp(12);String pn=ui.ellipsize(project.name,12,0,right-px);
+            if(right-px>dp(60))ui.textMid(c,pn,px,cy,12,Ui.TEXT_3,0,-1);
+        }else{
+            float ib=dp(30);ui.round(c,tl,cy-ib*.5f,tl+ib,cy+ib*.5f,dp(8),Ui.ACCENT);ui.icon(c,Icons.LOGO,tl+ib*.5f,cy,18,0xffffffff);
+            float tx=tl+ib+dp(10);
+            ui.text(c,ui.ellipsize(project.name,15,1,right-tx),tx,cy-dp(1),15,Ui.TEXT,1,-1);
+            ui.text(c,ui.ellipsize((project.template==null||project.template.isEmpty()?"Project":project.template)+" · Home",10.5f,0,right-tx),tx,cy+dp(13),10.5f,Ui.TEXT_3,0,-1);
+            r.set(tl,top,Math.min(right,tx+dp(160)),top+bh);ui.hit(r,H_SWITCH);
         }
+    }
+    /** Opens an editor by index (see EDITOR_NAMES); -1 is the home screen. */
+    private void openEditor(int i){
+        launcherOpen=false;
+        if(i<0){if(mode!=HOME)changeMode(HOME);return;}
+        if(i==4){openFsm(mode==THINGS?selDef:null);return;}
+        if(i==5){openSprites(mode==THINGS?selDef:null);return;}
+        if(EDITOR_MODES[i]!=mode)changeMode(EDITOR_MODES[i]);
+    }
+    /** Android back: close the launcher, leave Play, leave an editor for Home; false means leave the project. */
+    boolean goBack(){
+        if(launcherOpen){launcherOpen=false;invalidate();return true;}
+        if(mode==PLAY){changeMode(returnMode);invalidate();return true;}
+        if(mode!=HOME){changeMode(HOME);invalidate();return true;}
+        return false;
+    }
+    private void moreMenu(){
+        if(host==null)return;
+        ArrayList<String> errs=MapValidator.check(level);
+        host.choose(project.name,new String[]{"Check map ("+(errs.isEmpty()?"no problems":errs.size()+" warning"+(errs.size()==1?"":"s"))+")","Save now","Reset level…","Back to projects"},-1,k->{
+            if(k==0)showMapCheck();
+            else if(k==1)save(true);
+            else if(k==2)host.confirm("Reset the level?","This clears every sector and placed entity. Entity types, FSMs and sprites are kept.","Reset level",()->{resetLevel();invalidate();});
+            else if(k==3){save(false);if(onExitToTitle!=null)onExitToTitle.run();}
+            invalidate();});
+    }
+    private void showMapCheck(){
+        ArrayList<String> errs=MapValidator.check(level);
+        if(errs.isEmpty()){hint("Map check: no problems found");return;}
+        if(host!=null)host.choose("Map warnings",errs.toArray(new String[0]),-1,k->{});
+    }
+
+    // ---------------------------------------------------------------- Home
+    private long statsSig=-1;private int statWarnings,statStates;
+    private final ArrayList<Renderer.SpriteDraw> homeSprites=new ArrayList<>();
+    private final RectF homePreview=new RectF();
+    private void homeStats(){
+        long sig=Renderer.signature(level)*31+level.things.size()*7+project.defs.size();
+        if(sig==statsSig)return;statsSig=sig;
+        statWarnings=MapValidator.check(level).size();
+        statStates=0;for(EntityDef d:project.defs)statStates+=d.fsm.nodes.size();
+    }
+    private String tileStat(int i){
+        switch(i){
+            case 0:return level.sectors.size()+(level.sectors.size()==1?" sector":" sectors");
+            case 1:return level.things.size()+" placed · "+project.defs.size()+" types";
+            case 2:return "First-person editing";
+            case 3:return statWarnings==0?"Ready to play":statWarnings+" map warning"+(statWarnings==1?"":"s");
+            case 4:return statStates+" states · "+project.defs.size()+" machines";
+            default:return project.sprites.size()+(project.sprites.size()==1?" custom sprite":" custom sprites");
+        }
+    }
+    private void drawHome(Canvas c,float dt){
+        homeStats();
+        float pad=dp(18),T=toolbarH+pad,B=h-pad,L=pad,R=w-pad;
+        float split=L+(R-L)*.46f;
+        // ----- left: live level preview card
+        ui.panel(c,L,T,split-dp(8),B,dp(14));
+        float cl=L+dp(14),cr=split-dp(22);
+        ui.caption(c,"Level",cl,T+dp(24),Ui.TEXT_3);
+        String st=statWarnings==0?"Map OK":statWarnings+" warning"+(statWarnings==1?"":"s");int sc=statWarnings==0?Ui.GREEN:Ui.AMBER;
+        float sw=ui.measure(st,10.5f,1)+dp(30);r.set(cr-sw,T+dp(10),cr,T+dp(32));ui.round(c,r,dp(11),(sc&0x00ffffff)|0x26000000);
+        p.setColor(sc);c.drawCircle(r.left+dp(11),r.centerY(),dp(3.5f),p);ui.textMid(c,st,r.left+dp(20),r.centerY(),10.5f,sc,1,-1);ui.hit(r,H_HOMEFIX);
+        float bottomH=dp(118);
+        homePreview.set(cl,T+dp(40),cr,B-bottomH);
+        if(homePreview.height()>dp(50))drawHomePreview(c,homePreview);
+        // stats row
+        float sy=B-bottomH+dp(14);
+        String[] sv={String.valueOf(level.sectors.size()),String.valueOf(level.things.size()),String.valueOf(project.defs.size()),String.valueOf(project.sprites.size())};
+        String[] sl={"Sectors","Placed","Types","Sprites"};
+        float cw=(cr-cl)/4f;
+        for(int i=0;i<4;i++){float x=cl+i*cw;ui.text(c,sv[i],x,sy+dp(18),18,Ui.TEXT,1,-1);ui.text(c,sl[i],x,sy+dp(34),10.5f,Ui.TEXT_3,0,-1);
+            if(i>0)ui.vline(c,x-dp(8),sy+dp(2),sy+dp(36),Ui.DIVIDER);}
+        float by=B-dp(50),bh=dp(38);
+        float half=(cr-cl-dp(10))*.5f;
+        r.set(cl,by,cl+half,by+bh);ui.button(c,r,Icons.PLAY,"Play level",Ui.PRIMARY);ui.hit(r,H_HOMEPLAY);
+        r.set(cl+half+dp(10),by,cr,by+bh);ui.button(c,r,Icons.CUBE,"Walk in 3D",Ui.NORMAL);ui.hit(r,H_HOME3D);
+        // ----- right: editors
+        float gl=split+dp(8);boolean shortScreen=B-T<dp(300);
+        ui.text(c,"Editors",gl+dp(2),T+dp(16),15,Ui.TEXT,1,-1);
+        if(!shortScreen)ui.text(c,ui.ellipsize("Tap one to open it · use the icons above or the title menu to switch at any time",11,0,R-gl),gl+dp(2),T+dp(34),11,Ui.TEXT_3,0,-1);
+        float gt=shortScreen?T+dp(26):T+dp(48),gap=dp(10);int cols=w>dp(700)?2:1;
+        if((B-gt-gap*2)/3f<dp(60))cols=3;   // short screens: 3 x 2 compact tiles
+        int rows=(EDITOR_NAMES.length+cols-1)/cols;
+        float tw=(R-gl-gap*(cols-1))/cols,th=Math.max(dp(44),Math.min(dp(96),(B-gt-gap*(rows-1))/rows));
+        for(int i=0;i<EDITOR_NAMES.length;i++){int col=i%cols,row=i/cols;float x=gl+col*(tw+gap),y=gt+row*(th+gap);
+            r.set(x,y,x+tw,y+th);drawEditorTile(c,r,i,H_TILE+i,false);}
+        postInvalidateOnAnimation();
+    }
+    private void drawEditorTile(Canvas c,RectF rr,int i,int hid,boolean current){
+        ui.round(c,rr,dp(12),current?0xff26324a:Ui.SURFACE);ui.outline(c,rr,dp(12),current?Ui.ACCENT:Ui.BORDER,current?dp(2):dp(1));
+        if(rr.width()<dp(190)){   // narrow tile: icon above the name
+            float ib=Math.min(dp(34),rr.height()*.4f),iy=rr.top+Math.max(dp(8),(rr.height()-ib-dp(34))*.5f);
+            ui.round(c,rr.centerX()-ib*.5f,iy,rr.centerX()+ib*.5f,iy+ib,dp(9),EDITOR_COLORS[i]);ui.icon(c,EDITOR_ICONS[i],rr.centerX(),iy+ib*.5f,ib*.55f/ui.dp(1),0xffffffff);
+            ui.text(c,ui.ellipsize(EDITOR_NAMES[i],13,1,rr.width()-dp(12)),rr.centerX(),iy+ib+dp(17),13,Ui.TEXT,1,0);
+            if(rr.bottom-(iy+ib+dp(17))>dp(18))ui.text(c,ui.ellipsize(tileStat(i),10,0,rr.width()-dp(12)),rr.centerX(),iy+ib+dp(31),10,i==3&&statWarnings>0?Ui.AMBER:Ui.TEXT_3,0,0);
+            ui.hit(rr,hid);return;}
+        // accent stripe + icon badge
+        float ib=Math.max(dp(26),Math.min(dp(42),rr.height()-dp(24))),ix=rr.left+dp(rr.height()<dp(60)?10:14),iy=rr.centerY()-ib*.5f;
+        ui.round(c,ix,iy,ix+ib,iy+ib,dp(10),EDITOR_COLORS[i]);
+        ui.icon(c,EDITOR_ICONS[i],ix+ib*.5f,iy+ib*.5f,ib*.5f/ui.dp(1),0xffffffff);
+        float tx=ix+ib+dp(14),tr=rr.right-dp(30);
+        boolean roomy=rr.height()>dp(74)&&rr.width()>dp(200);tx=ix+ib+dp(roomy?14:10);
+        ui.text(c,ui.ellipsize(EDITOR_NAMES[i],14,1,tr-tx),tx,rr.centerY()-(roomy?dp(12):dp(2)),14,Ui.TEXT,1,-1);
+        if(roomy)ui.text(c,ui.ellipsize(EDITOR_DESC[i],11,0,tr-tx),tx,rr.centerY()+dp(5),11,Ui.TEXT_2,0,-1);
+        ui.text(c,ui.ellipsize(tileStat(i),10.5f,1,tr-tx),tx,rr.centerY()+(roomy?dp(22):dp(14)),10.5f,i==3&&statWarnings>0?Ui.AMBER:Ui.TEXT_3,1,-1);
+        ui.icon(c,Icons.CHEVRON_RIGHT,rr.right-dp(18),rr.centerY(),16,Ui.TEXT_3);
+        ui.hit(rr,hid);
+    }
+    /** Live 3D look around from the player start (a slow pan), or a prompt if there is no level yet. */
+    private void drawHomePreview(Canvas c,RectF rr){
+        int save=c.save();path.reset();path.addRoundRect(rr,dp(10),dp(10),Path.Direction.CW);c.clipPath(path);
+        int si=level.sectorAt(level.playerX,level.playerY);
+        if(si<0){ui.rect(c,rr.left,rr.top,rr.right,rr.bottom,0xff101317);
+            ui.icon(c,Icons.SECTORS,rr.centerX(),rr.centerY()-dp(16),32,Ui.TEXT_3);
+            ui.textMid(c,level.sectors.isEmpty()?"No level yet — open Sectors to draw your first room":"Set a player start inside a sector",rr.centerX(),rr.centerY()+dp(18),12,Ui.TEXT_2,1,0);
+            c.restoreToCount(save);return;}
+        float t=(System.nanoTime()%1_000_000_000_000L)*1e-9f;
+        float ang=level.facing+(float)Math.sin(t*.22f)*1.1f;
+        Level.Sector sec=level.sectors.get(si);
+        homeSprites.clear();int pool=0;
+        for(int i=0;i<level.things.size();i++){Level.Thing th=level.things.get(i);EntityDef d=project.def(th.def);if(d==null||d.kind==EntityDef.PLAYER)continue;
+            homeSprites.add(sd(pool++).set(th.x,th.y,floorAtLevel(th.x,th.y),project.spriteFor(d,d.sprite,Sprites.F_IDLE,t,0,World.angleDiff((float)Math.atan2(level.playerY-th.y,level.playerX-th.x),th.angle)),-1,false));}
+        renderer.highlight=-1;
+        renderer.render(c,level,level.playerX,level.playerY,Math.min(sec.ceiling-.1f,sec.floor+World.EYE),ang,0,rr,homeSprites);
+        // soft vignette at the bottom for the label
+        p.setShader(new android.graphics.LinearGradient(0,rr.bottom-dp(60),0,rr.bottom,0x00000000,0xb0000000,android.graphics.Shader.TileMode.CLAMP));p.setColor(0xffffffff);
+        c.drawRect(rr.left,rr.bottom-dp(60),rr.right,rr.bottom,p);p.setShader(null);
+        ui.icon(c,Icons.CAMERA,rr.left+dp(18),rr.bottom-dp(16),14,0xccffffff);
+        ui.textMid(c,"Live preview from the player start",rr.left+dp(32),rr.bottom-dp(16),11,0xddffffff,1,-1);
+        c.restoreToCount(save);
+        ui.outline(c,rr,dp(10),0x1effffff,dp(1));
+    }
+    /** Pop-up that lists every editor, from the header title. */
+    private void drawLauncher(Canvas c){
+        ui.clearHits();
+        ui.rect(c,0,0,w,h,0xb3000000);ui.hit(0,0,w,h,H_LAUNCH_CLOSE);
+        int n=EDITOR_NAMES.length+1;int cols=w>dp(760)?4:3,rows=(n+cols-1)/cols;
+        float pw=Math.min(w-dp(40),dp(cols==4?860:640)),tileH=dp(78),gap=dp(10);
+        float ph=dp(64)+rows*tileH+(rows-1)*gap+dp(18);ph=Math.min(ph,h-dp(24));
+        float L=(w-pw)*.5f,T=Math.max(dp(12),(h-ph)*.5f),R=L+pw,B=T+ph;
+        ui.round(c,L,T+dp(4),R,B+dp(4),dp(16),0x80000000);ui.panel(c,L,T,R,B,dp(16));ui.hit(L,T,R,B,-2);
+        ui.text(c,"Open editor",L+dp(20),T+dp(32),17,Ui.TEXT,1,-1);
+        ui.text(c,project.name,L+dp(20),T+dp(50),11,Ui.TEXT_3,0,-1);
+        r.set(R-dp(46),T+dp(12),R-dp(12),T+dp(46));ui.button(c,r,Icons.CANCEL,null,Ui.GHOST);ui.hit(r,H_LAUNCH_CLOSE);
+        float tw=(pw-dp(40)-gap*(cols-1))/cols;int ed=currentEditor();
+        for(int k=0;k<n;k++){int col=k%cols,row=k/cols;float x=L+dp(20)+col*(tw+gap),y=T+dp(64)+row*(tileH+gap);
+            RectF rr=new RectF(x,y,x+tw,y+tileH);
+            if(k==0){boolean on=mode==HOME;ui.round(c,rr,dp(12),on?0xff26324a:Ui.SURFACE_2);ui.outline(c,rr,dp(12),on?Ui.ACCENT:Ui.BORDER,on?dp(2):dp(1));
+                float ib=dp(36),ix=rr.left+dp(12),iy=rr.centerY()-ib*.5f;ui.round(c,ix,iy,ix+ib,iy+ib,dp(9),Ui.SURFACE_3);ui.icon(c,Icons.LOGO,ix+ib*.5f,iy+ib*.5f,20,Ui.TEXT);
+                ui.text(c,"Home",ix+ib+dp(12),rr.centerY()-dp(2),14,Ui.TEXT,1,-1);ui.text(c,"Project overview",ix+ib+dp(12),rr.centerY()+dp(14),10.5f,Ui.TEXT_3,0,-1);
+                ui.hit(rr,H_LAUNCH_HOME);continue;}
+            int i=k-1;boolean on=i==ed;
+            ui.round(c,rr,dp(12),on?0xff26324a:Ui.SURFACE_2);ui.outline(c,rr,dp(12),on?Ui.ACCENT:Ui.BORDER,on?dp(2):dp(1));
+            float ib=dp(36),ix=rr.left+dp(12),iy=rr.centerY()-ib*.5f;ui.round(c,ix,iy,ix+ib,iy+ib,dp(9),EDITOR_COLORS[i]);ui.icon(c,EDITOR_ICONS[i],ix+ib*.5f,iy+ib*.5f,20,0xffffffff);
+            ui.text(c,EDITOR_NAMES[i],ix+ib+dp(12),rr.centerY()-dp(2),14,Ui.TEXT,1,-1);
+            ui.text(c,ui.ellipsize(tileStat(i),10.5f,0,rr.right-ix-ib-dp(20)),ix+ib+dp(12),rr.centerY()+dp(14),10.5f,Ui.TEXT_3,0,-1);
+            ui.hit(rr,H_LAUNCH+i);}
+    }
+    private boolean launcherTap(int hid){
+        if(hid==H_LAUNCH_HOME){openEditor(-1);return true;}
+        if(hid>=H_LAUNCH&&hid<H_LAUNCH+EDITOR_NAMES.length){openEditor(hid-H_LAUNCH);return true;}
+        if(hid==H_LAUNCH_CLOSE){launcherOpen=false;return true;}
+        return true;
+    }
+    private boolean homeTap(int hid){
+        if(hid>=H_TILE&&hid<H_TILE+EDITOR_NAMES.length){openEditor(hid-H_TILE);return true;}
+        if(hid==H_HOMEPLAY){openEditor(3);return true;}
+        if(hid==H_HOME3D){openEditor(2);return true;}
+        if(hid==H_HOMEFIX){showMapCheck();return true;}
+        return false;
     }
     private void drawToast(Canvas c){
         if(System.currentTimeMillis()>=messageUntil||message.isEmpty())return;
@@ -838,11 +1027,14 @@ public class EditorView extends View {
     private void resetLevel(){project.level=new Level();level=project.level;sectorEditor=new SectorEditor(level);pending.clear();selKind=0;walker=null;cancelStage();changed("Level reset");}
     private void changeMode(int next){
         if(mode==PLAY&&next!=PLAY){sfx.stop();world=null;}
+        if(next==PLAY&&mode!=PLAY)returnMode=mode;
+        if(next==HOME)save(false);
+        launcherOpen=false;
         cancelStage();entStage=0;
         mode=next;pending.clear();joyVisible=false;joyPointer=lookPointer=upPointer=downPointer=-1;moveX=moveY=0;flyUp=flyDown=false;dpadPointer=-1;
         lastFrame=System.nanoTime();
         if(next==PLAY)startPlay();
-        hint(next==PLAY?"Left: move · right: look · Fire, Use, Jump, Weapon on the right":next==POLY?"Pick a tool, move the cursor, tap Apply":next==THINGS?"Pick an entity type, then Apply to place it":"Left: move · right: look · double-tap a surface to texture it");
+        if(next!=HOME)hint(next==PLAY?"Left: move · right: look · Fire, Use, Jump, Weapon on the right":next==POLY?"Pick a tool, move the cursor, tap Apply":next==THINGS?"Pick an entity type, then Apply to place it":"Left: move · right: look · double-tap a surface to texture it");
     }
 
     // ---------------------------------------------------------------- touch
@@ -851,10 +1043,10 @@ public class EditorView extends View {
         try{return handleTouch(e);}catch(RuntimeException ex){DoomApp.record(getContext(),ex);drawError=ex.getClass().getSimpleName()+": "+ex.getMessage();invalidate();return true;}
     }
     private boolean toolbarTap(int hid){
-        if(hid>=H_MODE&&hid<H_MODE+4){changeMode(MODES[hid-H_MODE]);return true;}
-        if(hid==H_FSM){openFsm(mode==THINGS?selDef:null);return true;}
-        if(hid==H_SPRITES){openSprites(mode==THINGS?selDef:null);return true;}
-        if(hid==H_LOGO){save(false);if(onExitToTitle!=null)onExitToTitle.run();return true;}
+        if(hid>=H_ED&&hid<H_ED+EDITOR_NAMES.length){openEditor(hid-H_ED);return true;}
+        if(hid==H_SWITCH){launcherOpen=true;return true;}
+        if(hid==H_MORE){moreMenu();return true;}
+        if(hid==H_LOGO){if(mode!=HOME){changeMode(HOME);return true;}save(false);if(onExitToTitle!=null)onExitToTitle.run();return true;}
         if(hid==H_SAVE){save(true);return true;}
         if(hid==H_RESET){if(System.currentTimeMillis()<resetArmedUntil){resetArmedUntil=0;resetLevel();}else{resetArmedUntil=System.currentTimeMillis()+3000;hint("Tap Confirm to reset the whole level");postInvalidateDelayed(3010);}return true;}
         return false;
@@ -863,8 +1055,10 @@ public class EditorView extends View {
     private void openSprites(String defId){save(false);if(host!=null)host.openSprites(defId);}
     private boolean handleTouch(MotionEvent e){
         int a=e.getActionMasked(),idx=e.getActionIndex();float x=e.getX(idx),y=e.getY(idx);
+        if(launcherOpen){if(a==MotionEvent.ACTION_DOWN)launcherTap(ui.hitAt(x,y));invalidate();return true;}
         if(mode==PLAY)return playTouch(e,a,idx,x,y);
         if(a==MotionEvent.ACTION_DOWN&&y<toolbarH){toolbarTap(ui.hitAt(x,y));invalidate();return true;}
+        if(mode==HOME){if(a==MotionEvent.ACTION_DOWN){homeTap(ui.hitAt(x,y));invalidate();}return true;}
         if(mode==POLY3D)return touch3D(e,a,idx,x,y);
         return touch2D(e,a,idx,x,y);
     }
@@ -975,8 +1169,8 @@ public class EditorView extends View {
         int id=e.getPointerId(idx);
         if(a==MotionEvent.ACTION_DOWN||a==MotionEvent.ACTION_POINTER_DOWN){
             int hid=ui.hitAt(x,y);
-            if(world.levelComplete){if(hid==H_RETRY)startPlay();else if(hid==H_BACK)changeMode(POLY3D);return true;}
-            if(hid==H_EXITPLAY){changeMode(POLY3D);return true;}
+            if(world.levelComplete){if(hid==H_RETRY)startPlay();else if(hid==H_BACK)changeMode(returnMode);return true;}
+            if(hid==H_EXITPLAY){changeMode(returnMode);return true;}
             int b=hid==H_FIRE?Input.FIRE:hid==H_USE?Input.USE:hid==H_JUMP?Input.JUMP:hid==H_WEAPON?Input.WEAPON:-1;
             if(b>=0){buttonPointer[b]=id;world.input.setButton(b,true);return true;}
             if(x<w*.45f){if(joyPointer<0){joyPointer=id;joyVisible=true;joyOriginX=joyX=x;joyOriginY=joyY=y;moveX=moveY=0;}}

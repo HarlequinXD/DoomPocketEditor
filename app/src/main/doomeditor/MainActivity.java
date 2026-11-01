@@ -146,7 +146,7 @@ public class MainActivity extends Activity implements UiHost {
     private void clearCrash() { getSharedPreferences(DoomApp.CRASH_PREFS, 0).edit().remove(DoomApp.CRASH_KEY).commit(); }
 
     @Override public void onBackPressed() {
-        if (editor != null) { if (editor.exitPlay()) return; editor.save(false); showTitle(); return; }
+        if (editor != null) { if (editor.goBack()) return; editor.save(false); showTitle(); return; }
         super.onBackPressed();
     }
 }
