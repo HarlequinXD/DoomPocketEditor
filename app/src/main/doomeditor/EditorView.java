@@ -21,12 +21,12 @@ public class EditorView extends View {
     private static final String[] MODE_NAMES={"Sectors","Entities","3D View","Play"};
     private static final int[] MODE_ICONS={Icons.SECTORS,Icons.ENTITIES,Icons.CUBE,Icons.PLAY};
     // Every editor in the app, in header / launcher order. Index 4 and 5 open their own screens.
-    static final String[] EDITOR_NAMES={"Sectors","Entities","3D View","Play","FSM","Sprites","Sound"};
-    static final int[] EDITOR_ICONS={Icons.SECTORS,Icons.ENTITIES,Icons.CUBE,Icons.PLAY,Icons.GRAPH,Icons.PIXEL,Icons.MUSIC};
-    static final int[] EDITOR_COLORS={0xff3d8bfd,0xfff0a030,0xff9b6dff,0xff3ecf8e,0xff2fb8c8,0xffef6b8a,0xffe0679a};
-    static final String[] EDITOR_DESC={"Rooms, doors & stairs","Monsters, items & types","Walk & paint surfaces","Test with the real engine","Behaviour & actions","Pixel art & animation","Sound effects & music"};
-    private static final int[] EDITOR_MODES={POLY,THINGS,POLY3D,PLAY,-1,-1,-1};
-    private static final int H_ED=3000,H_SWITCH=3010,H_MORE=3011,H_LAUNCH=3020,H_LAUNCH_HOME=3027,H_LAUNCH_CLOSE=3028,H_TILE=3040,H_HOMEPLAY=3050,H_HOME3D=3051,H_HOMEFIX=3052;
+    static final String[] EDITOR_NAMES={"Sectors","Entities","3D View","Play","FSM","Sprites","Sound","UI Editor"};
+    static final int[] EDITOR_ICONS={Icons.SECTORS,Icons.ENTITIES,Icons.CUBE,Icons.PLAY,Icons.GRAPH,Icons.PIXEL,Icons.MUSIC,Icons.GAMEPAD};
+    static final int[] EDITOR_COLORS={0xff3d8bfd,0xfff0a030,0xff9b6dff,0xff3ecf8e,0xff2fb8c8,0xffef6b8a,0xffe0679a,0xffd8a830};
+    static final String[] EDITOR_DESC={"Rooms, doors & stairs","Monsters, items & types","Walk & paint surfaces","Test with the real engine","Behaviour & actions","Pixel art & animation","Sound effects & music","Controls & HUD layout"};
+    private static final int[] EDITOR_MODES={POLY,THINGS,POLY3D,PLAY,-1,-1,-1,-1};
+    private static final int H_ED=3000,H_SWITCH=3010,H_MORE=3011,H_LAUNCH=3020,H_LAUNCH_HOME=3037,H_LAUNCH_CLOSE=3038,H_TILE=3040,H_HOMEPLAY=3050,H_HOME3D=3051,H_HOMEFIX=3052;
     private boolean launcherOpen;
     // Touch target ids registered while drawing.
     private static final int H_MODE=100,H_FSM=110,H_SAVE=111,H_RESET=112,H_PAGE=120,H_TOOL=200,H_APPLY=520,H_MAT=4000,
@@ -214,6 +214,7 @@ public class EditorView extends View {
         if(i==4){openFsm(mode==THINGS?selDef:null);return;}
         if(i==5){openSprites(mode==THINGS?selDef:null);return;}
         if(i==6){save(false);if(host!=null)host.openSound(0);return;}
+        if(i==7){save(false);if(host!=null)host.openUi();return;}
         if(EDITOR_MODES[i]!=mode)changeMode(EDITOR_MODES[i]);
     }
     /** Android back: close the launcher, leave Play, leave an editor for Home; false means leave the project. */
@@ -269,6 +270,7 @@ public class EditorView extends View {
             case 3:return statWarnings==0?"Ready to play":statWarnings+" map warning"+(statWarnings==1?"":"s");
             case 4:return statStates+" states · "+project.defs.size()+" machines";
             case 5:return project.sprites.size()+(project.sprites.size()==1?" custom sprite":" custom sprites");
+            case 7:{int moved=0;for(HudLayout.Elem el:project.hud.e)if(el.custom||el.scale!=1||el.alpha!=1||!el.visible)moved++;return moved==0?"Default layout":moved+" control"+(moved==1?"":"s")+" customised";}
             default:return project.sounds.size()+(project.sounds.size()==1?" sound · ":" sounds · ")+project.songs.size()+(project.songs.size()==1?" song":" songs");
         }
     }
@@ -940,7 +942,7 @@ public class EditorView extends View {
         p.setColor(((int)(alpha*235)<<24)|0xe8ecf1);c.drawCircle(joyX,joyY,radius*.4f,p);
         if(!joyVisible)postInvalidateDelayed(32);
     }
-    private void moveJoystick(float x,float y){float dx=x-joyOriginX,dy=y-joyOriginY,len=(float)Math.hypot(dx,dy),limit=dp(56)*.68f,scale=len>limit?limit/len:1;
+    private void moveJoystick(float x,float y){float dx=x-joyOriginX,dy=y-joyOriginY,len=(float)Math.hypot(dx,dy),limit=(mode==PLAY?project.hud.radius(HudLayout.JOYSTICK,ui.dp):dp(56))*.68f,scale=len>limit?limit/len:1;
         joyX=joyOriginX+dx*scale;joyY=joyOriginY+dy*scale;moveX=(joyX-joyOriginX)/limit;moveY=(joyY-joyOriginY)/limit;}
     private void drawSelection3D(Canvas c,float left){
         int k=Renderer.kind(sel3d),v=Renderer.value(sel3d);
@@ -1033,12 +1035,12 @@ public class EditorView extends View {
         if(tp&&pl.alive){float mx=w*.5f,my=h*.5f;p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(1.5f));p.setColor(0xccffffff);
             c.drawCircle(mx,my,dp(6),p);p.setStyle(Paint.Style.FILL);c.drawCircle(mx,my,dp(1.5f),p);}
         drawFloaters(c);
-        drawHud(c);
+        hud().drawStatus(c,w,h,world,false);
         if(world.menuRequested){world.menuRequested=false;openBag();}
         if(world.levelComplete)drawComplete(c);
         else if(bagOpen)drawBag(c);
         else if(world.dialogue!=null)drawDialogue(c);
-        else{drawJoystick(c);drawPlayButtons(c);}
+        else drawPlayControls(c);
         nextFrame();
     }
     // ---------------------------------------------------------------- RPG play UI
@@ -1054,26 +1056,22 @@ public class EditorView extends View {
             float a=Math.max(0,Math.min(1,(1.1f-f.t)*2.5f));float sz=Math.max(11,Math.min(22,proj[2]*h/ui.dp(1)*.32f));
             int al=(int)(a*255);ui.text(c,f.text,proj[0]+dp(1),proj[1]+dp(1),sz,(al<<24),2,0);ui.text(c,f.text,proj[0],proj[1],sz,(al<<24)|(f.color&0xffffff),2,0);}
     }
-    private void drawPlayButtons(Canvas c){
-        Hero hero=world.hero;float bar=dp(52);
-        float fr=dp(38),fx=w-dp(24)-fr,fy=h-bar-dp(16)-fr;
-        playButton(c,fx,fy,fr,0xffc8402e,Icons.SWORD,"ATTACK",H_FIRE,buttonPointer[Input.FIRE]>=0);
-        boolean caster=hero!=null&&!hero.spells.isEmpty();
-        if(caster){Rpg.Spell sp=hero.currentSpell();boolean can=hero.sp>=Rpg.spellCost(sp.level);
-            playButton(c,fx-fr-dp(38),fy-fr*.15f,dp(28),can?0xdd6a3ab8:0x88403a50,Icons.SPARKLE,"CAST",H_SPELL,buttonPointer[Input.SPELL]>=0);}
-        playButton(c,fx-fr*.2f,fy-fr-dp(40),dp(24),0xcc2a3038,Icons.ARROW_UP,"JUMP",H_JUMP,buttonPointer[Input.JUMP]>=0);
-        playButton(c,fx-fr-dp(caster?94:40),fy+dp(caster?18:8),dp(25),0xcc2a3038,Icons.DOOR,"USE",H_USE,buttonPointer[Input.USE]>=0);
-        int pots=hero==null?0:hero.potionCount();
-        playButton(c,fx-fr-dp(caster?62:18),fy-fr-dp(caster?44:30),dp(24),pots>0?0xcc8a2030:0x882a3038,Icons.POTION,pots>0?"x"+pots:"0",H_POTION,buttonPointer[Input.POTION]>=0);
-        // bag (top right) and exit (top left)
-        float br=dp(22);float bx=w-dp(16)-br,by=dp(16)+br;p.setColor(0xcc2a3038);c.drawCircle(bx,by,br,p);ui.icon(c,Icons.BACKPACK,bx,by,20,0xffffffff);ui.hit(bx-br,by-br,bx+br,by+br,H_BAG);
-        float er=dp(18);p.setColor(0x99101318);c.drawCircle(dp(14)+er,dp(14)+er,er,p);ui.icon(c,Icons.CANCEL,dp(14)+er,dp(14)+er,18,0xddffffff);ui.hit(dp(6),dp(6),dp(22)+er*2,dp(22)+er*2,H_EXITPLAY);
+    // ---------------------------------------------------------------- HUD from the UI Editor layout
+    private GameHud hud;private final boolean[] hudDown=new boolean[HudLayout.N];
+    private GameHud hud(){
+        if(hud==null){hud=new GameHud(ui,project.hud);hud.hitIds=new int[]{H_FIRE,H_SPELL,H_JUMP,H_USE,H_POTION,H_BAG,H_EXITPLAY,-1,-1,-1,-1};}
+        hud.layout=project.hud;return hud;
     }
-    private void playButton(Canvas c,float x,float y,float rad,int col,int icon,String label,int hid,boolean down){
-        p.setStyle(Paint.Style.FILL);p.setColor(0x55000000);c.drawCircle(x,y+dp(3),rad,p);p.setColor(down?Ui.brighten(col):col);c.drawCircle(x,y,rad,p);
-        p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(1));p.setColor(0x40ffffff);c.drawCircle(x,y,rad-dp(.5f),p);p.setStyle(Paint.Style.FILL);
-        ui.icon(c,icon,x,y-(rad>dp(30)?dp(5):dp(3)),rad>dp(30)?24:16,0xffffffff);ui.text(c,label,x,y+rad*.62f,rad>dp(30)?10:8,0xffffffff,2,0);
-        ui.hit(x-rad-dp(4),y-rad-dp(4),x+rad+dp(4),y+rad+dp(4),hid);
+    private void drawPlayControls(Canvas c){
+        hudDown[HudLayout.ATTACK]=buttonPointer[Input.FIRE]>=0;hudDown[HudLayout.CAST]=buttonPointer[Input.SPELL]>=0;hudDown[HudLayout.JUMP]=buttonPointer[Input.JUMP]>=0;
+        hudDown[HudLayout.USE]=buttonPointer[Input.USE]>=0;hudDown[HudLayout.POTION]=buttonPointer[Input.POTION]>=0;
+        GameHud g=hud();
+        // joystick: floating fades out after release; a fixed one always shows its base
+        if(g.layout.joyFixed){float[] jc=g.joyCenter(w,h);
+            if(joyVisible)g.drawJoystick(c,joyOriginX,joyOriginY,joyX,joyY,1f);else g.drawJoystick(c,jc[0],jc[1],jc[0],jc[1],.55f);}
+        else{float alpha=joyVisible?1f:Math.max(0f,1f-(System.currentTimeMillis()-joyReleaseTime)/240f);
+            if(alpha>0)g.drawJoystick(c,joyOriginX,joyOriginY,joyX,joyY,alpha);if(!joyVisible&&alpha>0)postInvalidateDelayed(32);}
+        g.drawControls(c,w,h,world.hero,hudDown,false);
     }
     /** A labelled bar (HP, SP, XP). */
     private void bar(Canvas c,float l,float t,float r,float b,float frac,int col,String text){
@@ -1081,41 +1079,6 @@ public class EditorView extends View {
         if(f>0)ui.round(c,l,t,l+Math.max(b-t,(r-l)*f),b,(b-t)*.5f,col);
         ui.outline(c,l,t,r,b,(b-t)*.5f,0x30ffffff,dp(1));
         if(text!=null)ui.textMid(c,text,(l+r)*.5f,(t+b)*.5f,10,0xffffffff,2,0);
-    }
-    private void drawHud(Canvas c){
-        Hero hero=world.hero;if(hero==null)return;
-        float barH=dp(52),top=h-barH;
-        ui.rect(c,0,top,w,h,0xf0141619);ui.hline(c,0,w,top,0xff3a3f46);
-        float x=dp(12),cy=top+barH*.5f;
-        // class badge
-        float bs=dp(36);ui.round(c,x,cy-bs*.5f,x+bs,cy+bs*.5f,dp(8),0xff2a3a5a);ui.textMid(c,String.valueOf(hero.level),x+bs*.5f,cy-dp(3),15,0xffffffff,2,0);ui.textMid(c,"LV",x+bs*.5f,cy+dp(11),7.5f,0xffa8b8d8,2,0);
-        x+=bs+dp(10);
-        float bw=Math.min(dp(170),w*.2f);
-        ui.text(c,hero.cls.name.toUpperCase(),x,top+dp(13),9,Ui.TEXT_3,2,-1);
-        bar(c,x,top+dp(17),x+bw,top+dp(31),world.player.health/(float)Math.max(1,hero.maxHp),world.player.health*4<=hero.maxHp?0xffe0402a:0xffb8282a,Math.max(0,world.player.health)+" / "+hero.maxHp+" HP");
-        if(hero.maxSp>0)bar(c,x,top+dp(34),x+bw,top+dp(44),hero.sp/(float)Math.max(1,hero.maxSp),0xff3a5ad0,hero.sp+" / "+hero.maxSp+" SP");
-        else{ui.text(c,"AC "+hero.ac()+(hero.wardTime>0?" (shielded)":""),x,top+dp(43),11,Ui.TEXT_2,2,-1);}
-        // XP strip along the top edge of the bar
-        float xf=hero.xpFraction();ui.rect(c,0,top-dp(3),w,top,0xff0e1013);ui.rect(c,0,top-dp(3),w*xf,top,0xffd8a830);
-        x+=bw+dp(18);
-        // weapon + spell
-        Rpg.Item wpn=hero.weaponOrFists();
-        ui.text(c,"WEAPON",x,top+dp(13),9,Ui.TEXT_3,2,-1);ui.text(c,wpn.name,x,top+dp(29),13,Ui.TEXT,2,-1);
-        ui.text(c,wpn.damage+Rpg.signed(hero.damageBonus(wpn))+" "+Rpg.DAMAGE_TYPES[wpn.damageType].toLowerCase()+"  ·  "+Rpg.signed(hero.attackBonus(wpn))+" to hit",x,top+dp(43),10,Ui.TEXT_2,1,-1);
-        if(!hero.spells.isEmpty()&&w>dp(720)){float sx=x+Math.max(dp(170),ui.measure(wpn.name,13,2)+dp(20));Rpg.Spell sp=hero.currentSpell();
-            ui.text(c,"SPELL",sx,top+dp(13),9,Ui.TEXT_3,2,-1);ui.text(c,sp.name,sx,top+dp(29),13,0xffc8b0ff,2,-1);ui.text(c,(sp.level==0?"cantrip":Rpg.spellCost(sp.level)+" SP")+"  ·  "+sp.dice,sx,top+dp(43),10,Ui.TEXT_2,1,-1);}
-        // gold + keys (right)
-        float rx=w-dp(14);
-        int[] kc={0xffc87a3a,0xffd0d4dc,0xffe8b830};
-        for(int k=2;k>=0;k--){boolean has=hero.hasKey(k);float kx=rx-dp(14);ui.icon(c,Icons.TAG,kx,cy,15,has?kc[k]:0x26ffffff);rx-=dp(20);}
-        rx-=dp(8);String g=String.valueOf(hero.gold);ui.text(c,g,rx,cy+dp(5),15,0xffffd040,2,1);float gw=ui.measure(g,15,2);ui.icon(c,Icons.COIN,rx-gw-dp(12),cy,16,0xffffd040);
-        // active quest tracker
-        World.Quest q=null;for(World.Quest qq:world.quests.values())if(qq.state==World.Q_ACTIVE)q=qq;
-        if(q!=null){float qw=Math.min(dp(260),w*.32f),qx=w-dp(70)-qw,qy=dp(14);ui.round(c,qx,qy,qx+qw,qy+dp(44),dp(8),0xb0101216);
-            ui.icon(c,Icons.SCROLL,qx+dp(16),qy+dp(15),13,0xffd8a830);ui.text(c,ui.ellipsize(q.title,11.5f,2,qw-dp(36)),qx+dp(28),qy+dp(19),11.5f,0xffffe0a0,2,-1);
-            ui.text(c,ui.ellipsize(q.text,10,1,qw-dp(20)),qx+dp(10),qy+dp(35),10,Ui.TEXT_2,1,-1);}
-        if(world.messageTime>0){float a=Math.min(1,world.messageTime*2);ui.text(c,world.message,dp(62)+dp(1),dp(30)+dp(1),13,((int)(a*200)<<24),1,-1);ui.text(c,world.message,dp(62),dp(30),13,((int)(a*255)<<24)|0xffe2e2,1,-1);}
-        if(world.centerTime>0&&!world.center.isEmpty()){float a=Math.min(1,world.centerTime*2);ui.text(c,world.center,w*.5f+dp(2),h*.36f+dp(2),26,((int)(a*200)<<24),2,0);ui.text(c,world.center,w*.5f,h*.36f,26,((int)(a*255)<<24)|0xffe8b0,2,0);}
     }
     /** Word-wraps text to a width. */
     private ArrayList<String> wrap(String text,float size,int weight,float max){
@@ -1399,7 +1362,12 @@ public class EditorView extends View {
             if(hid==H_BAG){openBag();return true;}
             int b=hid==H_FIRE?Input.FIRE:hid==H_USE?Input.USE:hid==H_JUMP?Input.JUMP:hid==H_WEAPON?Input.WEAPON:hid==H_SPELL?Input.SPELL:hid==H_POTION?Input.POTION:-1;
             if(b>=0){buttonPointer[b]=id;world.input.setButton(b,true);return true;}
-            if(x<w*.45f){if(joyPointer<0){joyPointer=id;joyVisible=true;joyOriginX=joyX=x;joyOriginY=joyY=y;moveX=moveY=0;}}
+            GameHud g=hud();boolean joyHit;
+            if(g.layout.joyFixed){float[] jc=g.joyCenter(w,h);joyHit=Math.hypot(x-jc[0],y-jc[1])<g.layout.radius(HudLayout.JOYSTICK,ui.dp)*1.6f;
+                if(joyHit&&joyPointer<0){joyPointer=id;joyVisible=true;joyOriginX=jc[0];joyOriginY=jc[1];moveX=moveY=0;moveJoystick(x,y);}}
+            else{joyHit=g.joyOnRight(w,h)?x>w*.55f:x<w*.45f;
+                if(joyHit&&joyPointer<0){joyPointer=id;joyVisible=true;joyOriginX=joyX=x;joyOriginY=joyY=y;moveX=moveY=0;}}
+            if(joyHit){}
             else if(lookPointer<0){lookPointer=id;lookLastX=x;lookLastY=y;}
             return true;
         }

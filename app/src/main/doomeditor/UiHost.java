@@ -9,4 +9,6 @@ interface UiHost {
     default void openSprites(String defId){}
     /** Opens the Sound & Music editor on a tab (0 sounds, 1 music, 2 game audio). */
     default void openSound(int tab){}
+    /** Opens the UI Editor (HUD & controls layout). */
+    default void openUi(){}
 }
