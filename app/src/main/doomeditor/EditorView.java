@@ -200,7 +200,7 @@ public class EditorView extends View {
             float px=r.right+dp(12);String pn=ui.ellipsize(project.name,12,0,right-px);
             if(right-px>dp(60))ui.textMid(c,pn,px,cy,12,Ui.TEXT_3,0,-1);
         }else{
-            float ib=dp(30);ui.round(c,tl,cy-ib*.5f,tl+ib,cy+ib*.5f,dp(8),Ui.ACCENT);ui.icon(c,Icons.LOGO,tl+ib*.5f,cy,18,0xffffffff);
+            float ib=dp(30);ui.logo(c,tl,cy-ib*.5f,ib);
             float tx=tl+ib+dp(10);
             ui.text(c,ui.ellipsize(project.name,15,1,right-tx),tx,cy-dp(1),15,Ui.TEXT,1,-1);
             ui.text(c,ui.ellipsize((project.template==null||project.template.isEmpty()?"Project":project.template)+" · Home",10.5f,0,right-tx),tx,cy+dp(13),10.5f,Ui.TEXT_3,0,-1);
@@ -368,7 +368,7 @@ public class EditorView extends View {
         for(int k=0;k<n;k++){int col=k%cols,row=k/cols;float x=L+dp(20)+col*(tw+gap),y=T+dp(64)+row*(tileH+gap);
             RectF rr=new RectF(x,y,x+tw,y+tileH);
             if(k==0){boolean on=mode==HOME;ui.round(c,rr,dp(12),on?0xff26324a:Ui.SURFACE_2);ui.outline(c,rr,dp(12),on?Ui.ACCENT:Ui.BORDER,on?dp(2):dp(1));
-                float ib=dp(36),ix=rr.left+dp(12),iy=rr.centerY()-ib*.5f;ui.round(c,ix,iy,ix+ib,iy+ib,dp(9),Ui.SURFACE_3);ui.icon(c,Icons.LOGO,ix+ib*.5f,iy+ib*.5f,20,Ui.TEXT);
+                float ib=dp(36),ix=rr.left+dp(12),iy=rr.centerY()-ib*.5f;ui.logo(c,ix,iy,ib);
                 ui.text(c,"Home",ix+ib+dp(12),rr.centerY()-dp(2),14,Ui.TEXT,1,-1);ui.text(c,"Project overview",ix+ib+dp(12),rr.centerY()+dp(14),10.5f,Ui.TEXT_3,0,-1);
                 ui.hit(rr,H_LAUNCH_HOME);continue;}
             int i=k-1;boolean on=i==ed;

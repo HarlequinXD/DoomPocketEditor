@@ -70,6 +70,41 @@ final class Ui {
         for(int n=s.length()-1;n>0;n--){String t=s.substring(0,n).trim()+"…";if(measure(t,sizeDp,weight)<=max)return t;}
         return "…";
     }
+    // ---- app emblem: the golden d20 on a purple tile, matching the launcher icon
+    private final java.util.HashMap<Integer,android.graphics.Bitmap> logoCache=new java.util.HashMap<>();
+    /** Draws the app emblem in an s-pixel tile at (x,y). Rendered once per size, then blitted. */
+    void logo(Canvas c,float x,float y,float s){
+        int px=Math.max(8,Math.round(s));android.graphics.Bitmap b=logoCache.get(px);
+        if(b==null){b=android.graphics.Bitmap.createBitmap(px,px,android.graphics.Bitmap.Config.ARGB_8888);renderLogo(new Canvas(b),px);logoCache.put(px,b);}
+        c.drawBitmap(b,Math.round(x),Math.round(y),null);
+    }
+    private static final float LOGO_VIEW=13.5f,LOGO_SPAN=81f;
+    private static float lgx(float u,float s){return (54+(u-54)*.74f-LOGO_VIEW)/LOGO_SPAN*s;}
+    private static void renderLogo(Canvas c,float s){
+        Paint q=new Paint(Paint.ANTI_ALIAS_FLAG);float k=s/LOGO_SPAN,mid=(54-LOGO_VIEW)*k;
+        q.setShader(new android.graphics.RadialGradient(mid,s*.4f,s*.85f,0xff5a2a8a,0xff160828,android.graphics.Shader.TileMode.CLAMP));
+        c.drawRoundRect(new RectF(0,0,s,s),s*.22f,s*.22f,q);
+        q.setShader(new android.graphics.RadialGradient(mid,mid,36*k,0xd9ffd8ff,0x00b050ff,android.graphics.Shader.TileMode.CLAMP));c.drawCircle(mid,mid,36*k,q);q.setShader(null);
+        float[][] f={{54,20,84,37,54,40},{54,20,24,37,54,40},{24,37,54,40,36,70},{84,37,54,40,72,70},{54,40,36,70,72,70},{24,37,36,70,24,71},{84,37,72,70,84,71},{36,70,72,70,54,88},{24,71,36,70,54,88},{84,71,72,70,54,88}};
+        int[] col={0xfff6d478,0xffffe8a0,0xffe8b84a,0xffc88a28,0xffffe08a,0xffb07820,0xff8a5a14,0xffa86e1a,0xff8a5a14,0xff6e4610};
+        android.graphics.Path pa=new android.graphics.Path();
+        // soft drop shadow under the die
+        q.setStyle(Paint.Style.FILL);q.setColor(0x66000000);pa.reset();pa.moveTo(lgx(54,s),lgx(21.5f,s));pa.lineTo(lgx(85,s),lgx(38.5f,s));pa.lineTo(lgx(85,s),lgx(72.5f,s));pa.lineTo(lgx(54,s),lgx(90,s));pa.lineTo(lgx(23,s),lgx(72.5f,s));pa.lineTo(lgx(23,s),lgx(38.5f,s));pa.close();c.drawPath(pa,q);
+        for(int i=0;i<f.length;i++){pa.reset();pa.moveTo(lgx(f[i][0],s),lgx(f[i][1],s));pa.lineTo(lgx(f[i][2],s),lgx(f[i][3],s));pa.lineTo(lgx(f[i][4],s),lgx(f[i][5],s));pa.close();
+            q.setStyle(Paint.Style.FILL);q.setColor(col[i]);c.drawPath(pa,q);
+            q.setStyle(Paint.Style.STROKE);q.setStrokeWidth(Math.max(1,.8f*.74f*k));q.setStrokeJoin(Paint.Join.ROUND);q.setColor(0xff5a3408);c.drawPath(pa,q);}
+        q.setStyle(Paint.Style.FILL);q.setColor(0xff4a2606);q.setTextAlign(Paint.Align.CENTER);q.setTypeface(android.graphics.Typeface.create("serif",android.graphics.Typeface.BOLD));
+        q.setTextSize(14*.74f*k);c.drawText("20",lgx(54,s),lgx(63,s),q);
+        // quill: translate(72 31) rotate(28) scale(.5), drawn only when the tile is big enough to read it
+        if(s>=28){double a=Math.toRadians(28);float ca=(float)Math.cos(a),sa=(float)Math.sin(a);
+            float[][] feather={{0,6},{-9,-14},{-6,-36},{3,-50},{8,-34},{9,-14},{0,6}};
+            pa.reset();float[] p0=qt(feather[0],ca,sa,s);pa.moveTo(p0[0],p0[1]);
+            for(int i=1;i<7;i+=3){float[] a1=qt(feather[i],ca,sa,s),a2=qt(feather[i+1],ca,sa,s),a3=qt(feather[i+2],ca,sa,s);pa.cubicTo(a1[0],a1[1],a2[0],a2[1],a3[0],a3[1]);}
+            pa.close();q.setStyle(Paint.Style.FILL);q.setColor(0xfff4f0e8);c.drawPath(pa,q);q.setStyle(Paint.Style.STROKE);q.setStrokeWidth(Math.max(.8f,.35f*k));q.setColor(0xff8a8070);c.drawPath(pa,q);
+            float[][] nib={{-1.6f,4},{1.6f,4},{.6f,13},{0,15},{-.6f,13}};pa.reset();float[] n0=qt(nib[0],ca,sa,s);pa.moveTo(n0[0],n0[1]);for(int i=1;i<nib.length;i++){float[] n=qt(nib[i],ca,sa,s);pa.lineTo(n[0],n[1]);}pa.close();
+            q.setStyle(Paint.Style.FILL);q.setColor(0xffe8b84a);c.drawPath(pa,q);}
+    }
+    private static float[] qt(float[] p,float ca,float sa,float s){float x=(p[0]*ca-p[1]*sa)*.5f+72,y=(p[0]*sa+p[1]*ca)*.5f+31;return new float[]{lgx(x,s),lgx(y,s)};}
     void icon(Canvas c,int id,float cx,float cy,float sizeDp,int color){Icons.draw(c,p,id,cx,cy,dp(sizeDp),color);}
 
     /** Small all-caps section label. */
