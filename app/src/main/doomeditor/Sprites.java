@@ -3,10 +3,16 @@ package com.retro.doomeditor;
 /** Procedurally drawn pixel-art sprites for entities, effects and first-person weapons. */
 final class Sprites {
     private Sprites(){}
+    // Built-in sprite ids. The numbers are stable (projects store them); the art is fantasy.
     static final int PLAYER=0,TROOPER=1,IMP=2,DEMON=3,MEDKIT=4,STIMPACK=5,CLIP=6,SHELLS=7,ROCKETBOX=8,ARMOR=9,SHOTGUN_PICKUP=10,
-            CHAINGUN_PICKUP=11,LAUNCHER_PICKUP=12,KEY_BLUE=13,KEY_YELLOW=14,KEY_RED=15,BARREL=16,TORCH=17,COLUMN=18,SWITCH=19,SWITCH_ON=20,LAMP=21,SERGEANT=22;
-    static final String[] NAMES={"Player","Trooper","Imp","Demon","Medkit","Stimpack","Ammo Clip","Shells","Rocket Box","Armor","Shotgun","Chaingun","Rocket Launcher",
-            "Blue Key","Yellow Key","Red Key","Barrel","Torch","Column","Switch","Switch On","Lamp","Sergeant"};
+            CHAINGUN_PICKUP=11,LAUNCHER_PICKUP=12,KEY_BLUE=13,KEY_YELLOW=14,KEY_RED=15,BARREL=16,TORCH=17,COLUMN=18,SWITCH=19,SWITCH_ON=20,LAMP=21,SERGEANT=22,
+            SHIELD_PICKUP=23,SCROLL=24,NPC=25,CHEST=26,CHEST_OPEN=27,GOLD=28;
+    // Fantasy names for the same ids
+    static final int HERO=PLAYER,SKELETON=TROOPER,GOBLIN=IMP,ORC=DEMON,CULTIST=SERGEANT,VILLAGER=NPC,
+            POTION_HEALING=MEDKIT,DRAUGHT=STIMPACK,DAGGER=CLIP,POTION_ARCANA=SHELLS,TREASURE=ROCKETBOX,ARMOUR=ARMOR,SWORD=SHOTGUN_PICKUP,BOW=CHAINGUN_PICKUP,STAFF=LAUNCHER_PICKUP,
+            KEY_BRONZE=KEY_BLUE,KEY_SILVER=KEY_YELLOW,KEY_GOLD=KEY_RED,PILLAR=COLUMN,LEVER=SWITCH,LEVER_ON=SWITCH_ON,BRAZIER=LAMP;
+    static final String[] NAMES={"Hero","Skeleton","Goblin","Orc","Healing Potion","Healing Draught","Dagger","Arcana Potion","Treasure","Armour","Sword","Bow","Staff",
+            "Bronze Key","Silver Key","Gold Key","Barrel","Torch","Pillar","Lever","Lever (pulled)","Brazier","Cultist","Shield","Scroll","Villager","Chest","Chest (open)","Gold"};
     static final String NAMES_JOINED=join(NAMES);
     static String join(String[] a){StringBuilder b=new StringBuilder();for(int i=0;i<a.length;i++){if(i>0)b.append('|');b.append(a[i]);}return b.toString();}
     static final int COUNT=NAMES.length;
@@ -28,7 +34,7 @@ final class Sprites {
     private static final Object lock=new Object();
 
     /** Bump when the models or renderer change so stale disk-cached sprites are ignored. */
-    static final int MODEL_VERSION=3;
+    static final int MODEL_VERSION=4;
     private static java.io.File diskDir;
     /** Rendered sprites are saved here (compressed) so each one is only ever rendered once per install. */
     static void setCacheDir(java.io.File dir){
@@ -71,7 +77,7 @@ final class Sprites {
         synchronized(requests){for(int[] r:requests)if(r[0]==id&&r[1]==f&&r[2]==view)return;requests.addFirst(new int[]{id,f,view});requests.notifyAll();}
     }
     /** Characters have 8 rotations (front, front-right, right, back-right, back, back-left, left, front-left). */
-    static final int[] CHARACTERS={PLAYER,TROOPER,SERGEANT,IMP,DEMON};
+    static final int[] CHARACTERS={PLAYER,TROOPER,SERGEANT,IMP,DEMON,NPC};
     static boolean hasAngles(int id){for(int c:CHARACTERS)if(c==id)return true;return false;}
     static Sprite get(int id,int frame){return get(id,frame,0);}
     private static int frameSlot(int id,int frame){return hasAngles(id)?frame:id==TORCH?(frame&1):0;}
@@ -126,15 +132,16 @@ final class Sprites {
         tmp.renameTo(file);
     }
     private static Sprite build(int id,int frame,int view){
-        SpriteModels.Model m;float elev;boolean bright=id==KEY_BLUE||id==KEY_YELLOW||id==KEY_RED||id==TORCH||id==LAMP;
+        SpriteModels.Model m;float elev;boolean bright=id==TORCH||id==LAMP;
         switch(id){
-            case PLAYER:m=SpriteModels.soldier(0,frame);elev=.15f;break;
-            case TROOPER:m=SpriteModels.soldier(1,frame);elev=.15f;break;
-            case SERGEANT:m=SpriteModels.soldier(2,frame);elev=.15f;break;
-            case IMP:m=SpriteModels.imp(frame);elev=.15f;break;
-            case DEMON:m=SpriteModels.demon(frame);elev=.15f;break;
+            case HERO:m=SpriteModels.hero(frame);elev=.15f;break;
+            case SKELETON:m=SpriteModels.skeleton(frame);elev=.15f;break;
+            case CULTIST:m=SpriteModels.cultist(frame);elev=.15f;break;
+            case GOBLIN:m=SpriteModels.goblin(frame);elev=.15f;break;
+            case ORC:m=SpriteModels.orc(frame);elev=.15f;break;
+            case VILLAGER:m=SpriteModels.villager(frame);elev=.15f;break;
             default:{m=SpriteModels.item(id,frame);
-                boolean tall=id==TORCH||id==COLUMN||id==LAMP||id==SWITCH||id==SWITCH_ON||id==BARREL||id==KEY_BLUE||id==KEY_YELLOW||id==KEY_RED;
+                boolean tall=id==TORCH||id==COLUMN||id==LAMP||id==SWITCH||id==SWITCH_ON||id==BARREL;
                 elev=tall?.18f:.42f;   // pickups lie on the floor, so look down on them a little more
                 // turn items a little so they read in 3D (front-three-quarter)
                 return SpriteModels.render(m,tall?.0f:.55f,elev,MODEL_PPU,bright,id*7+frame);}
@@ -145,6 +152,14 @@ final class Sprites {
     static Sprite getBack(int id,int frame){return get(id,frame,4);}
     static boolean hasBack(int id){return hasAngles(id);}
     static Sprite effect(int id,int frame,boolean dummy){init();return effects[Math.max(0,Math.min(6,id))][Math.max(0,Math.min(2,frame))];}
+    private static final Sprite[][] fp=new Sprite[8][2];
+    /** First-person weapon (Rpg.FP_*), at rest or mid-attack. Rendered from 3D models on first use. */
+    static Sprite fpSprite(int w,boolean attacking){
+        w=Math.max(0,Math.min(7,w));int k=attacking?1:0;
+        synchronized(fp){if(fp[w][k]!=null)return fp[w][k];}
+        Sprite s=SpriteModels.render(SpriteModels.firstPerson(w,attacking),(float)Math.PI,.06f,96f,false,500+w*2+k);
+        synchronized(fp){if(fp[w][k]==null)fp[w][k]=s;return fp[w][k];}
+    }
     static Sprite weaponSprite(int w){init();return weapons[Math.max(0,Math.min(4,w))];}
     static Sprite flashSprite(int w){init();return flashes[Math.max(0,Math.min(4,w))];}
     static android.graphics.Bitmap preview(int id){

@@ -73,6 +73,8 @@ final class SpriteModels {
         Prim torus(float[] c,float[] up,float R,float r,int m){float[][] f=frame(up);Prim p=new Prim();p.type=TORUS;p.mat=m;set(p.c,c);
             // local z = up
             set(p.ax[0],f[1]);set(p.ax[1],f[2]);set(p.ax[2],f[0]);p.r=R;p.r2=r;return add(p);}
+        /** Uniformly scales the whole model about the origin (feet), e.g. small goblins and big orcs. */
+        void scale(float f){for(Prim p:prims){for(int i=0;i<3;i++){p.c[i]*=f;p.a[i]*=f;p.b[i]*=f;p.h[i]*=f;}p.r*=f;p.r2*=f;p.round*=f;p.k*=f;}}
         /** Rigidly rotates everything about the y axis through {@code pivot}, then moves it (used for corpses). */
         void rotateY(float[] pivot,float ang,float[] move){
             float cs=(float)Math.cos(ang),sn=(float)Math.sin(ang);
@@ -396,150 +398,211 @@ final class SpriteModels {
         m.ellDir(add(add(h,f,.086f),up,-.058f),f,.006f,.024f,.004f,m.plastic(0xff3a1c18,.1f));          // mouth
     }
 
-    /** Marines, troopers and sergeants. style 0 = player, 1 = trooper, 2 = sergeant. */
-    static Model soldier(int style,int frame){
+    // ---- weapons held by characters
+    private static void sword(Model m,float[] hand,float[] d,float len,int steel,int grip,int guard,boolean broad){
+        float[][] f=frame(d);m.in(G_GEAR,0);
+        m.cyl(add(hand,d,-.06f),add(hand,d,.05f),.016f,grip);                                   // grip
+        m.ell(add(hand,d,-.075f),.024f,.024f,.024f,guard);                                       // pommel
+        m.rbox(add(hand,d,.065f),d,.012f,.075f,.016f,.006f,guard);                               // crossguard
+        m.rbox(add(hand,d,.075f+len*.5f),d,len*.5f,broad?.026f:.019f,.0075f,.005f,steel);        // blade
+        m.cone(add(hand,d,.075f+len-.02f),add(hand,d,.075f+len+.03f),.016f,.002f,steel);          // tip
+    }
+    private static void roundShield(Model m,float[] c,float[] facing,float r,int wood,int metal){
+        m.in(G_GEAR,0);float[] n=norm(facing);
+        m.cyl(add(c,n,-.015f),add(c,n,.015f),r,wood);
+        m.torus(c,n,r,.012f,metal);
+        m.ell(add(c,n,.02f),.04f,.04f,.04f,metal);
+    }
+    private static void axe(Model m,float[] hand,float[] d,int wood,int steel,boolean great){
+        m.in(G_GEAR,0);float[][] f=frame(d);float len=great?.85f:.5f;
+        m.cyl(add(hand,d,-.2f),add(hand,d,len),great?.018f:.015f,wood);
+        float[] head=add(hand,d,len-.08f);
+        m.rbox(add(head,f[1],-.07f),d,great?.1f:.07f,.07f,.008f,.004f,steel);
+        m.ell(add(head,f[1],-.14f),.003f,great?.09f:.06f,.01f,steel);
+        m.cone(head,add(head,d,.08f),.02f,.004f,steel);
+    }
+    private static void mace(Model m,float[] hand,float[] d,int wood,int steel){
+        m.in(G_GEAR,0);m.cyl(add(hand,d,-.08f),add(hand,d,.38f),.016f,wood);float[] h=add(hand,d,.42f);
+        m.ell(h,.05f,.05f,.05f,steel);for(int k=0;k<6;k++){double a=k*Math.PI/3;float[][] f=frame(d);float[] o=add(mul(f[1],(float)Math.cos(a)),mul(f[2],(float)Math.sin(a)));m.cone(h,add(h,o,.07f),.015f,.003f,steel);}
+    }
+
+    /** The adventurer: chain mail under a tabard, cloak, sword and round shield. */
+    static Model hero(int frame){
         Model m=new Model();Pose ps=pose(frame);Body b=new Body();
-        b.skin=m.skin(style==0?0xffc89878:0xffa8b098,style==0?.6f:.3f);
-        b.legs=m.cloth(style==0?0xff5c5440:style==1?0xff6e6448:0xff3e4046);
-        b.torso=m.cloth(style==0?0xff3e4a32:style==1?0xff5a5e40:0xff2e3036);
-        b.boots=m.leather(0xff2e221a);b.hands=m.leather(style==0?0xff262422:style==1?0xff8e9480:0xff3a2620);
-        int armour=m.plastic(style==0?0xff3a4f26:style==1?0xff59603c:0xff26282c,.22f);
-        int webbing=m.cloth(0xff3c3424),buckle=m.metal(0xff9a9070);
-        int gunmetal=m.metal(0xff3c4046),polymer=m.plastic(0xff1e2022,.25f),steel=m.metal(0xff7a8088),wood=m.wood(0xff6a3e1e);
-        int eye=style==0?m.plastic(0xff2a2a2a,.6f):m.glow(0xffff2a10);
-        if(style==2){b.bulk=1.12f;b.chestW=.18f;b.shoulderW=.19f;}
+        b.skin=m.skin(0xffc89878,.55f);b.legs=m.leather(0xff4a3624);b.torso=m.metal(0xff7c8288);b.boots=m.leather(0xff2e2016);b.hands=m.leather(0xff3a2a1c);
+        int tabard=m.cloth(0xff2c4a8a),cloak=m.cloth(0xff7a1e1e),belt=m.leather(0xff3a2616),buckle=m.metal(0xffb89a50),hair=m.cloth(0xff4a2e18),
+            steel=m.metal(0xffb8c0c8),grip=m.leather(0xff3a2416),brass=m.metal(0xffb08a40),wood=m.wood(0xff6a4424),eye=m.plastic(0xff2a2420,.6f);
         buildTorso(m,b,ps);
         buildLeg(m,b,ps,-1,ps.lThigh,ps.lKnee,b.boots,true);buildLeg(m,b,ps,1,ps.rThigh,ps.rKnee,b.boots,true);
         float[] ld=leanDir(b);
-        // body armour: front + back plates, shoulder guards (marine), webbing and belt with pouches
-        m.in(G_BODY,.018f);
-        m.rbox(leanPt(b,v(.085f*b.bulk,0,b.chestZ+.005f+ps.bob)),ld,.035f,.135f*b.bulk,.13f,.03f,armour);
-        m.rbox(leanPt(b,v(-.085f*b.bulk,0,b.chestZ+.01f+ps.bob)),ld,.035f,.13f*b.bulk,.13f,.03f,armour);
-        if(style==0)for(int s=-1;s<=1;s+=2){m.in(G_GEAR,0);m.ellDir(leanPt(b,v(0,s*(b.shoulderW+.012f),b.shoulderZ+.02f+ps.bob)),ld,.072f,.07f,.05f,armour);}
+        // tabard front and back, belt, cloak
+        m.in(G_BODY,.015f);
+        m.rbox(leanPt(b,v(.1f,0,b.waistZ+.02f+ps.bob)),ld,.02f,.11f,.22f,.015f,tabard);
+        m.rbox(leanPt(b,v(-.1f,0,b.waistZ+.02f+ps.bob)),ld,.02f,.11f,.22f,.015f,tabard);
         m.in(G_GEAR,0);
-        m.ellDir(leanPt(b,v(0,0,b.waistZ-.055f+ps.bob)),ld,.098f*b.bulk,.14f*b.bulk,.026f,webbing);      // belt
-        m.rbox(leanPt(b,v(.097f*b.bulk,0,b.waistZ-.055f+ps.bob)),ld,.008f,.026f,.02f,.005f,buckle);
-        for(int s=-1;s<=1;s+=2)m.rbox(leanPt(b,v(.07f*b.bulk,s*.085f,b.waistZ-.07f+ps.bob)),norm(v(1,s*.6f,0)),.03f,.035f,.042f,.012f,webbing);
-        if(style==0){m.rbox(leanPt(b,v(-.15f,0,b.chestZ+.0f+ps.bob)),ld,.06f,.115f,.15f,.03f,m.cloth(0xff4a4a34));       // backpack
-            for(int s=-1;s<=1;s+=2)m.cone(leanPt(b,v(.02f,s*.1f,b.shoulderZ+.02f+ps.bob)),leanPt(b,v(-.1f,s*.1f,b.shoulderZ-.04f+ps.bob)),.014f,.014f,webbing);}
-        // head: face, plus helmet (marine) or close-cropped hair
-        buildFace(m,b,eye,style!=0);
-        float[] h=b.head,f=b.headF;
-        m.in(G_GEAR,0);
-        if(style==0){m.ellDir(add(add(h,f,-.01f),v(0,0,.028f)),f,.113f,.1f,.096f,armour);
-            m.rbox(add(add(h,f,.088f),v(0,0,.012f)),f,.018f,.068f,.027f,.012f,m.glass(0xff10262c));}
-        else m.ellDir(add(add(h,f,-.012f),v(0,0,.02f)),f,.098f,.086f,.094f,m.cloth(style==1?0xff2a2018:0xff151414));
-        // weapon (rifle, or pump shotgun for the sergeant): ready hold, raised to the shoulder when firing
-        boolean shotgun=style==2;
-        if(ps.dead){
-            buildArm(m,b,ps,1,null,ps.rArmSwing,b.hands,false,0);buildArm(m,b,ps,-1,null,ps.lArmSwing,b.hands,false,0);
-            corpse(m);
-            gun(m,v(.15f,-.48f,.035f),norm(v(.3f,1,0)),shotgun,gunmetal,polymer,steel,wood,false);
-            return m;
-        }
-        float gz=(ps.attack?b.shoulderZ-.05f:b.waistZ+.02f)+ps.bob;
-        float[] gd=ps.attack?X:norm(v(1,-.4f,-.1f));
-        if(frame==Sprites.F_PAIN){gd=norm(v(.75f,-.25f,.35f));gz+=.05f;}
-        float[] grip=v(ps.attack?.14f:.12f,.085f,gz);
-        float[] fore=gun(m,grip,gd,shotgun,gunmetal,polymer,steel,wood,ps.flash);
-        buildArm(m,b,ps,1,grip,0,b.hands,false,0);buildArm(m,b,ps,-1,fore,0,b.hands,false,0);
+        m.ellDir(leanPt(b,v(0,0,b.waistZ-.06f+ps.bob)),ld,.1f,.14f,.025f,belt);m.rbox(leanPt(b,v(.1f,0,b.waistZ-.06f+ps.bob)),ld,.008f,.025f,.02f,.005f,buckle);
+        if(!ps.dead){float sway=frame==Sprites.F_WALK1||frame==Sprites.F_WALK2?.08f:.03f;
+            m.in(G_BODY,.02f);m.rbox(leanPt(b,v(-.15f-sway,0,b.waistZ+.02f+ps.bob)),norm(v(.15f,0,1)),.4f,.17f,.014f,.012f,cloak).ax[0][0]+=0;}
+        buildFace(m,b,eye,false);
+        float[] h=b.head,f=b.headF;m.in(G_GEAR,0);m.ellDir(add(add(h,f,-.015f),v(0,0,.03f)),f,.1f,.089f,.09f,hair);
+        if(ps.dead){buildArm(m,b,ps,1,null,ps.rArmSwing,b.hands,false,0);buildArm(m,b,ps,-1,null,ps.lArmSwing,b.hands,false,0);corpse(m);
+            sword(m,v(.25f,.42f,.03f),norm(v(1,.2f,0)),.7f,steel,grip,brass,true);roundShield(m,v(-.1f,-.5f,.03f),Z,.22f,wood,steel);return m;}
+        // sword arm: ready (blade up) or mid-swing; shield on the off arm
+        float[] rh=ps.attack?leanPt(b,v(.4f,.08f,1.05f)):leanPt(b,v(.2f,.2f,.88f+ps.bob));
+        float[] sd=ps.attack?norm(v(.7f,-.55f,-.2f)):norm(v(.45f,.05f,.9f));
+        if(frame==Sprites.F_PAIN){rh=leanPt(b,v(.05f,.32f,.95f));sd=norm(v(.2f,.4f,.9f));}
+        sword(m,rh,sd,.64f,steel,grip,brass,true);
+        float[] lh=leanPt(b,v(.22f,-.2f,.98f+ps.bob));
+        buildArm(m,b,ps,1,rh,0,b.hands,false,0);buildArm(m,b,ps,-1,lh,0,b.hands,false,0);
+        roundShield(m,add(lh,v(.05f,-.03f,.02f)),norm(v(1,-.25f,0)),.2f,wood,steel);
         return m;
     }
-    /** Builds a long gun with its pistol grip at {@code grip}; returns where the support hand goes. */
-    private static float[] gun(Model m,float[] grip,float[] d,boolean shotgun,int gunmetal,int polymer,int steel,int wood,boolean flash){
-        float[][] f=frame(d);float[] zz=f[2];
-        m.in(G_GEAR,0);
-        float[] rc=add(add(grip,d,.07f),zz,.035f);   // receiver centre
-        if(!shotgun){
-            m.rbox(rc,d,.11f,.021f,.034f,.008f,gunmetal);                                         // receiver
-            m.rbox(add(rc,d,.17f),d,.075f,.024f,.027f,.01f,polymer);                               // handguard
-            m.cyl(add(rc,d,.24f),add(rc,d,.37f),.009f,steel);                                     // barrel
-            m.cyl(add(rc,d,.35f),add(rc,d,.39f),.014f,gunmetal);                                  // muzzle brake
-            m.rbox(add(add(rc,d,.02f),zz,-.07f),norm(add(d,zz,-.25f)),.022f,.015f,.05f,.006f,gunmetal);   // magazine
-            m.rbox(add(add(rc,d,-.19f),zz,-.012f),d,.085f,.019f,.033f,.012f,polymer);             // stock
-            m.rbox(add(rc,zz,.045f),d,.035f,.012f,.012f,.004f,gunmetal);                          // sight rail
-        }else{
-            m.rbox(rc,d,.09f,.022f,.032f,.008f,gunmetal);
-            m.cyl(add(add(rc,d,.05f),zz,.012f),add(add(rc,d,.42f),zz,.012f),.013f,steel);           // barrel
-            m.cyl(add(add(rc,d,.08f),zz,-.016f),add(add(rc,d,.38f),zz,-.016f),.012f,gunmetal);     // magazine tube
-            m.rbox(add(add(rc,d,.24f),zz,-.018f),d,.075f,.024f,.022f,.012f,wood);                  // pump
-            m.rbox(add(add(rc,d,-.2f),zz,-.02f),norm(add(d,zz,-.12f)),.11f,.022f,.038f,.014f,wood); // stock
-        }
-        m.rbox(add(add(grip,d,.0f),zz,-.005f),norm(add(d,zz,-1.4f)),.018f,.014f,.042f,.006f,shotgun?wood:polymer);   // pistol grip
-        if(flash){m.in(G_FX,0);float[] mz=add(rc,d,shotgun?.47f:.43f);
-            m.ellDir(add(mz,d,.04f),d,.07f,.045f,.045f,m.glow(0xffff9030));m.ellDir(add(mz,d,.02f),d,.035f,.025f,.025f,m.glow(0xfffff0c0));
-            for(int k=0;k<3;k++){double a=k*2.1;m.cone(mz,add(add(mz,d,.04f),add(mul(f[1],(float)Math.cos(a)*.07f),mul(zz,(float)Math.sin(a)*.07f))),.016f,.003f,m.glow(0xffffb040));}}
-        return add(add(rc,d,shotgun?.24f:.17f),zz,-.03f);
-    }
-    /** Imp: sinewy brown demon with bone spikes, claws and glowing eyes; throws fireballs. */
-    static Model imp(int frame){
-        Model m=new Model();Pose ps=pose(frame);Body b=new Body();
-        b.skin=m.hide(0xff7e4a2c,.75f);b.legs=b.skin;b.torso=b.skin;b.hands=b.skin;b.boots=b.skin;
-        int bone=m.plastic(0xffd9cfb0,.35f),eye=m.glow(0xffffa01a),dark=m.hide(0xff5a3420,.8f),mouth=m.glow(0xffd04010);
-        b.bulk=1.05f;b.chestW=.17f;b.shoulderW=.19f;b.headR=.1f;b.thighR=.075f;b.armR=.05f;b.upper=.28f;b.fore=.29f;
-        if(!ps.dead&&frame!=Sprites.F_PAIN)ps.lean+=.32f;   // hunched predator stance
-        buildTorso(m,b,ps);
-        buildLeg(m,b,ps,-1,ps.lThigh+.12f,ps.lKnee+.25f,dark,false);buildLeg(m,b,ps,1,ps.rThigh+.12f,ps.rKnee+.25f,dark,false);
-        float[] ld=leanDir(b);
-        // abdominal muscles + ribs
+    /** Animated skeleton warrior: bones, ribcage, glowing eye sockets, rusty sword. */
+    static Model skeleton(int frame){
+        Model m=new Model();Pose ps=pose(frame);
+        int bone=m.mat(0xffd8cfb4,.25f,.25f),dark=m.plastic(0xff1a1612,.1f),eye=m.glow(0xff7ad8ff),rust=m.mat(0xff7a5a3c,.4f,.5f),cloth=m.cloth(0xff4a3a2a);
+        float bob=ps.bob;float lean=ps.lean+.05f;
+        float[] pelvis=v(0,0,.78f+bob);
         m.in(G_BODY,.02f);
-        for(int k=0;k<3;k++)for(int s=-1;s<=1;s+=2)m.ellDir(leanPt(b,v(.075f,s*.035f,b.waistZ+.03f-k*.045f+ps.bob)),ld,.02f,.03f,.02f,b.skin);
-        // spikes: shoulders, spine, elbows
-        m.in(G_GEAR,0);
-        for(int s=-1;s<=1;s+=2){float[] sh=leanPt(b,v(-.02f,s*(b.shoulderW+.02f),b.shoulderZ+.03f+ps.bob));m.cone(sh,add(sh,v(-.05f,s*.07f,.13f)),.022f,.002f,bone);
-            float[] sh2=leanPt(b,v(-.05f,s*(b.shoulderW-.03f),b.shoulderZ+.02f+ps.bob));m.cone(sh2,add(sh2,v(-.08f,s*.04f,.09f)),.016f,.002f,bone);}
-        for(int k=0;k<4;k++){float[] sp=leanPt(b,v(-.1f,0,b.chestZ+.1f-k*.075f+ps.bob));m.cone(sp,add(sp,v(-.09f,0,.05f)),.016f,.002f,bone);}
-        buildFace(m,b,eye,true);
+        m.ellDir(pelvis,X,.07f,.12f,.05f,bone);
+        // spine and ribcage
+        float[] chest=add(pelvis,norm(v((float)Math.sin(lean),0,(float)Math.cos(lean))),.3f);
+        m.cone(pelvis,chest,.022f,.022f,bone);
+        for(int k=0;k<5;k++){float t=.35f+k*.13f;float[] c=lerp(pelvis,chest,t);float rr=.07f+.04f*(float)Math.sin(Math.PI*(t-.2f));m.torus(add(c,v(.02f,0,0)),norm(v(-(float)Math.sin(lean),0,(float)Math.cos(lean))),rr,.011f,bone);}
+        m.cone(add(chest,v(.02f,0,.06f)),add(chest,v(.03f,0,-.1f)),.015f,.012f,bone);              // sternum
+        float[] neck=add(chest,v(.01f,0,.1f)),head=add(neck,v(.015f+(float)Math.sin(lean+ps.headPitch)*.05f,0,.1f));
+        m.cone(chest,neck,.018f,.016f,bone);
+        // skull
+        m.in(G_BODY,.015f);
+        m.ellDir(head,X,.085f,.07f,.09f,bone);m.ellDir(add(head,v(.045f,0,-.06f)),X,.05f,.05f,.03f,bone);
+        m.in(G_GEAR,0);for(int s2=-1;s2<=1;s2+=2){m.ell(add(head,v(.07f,s2*.03f,.005f)),.02f,.019f,.019f,dark);m.ell(add(head,v(.085f,s2*.03f,.005f)),.006f,.006f,.006f,eye);}
+        m.ell(add(head,v(.085f,0,-.03f)),.01f,.008f,.012f,dark);
+        for(int k=-2;k<=2;k++)m.rbox(add(head,v(.088f,k*.012f,-.055f)),X,.005f,.005f,.008f,.002f,bone);
+        // shoulders + arms
+        float[] shR=add(chest,v(0,.15f,.03f)),shL=add(chest,v(0,-.15f,.03f));
+        m.in(G_BODY,.01f);m.cone(shL,shR,.016f,.016f,bone);
+        Body b=new Body();b.upper=.26f;b.fore=.25f;
+        float[] rh=ps.attack?add(chest,v(.35f,.1f,.05f)):ps.dead?null:add(chest,v(.18f,.2f,-.2f));
+        float[] lh=ps.dead?null:add(chest,v(.12f,-.24f,-.28f+ps.lArmSwing*.1f));
+        for(int sd=-1;sd<=1;sd+=2){float[] sh=sd>0?shR:shL;float[] hand=sd>0?rh:lh;
+            if(hand==null)hand=add(sh,limbDir(sd>0?ps.rArmSwing:ps.lArmSwing,sd*.15f),.48f);
+            float[] el=ik(sh,hand,.26f,.25f,v(-.6f,sd*.5f,-.3f));
+            m.in(G_BODY,.008f);m.cone(sh,el,.02f,.016f,bone);m.cone(el,hand,.017f,.014f,bone);m.ell(el,.025f,.025f,.025f,bone);m.ell(hand,.03f,.018f,.03f,bone);}
+        // legs
+        for(int sd=-1;sd<=1;sd+=2){float th=sd<0?ps.lThigh:ps.rThigh,kn=sd<0?ps.lKnee:ps.rKnee;
+            float[] hip=add(pelvis,v(0,sd*.07f,-.02f)),knee=add(hip,limbDir(th,sd*.03f),.35f),ankle=add(knee,limbDir(th-kn,0),.34f);if(ankle[2]<.05f)ankle[2]=.05f;
+            m.in(G_BODY,.008f);m.cone(hip,knee,.024f,.018f,bone);m.ell(knee,.03f,.028f,.03f,bone);m.cone(knee,ankle,.018f,.014f,bone);
+            m.rbox(v(ankle[0]+.04f,ankle[1],.03f),X,.07f,.03f,.02f,.012f,bone);}
+        m.in(G_GEAR,0);m.ellDir(add(pelvis,v(0,0,-.03f)),X,.09f,.13f,.06f,cloth);   // tattered loincloth
+        if(ps.dead){corpse(m);sword(m,v(.2f,.4f,.02f),norm(v(1,.3f,0)),.55f,rust,cloth,rust,false);return m;}
+        float[] sdir=ps.attack?norm(v(.8f,-.4f,-.3f)):norm(v(.6f,.1f,.8f));
+        sword(m,rh,sdir,.55f,rust,cloth,rust,false);
+        return m;
+    }
+    /** Hooded cultist in a long robe; conjures fire between its hands when attacking. */
+    static Model cultist(int frame){
+        Model m=new Model();Pose ps=pose(frame);Body b=new Body();
+        int robe=m.cloth(0xff5a1414),trim=m.cloth(0xffb08a30),skin=m.skin(0xffb89a84,.5f),shadow=m.plastic(0xff0a0808,.05f),eye=m.glow(0xffff6a20),rope=m.cloth(0xff2a1a10);
+        b.skin=skin;b.torso=robe;b.legs=robe;b.hands=skin;b.boots=robe;
+        buildTorso(m,b,ps);
+        float[] ld=leanDir(b);
+        // robe: wide cone from the chest to the floor, swaying with the walk
+        float sway=frame==Sprites.F_WALK1?.04f:frame==Sprites.F_WALK2?-.04f:0;
+        m.in(G_BODY,.05f);m.cone(leanPt(b,v(0,0,1.0f+ps.bob)),v(sway*.6f,0,.42f),.16f,.24f,robe);
+        m.cyl(v(sway,0,.02f),v(sway*.6f,0,.46f),.25f,robe);
+        m.in(G_GEAR,0);m.torus(v(sway,0,.07f),Z,.25f,.02f,trim);
+        m.ellDir(leanPt(b,v(0,0,b.waistZ+ps.bob)),ld,.12f,.17f,.025f,rope);
+        // hood with the face in shadow and two glowing eyes
         float[] h=b.head,f=b.headF;
-        // heavier brow, small horns, fangs
-        m.in(G_BODY,.015f);m.ellDir(add(add(h,f,.068f),v(0,0,.03f)),f,.035f,.085f,.025f,dark);
-        m.in(G_GEAR,0);
-        for(int s=-1;s<=1;s+=2){float[] hb=add(h,v(-.01f,s*.06f,.07f));m.cone(hb,add(hb,v(-.07f,s*.04f,.08f)),.02f,.002f,bone);
-            float[] fg=add(add(h,f,.085f),v(0,s*.018f,-.06f));m.cone(fg,add(fg,v(0,0,-.03f)),.006f,.001f,bone);}
-        if(ps.attack)m.ellDir(add(add(h,f,.09f),v(0,0,-.06f)),f,.01f,.03f,.012f,mouth);
-        float[] rHand=null,lHand=null;
-        if(ps.attack){rHand=v(.1f,.2f,1.6f);lHand=leanPt(b,v(.3f,-.17f,.98f));
-            m.in(G_FX,0);float[] fb=add(rHand,v(.04f,0,.13f));
-            m.ell(fb,.12f,.12f,.12f,m.glow(0xffc0300c));m.ell(add(fb,v(.03f,0,0)),.085f,.085f,.085f,m.glow(0xffff8420));m.ell(add(fb,v(.06f,0,0)),.05f,.05f,.05f,m.glow(0xffffe890));}
-        buildArm(m,b,ps,1,rHand,ps.rArmSwing+.35f,b.hands,true,bone);buildArm(m,b,ps,-1,lHand,ps.lArmSwing+.35f,b.hands,true,bone);
+        m.in(G_BODY,.03f);m.ellDir(add(h,f,-.02f),f,.12f,.11f,.13f,robe);m.cone(add(add(h,f,-.08f),v(0,0,.08f)),add(add(h,f,-.15f),v(0,0,.15f)),.06f,.01f,robe);
+        m.in(G_GEAR,0);m.ellDir(add(h,f,.07f),f,.04f,.075f,.085f,shadow);
+        for(int s2=-1;s2<=1;s2+=2)m.ell(add(add(h,f,.095f),v(0,s2*.03f,.005f)),.011f,.011f,.008f,eye);
+        // arms in wide sleeves
+        float[] rh=ps.attack?leanPt(b,v(.36f,.08f,1.08f)):leanPt(b,v(.16f,.07f,.86f+ps.bob)),lh=ps.attack?leanPt(b,v(.36f,-.08f,1.08f)):leanPt(b,v(.16f,-.07f,.86f+ps.bob));
+        if(ps.dead){rh=null;lh=null;}
+        buildArm(m,b,ps,1,rh,ps.rArmSwing,skin,false,0);buildArm(m,b,ps,-1,lh,ps.lArmSwing,skin,false,0);
+        for(int s2=-1;s2<=1;s2+=2){float[] sh=leanPt(b,v(0,s2*b.shoulderW,b.shoulderZ+ps.bob));float[] hand=s2>0?rh:lh;if(hand==null)hand=add(sh,limbDir(.1f,s2*.12f),.48f);
+            float[] el=ik(sh,hand,b.upper,b.fore,v(-.7f,s2*.5f,-.3f));m.in(G_BODY,.03f);m.cone(el,add(lerp(el,hand,.75f),v(0,0,-.02f)),.05f,.075f,robe);}
+        if(ps.attack){m.in(G_FX,0);float[] fc=lerp(rh,lh,.5f);fc=add(fc,v(.08f,0,.02f));m.ell(fc,.08f,.08f,.08f,m.glow(0xffd04010));m.ell(add(fc,v(.03f,0,0)),.05f,.05f,.05f,m.glow(0xffffb040));}
         if(ps.dead)corpse(m);
         return m;
     }
-    /** Demon: hulking pink brute with a huge toothed jaw, horns and veined hide. */
-    static Model demon(int frame){
+    /** Small, wiry goblin with big ears, a crude blade and a leather jerkin. */
+    static Model goblin(int frame){
         Model m=new Model();Pose ps=pose(frame);Body b=new Body();
-        b.skin=m.hide(0xffb85462,.55f);b.legs=b.skin;b.torso=b.skin;b.hands=b.skin;
-        int teeth=m.plastic(0xffeee6cc,.6f),gum=m.skin(0xff6a1018,.4f),horn=m.plastic(0xffcfc19a,.35f),eye=m.glow(0xffff3a10),dark=m.hide(0xff8a3a46,.6f);
-        b.hipZ=.56f;b.thigh=.27f;b.shin=.26f;b.thighR=.12f;b.kneeR=.085f;b.ankleR=.06f;b.hipW=.14f;b.pelvisZ=.6f;b.waistZ=.74f;
-        b.chestZ=.9f;b.chestF=.2f;b.chestW=.26f;b.chestH=.22f;b.shoulderZ=1.02f;b.shoulderW=.3f;b.upper=.24f;b.fore=.23f;b.armR=.085f;b.elbowR=.068f;b.wristR=.055f;
-        b.headZ=1.1f;b.headR=.13f;b.bulk=1.25f;
-        if(ps.attack)ps.lean+=.28f;
+        b.skin=m.skin(0xff6e8a3a,.35f);b.legs=m.cloth(0xff5a4a30);b.torso=m.leather(0xff5a3e24);b.boots=b.skin;b.hands=b.skin;
+        int eye=m.glow(0xffffd030),tooth=m.plastic(0xffe8e0c0,.4f),rust=m.mat(0xff8a6a48,.45f,.5f),grip=m.leather(0xff3a2416),hair=m.cloth(0xff1e1a14);
+        b.thighR=.075f;b.armR=.042f;b.headR=.11f;b.chestW=.15f;
+        if(!ps.dead&&frame!=Sprites.F_PAIN)ps.lean+=.25f;
         buildTorso(m,b,ps);
-        buildLeg(m,b,ps,-1,ps.lThigh,ps.lKnee+.2f,dark,false);buildLeg(m,b,ps,1,ps.rThigh,ps.rKnee+.2f,dark,false);
-        float[] ld=leanDir(b);
-        m.in(G_BODY,.06f);
-        m.ellDir(leanPt(b,v(-.06f,0,b.chestZ+.1f+ps.bob)),ld,.17f,.23f,.17f,b.skin);       // back hump
-        m.in(G_BODY,.03f);
-        for(int s2=-1;s2<=1;s2+=2)m.ellDir(leanPt(b,v(.15f,s2*.1f,b.chestZ+.04f+ps.bob)),ld,.07f,.11f,.09f,b.skin);   // pecs
-        for(int k=0;k<3;k++)for(int s2=-1;s2<=1;s2+=2)m.ellDir(leanPt(b,v(.14f,s2*.05f,b.waistZ+.06f-k*.06f+ps.bob)),ld,.03f,.045f,.028f,b.skin);   // abs
-        m.in(G_BODY,.06f);
-        for(int s=-1;s<=1;s+=2)m.ellDir(leanPt(b,v(.0f,s*.26f,b.shoulderZ+.02f+ps.bob)),ld,.12f,.11f,.1f,b.skin);   // massive shoulders
-        // head: forward-thrust skull, horns, eyes and a big jaw that opens wide on attack
-        float[] fh=leanPt(b,v(b.chestF*.75f,0,b.headZ+ps.bob));
-        m.in(G_BODY,.035f);m.ellDir(fh,X,.15f,.19f,.12f,b.skin);m.ellDir(add(fh,v(.1f,0,.06f)),X,.06f,.15f,.035f,dark);
+        buildLeg(m,b,ps,-1,ps.lThigh+.15f,ps.lKnee+.3f,b.skin,false);buildLeg(m,b,ps,1,ps.rThigh+.15f,ps.rKnee+.3f,b.skin,false);
+        float[] h=b.head,f=b.headF;float[] up=Z;float[] side=norm(cross(up,f));
+        m.in(G_BODY,.02f);
+        m.ellDir(h,f,b.headR*1.05f,b.headR*.9f,b.headR*.95f,b.skin);
+        m.ellDir(add(add(h,f,.05f),v(0,0,-.05f)),f,.065f,.07f,.045f,b.skin);                        // jaw
+        m.cone(add(add(h,f,.09f),v(0,0,-.005f)),add(add(h,f,.16f),v(0,0,-.03f)),.022f,.008f,b.skin);   // long nose
+        for(int s2=-1;s2<=1;s2+=2){float[] e=add(h,side,s2*.09f);m.cone(e,add(add(e,side,s2*.13f),v(-.04f,0,.07f)),.035f,.004f,b.skin);}   // big ears
         m.in(G_GEAR,0);
-        for(int s=-1;s<=1;s+=2){m.ell(add(fh,v(.13f,s*.07f,.035f)),.02f,.02f,.016f,eye);
-            float[] hb=add(fh,v(0,s*.14f,.07f));m.cone(hb,add(hb,v(.05f,s*.07f,.1f)),.03f,.003f,horn);}
-        float open=ps.attack?.5f:ps.dead?.3f:.1f;
-        float[] piv=add(fh,v(.03f,0,-.05f));float[] uj=add(piv,v(.16f,0,-.01f));
-        float[] lowD=norm(v((float)Math.cos(open),0,-(float)Math.sin(open)));float[] lj=add(piv,lowD,.16f);
-        m.in(G_BODY,.03f);m.ellDir(uj,X,.15f,.17f,.055f,b.skin);m.ellDir(lj,lowD,.15f,.15f,.05f,b.skin);
-        m.in(G_GEAR,0);m.ellDir(add(lerp(uj,lj,.5f),v(-.03f,0,0)),X,.11f,.12f,.03f+open*.08f,gum);
-        for(int k=-3;k<=3;k++){float yy=k*.04f;float fx=.11f-Math.abs(k)*.018f;
-            m.cone(add(uj,v(fx,yy,-.04f)),add(uj,v(fx,yy,-.1f)),.013f,.002f,teeth);
-            float[] lt=add(lj,lowD,fx-.02f);m.cone(add(lt,v(0,yy,.03f)),add(lt,v(0,yy,.085f)),.012f,.002f,teeth);}
-        float[] rHand=ps.attack?leanPt(b,v(.36f,.24f,.74f)):null,lHand=ps.attack?leanPt(b,v(.36f,-.24f,.74f)):null;
-        buildArm(m,b,ps,1,rHand,ps.rArmSwing*.6f+.2f,b.hands,true,horn);buildArm(m,b,ps,-1,lHand,ps.lArmSwing*.6f+.2f,b.hands,true,horn);
+        for(int s2=-1;s2<=1;s2+=2){m.ell(add(add(add(h,f,.085f),side,s2*.04f),v(0,0,.02f)),.014f,.014f,.011f,eye);
+            m.cone(add(add(add(h,f,.09f),side,s2*.025f),v(0,0,-.075f)),add(add(add(h,f,.09f),side,s2*.025f),v(0,0,-.05f)),.006f,.001f,tooth);}
+        m.ellDir(add(add(h,f,-.02f),v(0,0,.06f)),f,.07f,.06f,.04f,hair);
+        float[] rh=ps.attack?leanPt(b,v(.42f,.05f,1.0f)):ps.dead?null:leanPt(b,v(.2f,.2f,.82f));
+        float[] rr=buildArm(m,b,ps,1,rh,ps.rArmSwing+.3f,b.hands,true,tooth);buildArm(m,b,ps,-1,null,ps.lArmSwing+.4f,b.hands,true,tooth);
+        if(ps.dead){corpse(m);m.scale(.74f);sword(m,v(.15f,.3f,.02f),norm(v(1,.3f,0)),.4f,rust,grip,rust,true);return m;}
+        sword(m,rr,ps.attack?norm(v(.8f,-.3f,-.4f)):norm(v(.55f,.1f,.82f)),.42f,rust,grip,rust,true);
+        m.scale(.74f);
+        return m;
+    }
+    /** Hulking orc: tusks, war paint, iron pauldrons and a greataxe. */
+    static Model orc(int frame){
+        Model m=new Model();Pose ps=pose(frame);Body b=new Body();
+        b.skin=m.skin(0xff6a7a46,.3f);b.legs=m.leather(0xff3a2a1c);b.torso=b.skin;b.boots=m.leather(0xff241a12);b.hands=b.skin;
+        int tusk=m.plastic(0xffeee6cc,.5f),iron=m.metal(0xff4a4c50),leather=m.leather(0xff4a3020),hair=m.cloth(0xff141210),wood=m.wood(0xff5a3a1e),steel=m.metal(0xff9aa0a8),eye=m.glow(0xffff4a20);
+        b.bulk=1.22f;b.chestW=.19f;b.chestF=.12f;b.shoulderW=.21f;b.armR=.058f;b.headR=.1f;
+        buildTorso(m,b,ps);
+        buildLeg(m,b,ps,-1,ps.lThigh,ps.lKnee,b.boots,true);buildLeg(m,b,ps,1,ps.rThigh,ps.rKnee,b.boots,true);
+        float[] ld=leanDir(b);
+        m.in(G_GEAR,0);
+        m.ellDir(leanPt(b,v(0,0,b.waistZ-.05f+ps.bob)),ld,.12f,.17f,.05f,leather);                        // belt / kilt
+        for(int k=0;k<6;k++){double an=k*Math.PI/3;float cx=(float)Math.cos(an)*.12f,cy=(float)Math.sin(an)*.15f;
+            m.rbox(v(cx,cy,b.pelvisZ-.12f+ps.bob),norm(v(cx,cy,0)),.012f,.06f,.12f,.01f,leather);}
+        for(int s2=-1;s2<=1;s2+=2){float[] pp=leanPt(b,v(0,s2*(b.shoulderW+.02f),b.shoulderZ+.03f+ps.bob));m.ellDir(pp,ld,.09f,.085f,.06f,iron);m.cone(pp,add(pp,v(0,s2*.03f,.11f)),.02f,.003f,iron);}
+        m.cone(leanPt(b,v(.02f,-.1f,b.shoulderZ+.03f+ps.bob)),leanPt(b,v(.1f,.12f,b.waistZ-.02f+ps.bob)),.02f,.02f,leather);   // baldric
+        float[] h=b.head,f=b.headF;
+        m.in(G_BODY,.02f);
+        m.ellDir(h,f,b.headR*1.05f,b.headR*.95f,b.headR,b.skin);m.ellDir(add(add(h,f,.04f),v(0,0,-.06f)),f,.08f,.08f,.055f,b.skin);
+        m.ellDir(add(add(h,f,.075f),v(0,0,.03f)),f,.03f,.08f,.022f,b.skin);m.ell(add(add(h,f,.1f),v(0,0,-.005f)),.025f,.028f,.02f,b.skin);
+        m.in(G_GEAR,0);
+        for(int s2=-1;s2<=1;s2+=2){m.ell(add(add(h,f,.088f),v(0,s2*.033f,.008f)),.011f,.011f,.009f,eye);
+            m.cone(add(add(h,f,.095f),v(0,s2*.035f,-.07f)),add(add(h,f,.105f),v(0,s2*.04f,-.02f)),.012f,.002f,tusk);}
+        m.cone(add(h,v(-.02f,0,.07f)),add(h,v(-.09f,0,.2f)),.035f,.012f,hair);   // topknot
+        float[] rh,lh;float[] ad;
+        if(ps.attack){rh=leanPt(b,v(.38f,.1f,1.15f));lh=leanPt(b,v(.3f,-.05f,1.02f));ad=norm(v(.8f,-.1f,-.4f));}
+        else if(ps.dead){rh=null;lh=null;ad=X;}
+        else{rh=leanPt(b,v(.18f,.22f,.85f+ps.bob));lh=leanPt(b,v(.22f,-.02f,1.05f+ps.bob));ad=norm(sub(lh,rh));}
+        buildArm(m,b,ps,1,rh,ps.rArmSwing,b.hands,false,0);buildArm(m,b,ps,-1,lh,ps.lArmSwing,b.hands,false,0);
+        if(ps.dead){corpse(m);axe(m,v(.2f,.5f,.03f),norm(v(1,.2f,0)),wood,steel,true);m.scale(1.08f);return m;}
+        axe(m,rh,ad,wood,steel,true);
+        m.scale(1.08f);
+        return m;
+    }
+    /** Villagers (quest givers, merchants): tunic, apron, grey hair and beard. */
+    static Model villager(int frame){
+        Model m=new Model();Pose ps=pose(frame);Body b=new Body();
+        b.skin=m.skin(0xffd0a080,.55f);b.legs=m.cloth(0xff4a4034);b.torso=m.cloth(0xff7a5a34);b.boots=m.leather(0xff3a2a1c);b.hands=b.skin;
+        int apron=m.cloth(0xffb8a888),hair=m.cloth(0xffb8b4ac),belt=m.leather(0xff3a2616),eye=m.plastic(0xff2a2420,.6f);
+        if(ps.attack){ps.attack=false;ps.flash=false;}   // NPCs gesture instead of attacking
+        buildTorso(m,b,ps);
+        buildLeg(m,b,ps,-1,ps.lThigh,ps.lKnee,b.boots,true);buildLeg(m,b,ps,1,ps.rThigh,ps.rKnee,b.boots,true);
+        float[] ld=leanDir(b);
+        m.in(G_BODY,.03f);m.cone(leanPt(b,v(0,0,b.waistZ+ps.bob)),v(0,0,.62f+ps.bob),.14f,.17f,b.torso);m.cyl(v(0,0,.52f+ps.bob),v(0,0,.66f+ps.bob),.175f,b.torso);   // tunic skirt
+        m.in(G_GEAR,0);m.rbox(leanPt(b,v(.12f,0,b.waistZ-.12f+ps.bob)),ld,.012f,.11f,.18f,.01f,apron);m.ellDir(leanPt(b,v(0,0,b.waistZ+ps.bob)),ld,.1f,.14f,.022f,belt);
+        buildFace(m,b,eye,false);
+        float[] h=b.head,f=b.headF;
+        m.in(G_GEAR,0);m.ellDir(add(add(h,f,-.02f),v(0,0,.02f)),f,.1f,.09f,.09f,hair);
+        m.in(G_BODY,.02f);m.ellDir(add(add(h,f,.06f),v(0,0,-.09f)),f,.05f,.06f,.06f,hair);m.cone(add(add(h,f,.07f),v(0,0,-.1f)),add(add(h,f,.06f),v(0,0,-.19f)),.04f,.01f,hair);   // beard
+        float[] rh=frame==Sprites.F_ATTACK?leanPt(b,v(.25f,.25f,1.3f)):null;   // waves when "attacking"
+        buildArm(m,b,ps,1,rh,ps.rArmSwing*.5f+.05f,b.hands,false,0);buildArm(m,b,ps,-1,null,ps.lArmSwing*.5f+.05f,b.hands,false,0);
         if(ps.dead)corpse(m);
         return m;
     }
@@ -552,57 +615,123 @@ final class SpriteModels {
 
     // ------------------------------------------------------------------ items and decorations (one view)
     static Model item(int id,int frame){
-        Model m=new Model();
+        Model m=new Model();m.in(G_GEAR,0);
         switch(id){
-            case Sprites.MEDKIT:{int w=m.mat(0xffe9e9e4,.35f,.06f),red=m.mat(0xffd8262a,.3f,.04f),gr=m.mat(0xff8e9296,.6f,.05f);
-                m.box(v(0,0,.16f),.2f,.32f,.15f,w);m.box(v(.205f,0,.17f),.006f,.05f,.11f,red);m.box(v(.205f,0,.17f),.006f,.17f,.035f,red);
-                m.box(v(0,0,.33f),.04f,.1f,.025f,gr);break;}
-            case Sprites.STIMPACK:{int w=m.mat(0xffe0e0dc,.3f,.06f),red=m.mat(0xffd8262a,.3f,.04f);
-                m.box(v(0,0,.11f),.11f,.16f,.11f,w);m.box(v(.115f,0,.12f),.006f,.03f,.075f,red);m.box(v(.115f,0,.12f),.006f,.1f,.022f,red);break;}
-            case Sprites.CLIP:{int dk=m.mat(0xff4c5156,.7f,.05f),brass=m.mat(0xffd2a640,.9f,.03f);
-                m.box(v(0,0,.18f),.06f,.11f,.18f,dk);for(int k=-1;k<=1;k++)m.cap(v(0,k*.045f,.36f),v(0,k*.045f,.42f),.02f,brass);break;}
-            case Sprites.SHELLS:{int red=m.mat(0xffc4281c,.4f,.06f),brass=m.mat(0xffd8b050,.9f,.03f);
-                for(int k=0;k<4;k++){float y=-.18f+k*.12f;m.cyl(v(0,y,0),v(0,y,.2f),.05f,red);m.cyl(v(0,y,0),v(0,y,.06f),.052f,brass);}break;}
-            case Sprites.ROCKETBOX:{int ol=m.mat(0xff4f6034,.3f,.12f),dk=m.mat(0xff2e3524,.2f,.1f),tip=m.mat(0xffb03024,.5f,.05f),body=m.mat(0xff9aa0a4,.7f,.05f);
-                m.box(v(0,0,.15f),.18f,.32f,.15f,ol);m.box(v(.185f,0,.15f),.005f,.25f,.03f,dk);
-                for(int k=0;k<4;k++){float y=-.22f+k*.147f;m.cyl(v(0,y,.28f),v(0,y,.48f),.04f,body);m.cap(v(0,y,.48f),v(0,y,.52f),.035f,tip);}break;}
-            case Sprites.ARMOR:{int g=m.mat(0xff3cb050,.6f,.08f),dg=m.mat(0xff22803a,.45f,.08f),strap=m.mat(0xff3a3020,.1f,.1f),hole=m.mat(0xff10200f,0,0);
-                // armour vest standing on the floor: chest plate, shoulder guards, collar and straps
-                m.box(v(0,0,.3f),.09f,.24f,.28f,g);m.ellDir(v(.02f,0,.32f),X,.1f,.25f,.3f,g);
-                m.box(v(.1f,0,.36f),.015f,.16f,.16f,dg);m.box(v(.1f,0,.12f),.012f,.2f,.05f,dg);
-                for(int s=-1;s<=1;s+=2){m.ell(v(0,s*.25f,.56f),.1f,.08f,.06f,dg);m.box(v(.09f,s*.17f,.3f),.012f,.02f,.26f,strap);}
-                m.ellDir(v(.03f,0,.6f),X,.06f,.1f,.025f,hole);break;}
-            case Sprites.SHOTGUN_PICKUP:case Sprites.CHAINGUN_PICKUP:case Sprites.LAUNCHER_PICKUP:{
-                int metal=m.mat(0xff5c6268,.9f,.04f),dark=m.mat(0xff2b2d31,.5f,.03f),wood=m.mat(0xff7a4a26,.2f,.16f),ol=m.mat(0xff4c6a3a,.4f,.1f);
-                float[] dir=Y; // lying sideways so the whole gun reads
-                if(id==Sprites.SHOTGUN_PICKUP){m.box(v(0,-.12f,.06f),dir,.3f,.04f,.04f,wood);m.cyl(v(0,.1f,.08f),v(0,.62f,.08f),.03f,dark);m.box(v(0,.25f,.05f),dir,.12f,.035f,.03f,wood);}
-                else if(id==Sprites.CHAINGUN_PICKUP){for(int k=0;k<3;k++){float z=.05f+k*.04f;m.cyl(v(0,.0f,z),v(0,.62f,z),.022f,metal);}m.box(v(0,-.08f,.1f),dir,.18f,.09f,.09f,dark);m.box(v(.08f,-.12f,.03f),dir,.05f,.05f,.06f,dark);}
-                else{m.cyl(v(0,-.3f,.1f),v(0,.45f,.1f),.09f,ol);m.cyl(v(0,.42f,.1f),v(0,.47f,.1f),.1f,dark);m.box(v(.06f,-.05f,.02f),dir,.08f,.03f,.06f,dark);}
-                break;}
+            case Sprites.MEDKIT:case Sprites.SHELLS:case Sprites.STIMPACK:{   // potions: glass flask, coloured liquid, cork
+                boolean small=id==Sprites.STIMPACK;int liquid=m.glass(id==Sprites.SHELLS?0xff2a5ad8:0xffc81e2a),glass=m.glass(0xffd8e8f0),cork=m.wood(0xff8a6a44),cord=m.cloth(0xffc8b070);
+                if(small){m.cyl(v(0,0,0),v(0,0,.2f),.045f,liquid);m.cyl(v(0,0,.2f),v(0,0,.24f),.025f,glass);m.cyl(v(0,0,.24f),v(0,0,.28f),.03f,cork);break;}
+                float r=id==Sprites.SHELLS?.1f:.12f;m.in(G_BODY,.02f);m.ell(v(0,0,r),r,r,r*1.02f,liquid);m.cyl(v(0,0,r*1.8f),v(0,0,r*1.8f+.11f),.035f,glass);
+                m.in(G_GEAR,0);m.torus(v(0,0,r*1.8f+.03f),Z,.037f,.008f,cord);m.cyl(v(0,0,r*1.8f+.1f),v(0,0,r*1.8f+.15f),.04f,cork);
+                m.ell(v(.05f,-.04f,r*1.35f),.02f,.02f,.03f,m.glow(0xffffffff));break;}
+            case Sprites.CLIP:{int steel=m.metal(0xffc0c8d0),grip=m.leather(0xff3a2416),brass=m.metal(0xffb08a40);sword(m,v(-.1f,0,.03f),norm(v(1,.15f,0)),.25f,steel,grip,brass,false);break;}
+            case Sprites.ROCKETBOX:{int gold=m.metal(0xffe0b040),gem=m.glass(0xff30d050);   // golden idol on a little plinth
+                m.rbox(v(0,0,.04f),X,.12f,.12f,.04f,.01f,m.mat(0xff7a7268,.2f,.4f));m.in(G_BODY,.03f);m.cone(v(0,0,.08f),v(0,0,.3f),.08f,.05f,gold);m.ell(v(0,0,.37f),.06f,.055f,.07f,gold);
+                for(int s2=-1;s2<=1;s2+=2)m.cone(v(0,s2*.06f,.27f),v(.05f,s2*.09f,.18f),.022f,.018f,gold);m.in(G_GEAR,0);m.ell(v(.055f,0,.38f),.015f,.015f,.015f,gem);break;}
+            case Sprites.ARMOR:{int chain=m.metal(0xff8a9098),leather=m.leather(0xff4a3020),wood=m.wood(0xff5a3a1e);   // chain shirt on a wooden stand
+                m.cyl(v(0,0,0),v(0,0,.05f),.16f,wood);m.cyl(v(0,0,.05f),v(0,0,.85f),.02f,wood);m.cyl(v(0,-.2f,.75f),v(0,.2f,.75f),.018f,wood);
+                m.in(G_BODY,.05f);m.ellDir(v(0,0,.55f),X,.1f,.17f,.24f,chain);m.ellDir(v(0,0,.72f),X,.11f,.21f,.08f,chain);for(int s2=-1;s2<=1;s2+=2)m.cone(v(0,s2*.2f,.72f),v(0,s2*.24f,.52f),.06f,.05f,chain);
+                m.in(G_GEAR,0);m.ellDir(v(0,0,.36f),X,.105f,.17f,.025f,leather);break;}
+            case Sprites.SHOTGUN_PICKUP:{int steel=m.metal(0xffc0c8d0),grip=m.leather(0xff3a2416),brass=m.metal(0xffb08a40);sword(m,v(-.25f,-.1f,.03f),norm(v(1,.35f,0)),.72f,steel,grip,brass,true);break;}
+            case Sprites.CHAINGUN_PICKUP:{int wood=m.wood(0xff7a5030),str=m.cloth(0xffe8e0c8),leather=m.leather(0xff4a3020);   // longbow lying on the floor
+                for(int k=0;k<10;k++){double a0=-1.1+k*.22,a1=a0+.22;float R=.55f;m.cone(v((float)Math.cos(a0)*R*.45f-.1f,(float)Math.sin(a0)*R,.03f),v((float)Math.cos(a1)*R*.45f-.1f,(float)Math.sin(a1)*R,.03f),.016f-Math.abs(k-4.5f)*.001f,.016f-Math.abs(k-3.5f)*.001f,wood);}
+                m.cone(v((float)Math.cos(-1.1)*.55f*.45f-.1f,(float)Math.sin(-1.1)*.55f,.03f),v((float)Math.cos(1.1)*.55f*.45f-.1f,(float)Math.sin(1.1)*.55f,.03f),.004f,.004f,str);
+                m.cyl(v(.14f,-.03f,.03f),v(.14f,.03f,.03f),.022f,leather);break;}
+            case Sprites.LAUNCHER_PICKUP:{int wood=m.wood(0xff6a4428),gem=m.glow(0xff6ab8ff),metal=m.metal(0xffb08a40);   // wizard's staff
+                float[] a=v(-.3f,-.25f,.03f),b=v(.45f,.3f,.03f);m.cyl(a,b,.02f,wood);m.torus(b,norm(sub(b,a)),.03f,.008f,metal);m.ell(add(b,norm(sub(b,a)),.05f),.04f,.04f,.04f,gem);break;}
             case Sprites.KEY_BLUE:case Sprites.KEY_YELLOW:case Sprites.KEY_RED:{
-                int c=id==Sprites.KEY_BLUE?0xff3a70ff:id==Sprites.KEY_YELLOW?0xffffd030:0xffff3030;int k=m.glow(c),wh=m.mat(0xfff0f0f0,.5f,0);
-                m.box(v(0,0,.3f),.025f,.16f,.24f,k);m.box(v(.027f,0,.4f),.004f,.09f,.05f,wh);m.box(v(.027f,0,.2f),.004f,.11f,.012f,m.mat(0xff202020,0,0));break;}
-            case Sprites.BARREL:{int body=m.mat(0xff4e6644,.55f,.12f),band=m.mat(0xff36452f,.6f,.08f),slime=m.glow(0xff68e848),rust=m.mat(0xff6a5034,.2f,.3f);
-                m.cyl(v(0,0,0),v(0,0,.9f),.3f,body);m.cyl(v(0,0,.2f),v(0,0,.26f),.305f,band);m.cyl(v(0,0,.66f),v(0,0,.72f),.305f,band);
-                m.cyl(v(0,0,.88f),v(0,0,.92f),.27f,slime);m.ell(v(.27f,.08f,.45f),.04f,.08f,.06f,rust);break;}
-            case Sprites.TORCH:{int pole=m.mat(0xff6a5440,.2f,.18f),iron=m.mat(0xff3c3c40,.7f,.06f);int fl=frame&1;
+                int c=id==Sprites.KEY_BLUE?0xffb0703a:id==Sprites.KEY_YELLOW?0xffc8ccd4:0xffe8b830;int k=m.metal(c);
+                m.torus(v(-.15f,0,.03f),Z,.06f,.016f,k);m.cyl(v(-.09f,0,.03f),v(.17f,0,.03f),.015f,k);
+                m.rbox(v(.13f,.04f,.03f),X,.012f,.04f,.012f,.004f,k);m.rbox(v(.17f,.035f,.03f),X,.012f,.03f,.012f,.004f,k);
+                m.ell(v(-.15f,0,.03f),.02f,.02f,.02f,m.glow(id==Sprites.KEY_BLUE?0xffff9040:id==Sprites.KEY_YELLOW?0xffd0e8ff:0xffffe060));break;}
+            case Sprites.BARREL:{int stave=m.wood(0xff7a5232),hoop=m.metal(0xff3e3c3a),top=m.wood(0xff6a4628);
+                m.in(G_BODY,.05f);m.cyl(v(0,0,.02f),v(0,0,.86f),.27f,stave);m.ell(v(0,0,.44f),.31f,.31f,.36f,stave);
+                m.in(G_GEAR,0);m.cyl(v(0,0,.84f),v(0,0,.88f),.25f,top);for(float z:new float[]{.12f,.3f,.58f,.76f})m.torus(v(0,0,z),Z,z<.2f||z>.7f?.285f:.305f,.012f,hoop);break;}
+            case Sprites.TORCH:{int pole=m.wood(0xff6a5440),iron=m.metal(0xff3c3c40);int fl=frame&1;
                 m.cyl(v(0,0,0),v(0,0,1.0f),.035f,pole);m.cyl(v(0,0,0),v(0,0,.05f),.12f,iron);m.cyl(v(0,0,.98f),v(0,0,1.08f),.08f,iron);
-                // layered flame: outer tongue, hot core and white heart pushed toward the viewer, flicker on alternate frames
                 m.ell(v(0,0,1.2f),.1f,.1f,.12f,m.glow(0xffe0501a));
                 m.cap(v(0,0,1.22f),v(fl*.02f,(fl*2-1)*.025f,1.42f+fl*.05f),.055f,m.glow(0xffff7a20));
                 m.ell(v(.06f,0,1.2f),.06f,.06f,.09f,m.glow(0xffffc040));m.ell(v(.1f,0,1.18f),.03f,.03f,.05f,m.glow(0xfffff4c0));break;}
-            case Sprites.COLUMN:{int mar=m.mat(0xffa8aeb0,.5f,.12f),dk=m.mat(0xff7e8688,.4f,.1f);
-                m.box(v(0,0,.06f),.26f,.26f,.06f,dk);m.box(v(0,0,1.56f),.26f,.26f,.06f,dk);m.cyl(v(0,0,.12f),v(0,0,1.5f),.18f,mar);
-                for(int k=0;k<8;k++){double a=k*Math.PI/4;m.cyl(v((float)Math.cos(a)*.17f,(float)Math.sin(a)*.17f,.14f),v((float)Math.cos(a)*.17f,(float)Math.sin(a)*.17f,1.48f),.03f,dk);}break;}
-            case Sprites.SWITCH:case Sprites.SWITCH_ON:{int pan=m.mat(0xff5c6068,.5f,.1f),dk=m.mat(0xff2c3036,.3f,.05f),lev=m.mat(0xffa0a4a8,.8f,.04f);
-                boolean on=id==Sprites.SWITCH_ON;int lamp=m.glow(on?0xff40e050:0xffe03424);
-                m.box(v(0,0,.5f),.06f,.28f,.48f,pan);m.box(v(.065f,0,.52f),.01f,.18f,.26f,dk);
-                float[] base=v(.08f,0,.52f);m.cap(base,add(base,v(.08f,0,on?-.18f:.18f)),.03f,lev);m.ell(add(base,v(.08f,0,on?-.2f:.2f)),.05f,.05f,.05f,lamp);break;}
-            case Sprites.LAMP:{int post=m.mat(0xff606468,.7f,.06f),glass=m.glow(0xffeef2ff);
-                m.cyl(v(0,0,0),v(0,0,.06f),.16f,post);m.cyl(v(0,0,.06f),v(0,0,1.1f),.04f,post);m.cyl(v(0,0,1.08f),v(0,0,1.14f),.12f,post);
-                m.ell(v(0,0,1.28f),.15f,.15f,.16f,glass);m.ell(v(0,0,1.28f),.09f,.09f,.1f,m.glow(0xffffffff));break;}
+            case Sprites.COLUMN:{int stone=m.mat(0xff8a8680,.15f,.45f),dk=m.mat(0xff6a6660,.1f,.4f);
+                m.rbox(v(0,0,.08f),X,.28f,.28f,.08f,.02f,dk);m.rbox(v(0,0,1.54f),X,.28f,.28f,.08f,.02f,dk);m.cyl(v(0,0,.16f),v(0,0,1.46f),.19f,stone);
+                for(int k=0;k<8;k++){double a=k*Math.PI/4;m.cyl(v((float)Math.cos(a)*.18f,(float)Math.sin(a)*.18f,.18f),v((float)Math.cos(a)*.18f,(float)Math.sin(a)*.18f,1.44f),.03f,dk);}break;}
+            case Sprites.SWITCH:case Sprites.SWITCH_ON:{int stone=m.mat(0xff7a7670,.1f,.45f),wood=m.wood(0xff6a4428),iron=m.metal(0xff4a4c50);boolean on=id==Sprites.SWITCH_ON;
+                m.rbox(v(0,0,.35f),X,.16f,.2f,.35f,.03f,stone);m.rbox(v(.17f,0,.5f),X,.012f,.07f,.07f,.01f,iron);
+                float[] base=v(.18f,0,.5f);float[] tip=add(base,norm(v(.5f,0,on?-.8f:.8f)),.38f);m.cyl(base,tip,.018f,wood);m.ell(tip,.04f,.04f,.04f,iron);break;}
+            case Sprites.LAMP:{int iron=m.metal(0xff3a3836);   // brazier: tripod, bowl and fire
+                for(int k=0;k<3;k++){double a=k*Math.PI*2/3+.5;m.cone(v((float)Math.cos(a)*.22f,(float)Math.sin(a)*.22f,0),v((float)Math.cos(a)*.1f,(float)Math.sin(a)*.1f,.75f),.02f,.018f,iron);}
+                m.ell(v(0,0,.82f),.24f,.24f,.1f,iron);m.torus(v(0,0,.88f),Z,.23f,.02f,iron);
+                m.ell(v(0,0,.95f),.17f,.17f,.12f,m.glow(0xffe0501a));m.cap(v(0,0,.98f),v((frame&1)*.03f,0,1.22f),.07f,m.glow(0xffff8a20));m.ell(v(.06f,0,1.0f),.07f,.07f,.07f,m.glow(0xffffd060));break;}
+            case Sprites.SHIELD_PICKUP:{int wood=m.wood(0xff8a5a30),steel=m.metal(0xffa8b0b8),paint=m.cloth(0xff2c4a8a);roundShield(m,v(0,0,.27f),norm(v(1,0,.35f)),.26f,wood,steel);
+                m.rbox(v(.035f,0,.29f),norm(v(1,0,.35f)),.004f,.16f,.025f,.004f,paint);break;}
+            case Sprites.SCROLL:{int parch=m.mat(0xffe8dcb8,.05f,.25f),ribbon=m.cloth(0xffa01818),wax=m.plastic(0xffb01010,.5f);
+                m.cyl(v(0,-.17f,.04f),v(0,.17f,.04f),.04f,parch);m.torus(v(0,0,.04f),Y,.043f,.007f,ribbon);m.cyl(v(.04f,0,.04f),v(.06f,0,.04f),.018f,wax);break;}
+            case Sprites.CHEST:case Sprites.CHEST_OPEN:{int wood=m.wood(0xff6a4024),iron=m.metal(0xff3e3c3a),gold=m.metal(0xffe0b040);boolean open=id==Sprites.CHEST_OPEN;
+                m.rbox(v(0,0,.2f),X,.22f,.34f,.2f,.02f,wood);
+                if(open){m.rbox(v(-.32f,0,.48f),norm(v(-.15f,0,1)),.2f,.34f,.03f,.02f,wood);m.ellDir(v(0,0,.38f),X,.18f,.3f,.05f,gold);m.ell(v(.05f,.1f,.42f),.04f,.04f,.04f,m.glow(0xfffff0a0));}
+                else{m.cyl(v(0,-.34f,.4f),v(0,.34f,.4f),.22f,wood);m.rbox(v(.22f,0,.38f),X,.015f,.04f,.05f,.008f,gold);}
+                for(float y:new float[]{-.24f,.24f}){m.rbox(v(0,y,.2f),X,.225f,.02f,.205f,.01f,iron);if(!open)m.torus(v(0,y,.4f),Y,.22f,.012f,iron);}
+                break;}
+            case Sprites.GOLD:{int gold=m.metal(0xffe8b838);m.in(G_BODY,.02f);m.ell(v(0,0,.02f),.13f,.12f,.05f,gold);m.in(G_GEAR,0);
+                for(int k=0;k<9;k++){double a=k*2.4;float r=.06f+(k%3)*.06f;float[] c=v((float)Math.cos(a)*r,(float)Math.sin(a)*r,.02f+(k%2)*.035f);m.cyl(c,add(c,norm(v((float)Math.cos(a)*.3f,.2f,1)),.012f),.045f,gold);}break;}
             default:m.box(v(0,0,.2f),.2f,.2f,.2f,m.mat(0xffff00ff,0,0));
         }
         return m;
+    }
+
+    // ------------------------------------------------------------------ first-person weapons
+    /**
+     * Hands and weapon as seen by the hero, drawn nearly straight-on so y is screen right and z is screen up:
+     * gloved forearms rise from the bottom corners like the classic first-person view. One unit is ~60% of the screen.
+     */
+    static Model firstPerson(int w,boolean atk){
+        Model m=new Model();
+        int glove=m.leather(0xff4a3422),cuff=m.leather(0xff2e2016),mail=m.metal(0xff7c8288),skin=m.skin(0xffc89878,.5f),
+            steel=m.metal(0xffc8d0d8),grip=m.leather(0xff3a2416),brass=m.metal(0xffb89a50),wood=m.wood(0xff6a4428);
+        switch(w){
+            case Rpg.FP_BOW:{
+                // left hand grips the bow at the centre; right hand draws the string (released when attacking)
+                float[] lh=v(0,-.08f,.28f),rh=atk?v(-.05f,.22f,.3f):v(-.12f,.12f,.3f);
+                fpArm(m,v(-.2f,-.5f,-.35f),lh,mail,glove,cuff);fpArm(m,v(-.2f,.55f,-.3f),rh,mail,glove,cuff);
+                m.in(G_GEAR,0);float R=.62f;float[] prev=null;
+                for(int k=0;k<=12;k++){double a=-1.0+k*(2.0/12);float[] pt=add(lh,v(.02f,(float)(1-Math.cos(a))*.18f*-1+.0f,(float)Math.sin(a)*R));pt[1]=lh[1]+.03f-(float)(1-Math.cos(a))*.2f;
+                    if(prev!=null)m.cone(prev,pt,.022f-Math.abs(k-6)*.0012f,.022f-Math.abs(k-5)*.0012f,wood);prev=pt;}
+                float[] top=v(lh[0]+.02f,lh[1]+.03f-(float)(1-Math.cos(1.0))*.2f,lh[2]+(float)Math.sin(1.0)*R),bot=v(top[0],top[1],lh[2]-(float)Math.sin(1.0)*R);
+                int str=m.cloth(0xffe8e0c8);float[] pull=atk?v(top[0],top[1],lh[2]):add(rh,v(.02f,-.02f,0));m.cone(top,pull,.004f,.004f,str);m.cone(pull,bot,.004f,.004f,str);
+                if(!atk){m.cyl(add(rh,v(.02f,-.02f,0)),add(lh,v(.02f,-.05f,0)),.007f,wood);m.cone(add(lh,v(.02f,-.06f,0)),add(lh,v(.02f,-.13f,0)),.016f,.001f,steel);
+                    m.rbox(add(rh,v(.02f,.03f,0)),Y,.03f,.004f,.02f,.002f,m.cloth(0xffc83030));}
+                break;}
+            case Rpg.FP_STAFF:{
+                float[] rh=atk?v(0,.1f,.32f):v(0,.24f,.12f);fpArm(m,v(-.2f,.55f,-.32f),rh,m.cloth(0xff3a2a6a),skin,m.cloth(0xff2a1e50));
+                float[] d=atk?norm(v(0,-.35f,.94f)):norm(v(0,-.18f,.98f));m.in(G_GEAR,0);m.cyl(add(rh,d,-.45f),add(rh,d,.62f),.03f,wood);
+                float[] top=add(rh,d,.68f);m.torus(add(rh,d,.6f),d,.04f,.01f,brass);for(int k=0;k<3;k++){double a=k*2.1;m.cone(add(rh,d,.6f),add(top,v(0,(float)Math.cos(a)*.05f,.04f+(float)Math.sin(a)*.02f)),.01f,.004f,brass);}
+                m.in(G_FX,0);m.ell(top,.055f,.055f,.055f,m.glow(atk?0xffa8d8ff:0xff6ab8ff));if(atk){m.ell(top,.12f,.12f,.12f,m.glow(0xff2a5aff));}
+                break;}
+            case Rpg.FP_FIST:{
+                float[] rh=atk?v(0,.05f,.36f):v(0,.3f,.08f),lh=v(0,-.3f,.06f);
+                fpArm(m,v(-.2f,.6f,-.32f),rh,mail,glove,cuff);fpArm(m,v(-.2f,-.6f,-.32f),lh,mail,glove,cuff);
+                m.in(G_BODY,.015f);m.ell(add(rh,v(0,0,.03f)),.075f,.085f,.075f,glove);m.ell(add(lh,v(0,0,.03f)),.075f,.085f,.075f,glove);break;}
+            default:{   // sword, dagger, mace, axe in the right hand
+                float[] rh=atk?v(0,-.02f,.24f):v(0,.27f,.1f);
+                float[] d=atk?norm(v(0,-.85f,-.25f)):norm(v(0,-.28f,.96f));
+                fpArm(m,v(-.2f,.6f,-.32f),rh,mail,glove,cuff);
+                if(w==Rpg.FP_MACE)mace(m,rh,d,wood,steel);else if(w==Rpg.FP_AXE)axe(m,rh,d,wood,steel,false);
+                else{float len=w==Rpg.FP_DAGGER?.28f:.68f;float[][] f=frame(d);m.in(G_GEAR,0);
+                    m.cyl(add(rh,d,-.08f),add(rh,d,.06f),.022f,grip);m.ell(add(rh,d,-.1f),.032f,.032f,.032f,brass);
+                    m.rbox(add(rh,d,.08f),d,.016f,.11f,.022f,.008f,brass);
+                    m.rbox(add(rh,d,.09f+len*.5f),d,len*.5f,.034f,.008f,.006f,steel);m.cone(add(rh,d,.09f+len-.03f),add(rh,d,.09f+len+.05f),.022f,.002f,steel);
+                    m.rbox(add(add(rh,d,.09f+len*.45f),v(.009f,0,0)),d,len*.42f,.005f,.002f,.001f,m.metal(0xff8a9298));}   // fuller
+                if(!atk)fpArm(m,v(-.2f,-.62f,-.34f),v(0,-.36f,-.02f),mail,glove,cuff);
+            }
+        }
+        return m;
+    }
+    /** A forearm in chain mail with a leather cuff and a gloved fist. */
+    private static void fpArm(Model m,float[] elbow,float[] hand,int sleeve,int glove,int cuff){
+        float[] d=norm(sub(hand,elbow));m.in(G_BODY,.025f);
+        m.cone(add(elbow,d,-.2f),sub(hand,mul(d,.14f)),.125f,.092f,sleeve);
+        m.in(G_GEAR,0);m.torus(sub(hand,mul(d,.13f)),d,.092f,.026f,cuff);
+        m.in(G_BODY,.025f);m.cone(sub(hand,mul(d,.12f)),hand,.085f,.075f,glove);
+        m.ellDir(add(hand,d,.03f),d,.095f,.088f,.08f,glove);
+        float[] side=norm(cross(d,X));m.cone(add(hand,side,.055f),add(add(hand,side,.08f),d,.05f),.03f,.027f,glove);   // thumb
     }
 }

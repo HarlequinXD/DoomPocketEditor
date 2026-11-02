@@ -26,7 +26,7 @@ public class TitleView extends View {
     private final ArrayList<Renderer.SpriteDraw> sprites=new ArrayList<>();
     UiHost host;Listener listener;
     private ArrayList<ProjectStore.Meta> projects=new ArrayList<>();
-    private boolean creating;private String newName="My Doom Game";private int template=0;
+    private boolean creating;private String newName="My Adventure";private int template=0;
     private float w,h,scroll,downX,downY,lastY;private boolean dragged;private int downHit=-1;
     /** Rounded-square path through the centre of the arena's outer lanes: centre (10,10), half-size 8, corner radius 3. */
     private static final float LANE_C=10,LANE_H=8,LANE_R=3,LANE_S=2*(LANE_H-LANE_R),LANE_ARC=(float)(Math.PI*.5*LANE_R),LANE_LEN=4*(LANE_S+LANE_ARC);
@@ -78,12 +78,12 @@ public class TitleView extends View {
         float ls=dp(54);ui.round(c,x,y,x+ls,y+ls,dp(13),Ui.ACCENT);ui.icon(c,Icons.LOGO,x+ls*.5f,y+ls*.5f,32,0xffffffff);
         ui.text(c,"DOOM POCKET",x,y+ls+dp(40),30,Ui.TEXT,2,-1);
         ui.text(c,"E D I T O R",x+dp(2),y+ls+dp(62),13,0xff8fbcff,1,-1);
-        ui.text(c,"Build, script and play Doom-style games on your phone.",x,y+ls+dp(92),12.5f,Ui.TEXT_2);
+        ui.text(c,"Build, script and play fantasy RPG adventures on your phone.",x,y+ls+dp(92),12.5f,Ui.TEXT_2);
         float by=y+ls+dp(116),bw=Math.min(dp(260),w*.34f);
         r.set(x,by,x+bw,by+dp(44));ui.button(c,r,Icons.PLUS_SQUARE,"New Project",Ui.PRIMARY);ui.hit(r,H_NEW);
         String cur=ProjectStore.currentId(getContext());ProjectStore.Meta m=find(cur);
         if(m!=null){r.set(x,by+dp(54),x+bw,by+dp(98));ui.button(c,r,Icons.PLAY,"Continue · "+m.name,Ui.NORMAL);ui.hit(r,H_CONTINUE);}
-        ui.text(c,"v0.4  ·  "+Actions.ALL.size()+" FSM actions  ·  software renderer",x,h-dp(20),10.5f,Ui.TEXT_3);
+        ui.text(c,"v0.5  ·  "+Actions.visibleCount()+" FSM actions  ·  d20 RPG framework",x,h-dp(20),10.5f,Ui.TEXT_3);
     }
     private ProjectStore.Meta find(String id){if(id==null)return null;for(ProjectStore.Meta m:projects)if(m.id.equals(id))return m;return null;}
     private void drawProjects(Canvas c){
@@ -144,7 +144,7 @@ public class TitleView extends View {
         for(Level.Sector s:l.sectors){path.reset();for(int j=0;j<s.loop.size();j++){Level.Vertex v=l.vertices.get(s.loop.get(j));if(j==0)path.moveTo(ox+v.x*sc,oy+v.y*sc);else path.lineTo(ox+v.x*sc,oy+v.y*sc);}path.close();
             p.setStyle(Paint.Style.FILL);p.setColor(s.ceiling-s.floor<.1f?0xff4a5260:s.floor>0?0x663d8bfd:0x408fa3b8);c.drawPath(path,p);
             p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(1));p.setColor(0xccd6dce4);c.drawPath(path,p);p.setStyle(Paint.Style.FILL);}
-        for(Level.Thing t:l.things){p.setColor(t.def.equals("trooper")||t.def.equals("imp")||t.def.equals("demon")?Ui.RED:Ui.AMBER);c.drawCircle(ox+t.x*sc,oy+t.y*sc,dp(2),p);}
+        for(Level.Thing t:l.things){p.setColor(t.def.startsWith("skeleton")||t.def.equals("goblin")||t.def.equals("orc")||t.def.equals("cultist")?Ui.RED:Ui.AMBER);c.drawCircle(ox+t.x*sc,oy+t.y*sc,dp(2),p);}
         p.setColor(Ui.GREEN);c.drawCircle(ox+l.playerX*sc,oy+l.playerY*sc,dp(2.5f),p);
     }
 
@@ -164,7 +164,7 @@ public class TitleView extends View {
             else if(id==H_CREATE){Project p=ProjectStore.create(getContext(),newName,template);Project.set(p);creating=false;if(listener!=null)listener.openProject(p.id);}
             invalidate();return;
         }
-        if(id==H_NEW){creating=true;newName="My Doom Game";template=0;}
+        if(id==H_NEW){creating=true;newName="My Adventure";template=0;}
         else if(id==H_CONTINUE){String cur=ProjectStore.currentId(getContext());if(cur!=null&&listener!=null)listener.openProject(cur);}
         else if(id>=H_MENU){int i=id-H_MENU;if(i<projects.size())menu(projects.get(i));}
         else if(id>=H_OPEN){int i=id-H_OPEN;if(i<projects.size()&&listener!=null)listener.openProject(projects.get(i).id);}

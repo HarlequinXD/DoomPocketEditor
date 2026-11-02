@@ -13,8 +13,8 @@ public class Level {
     static final int W = 24, H = 24;
     // Sector specials (Doom-style behaviours handled by the game framework).
     static final int SP_NONE=0, SP_DOOR=1, SP_LIFT=2, SP_DAMAGE=3, SP_EXIT=4, SP_SECRET=5, SP_FLICKER=6, SP_BLINK=7;
-    static final String[] SPECIAL_NAMES={"None","Door","Lift","Damage floor","Exit","Secret","Flicker light","Blink light"};
-    static final String[] KEY_NAMES={"No key","Blue key","Yellow key","Red key"};
+    static final String[] SPECIAL_NAMES={"None","Door","Lift","Hazard floor","Exit","Secret","Flicker light","Blink light"};
+    static final String[] KEY_NAMES={"No key","Bronze key","Silver key","Gold key"};
 
     ArrayList<Vertex> vertices=new ArrayList<>();
     ArrayList<Sector> sectors=new ArrayList<>();
@@ -32,7 +32,7 @@ public class Level {
     static class LineDef {int from,to,front,back;LineDef(int a,int b,int f,int k){from=a;to=b;front=f;back=k;}}
     static class Thing {
         float x,y,angle; int type; String def;
-        Thing(float x,float y,int type){this.x=x;this.y=y;this.type=type;this.def=type==1?"medkit":"trooper";}
+        Thing(float x,float y,int type){this.x=x;this.y=y;this.type=type;this.def=type==1?"healing_potion":"skeleton";}
         Thing(float x,float y,String def){this.x=x;this.y=y;this.def=def;}
     }
 
@@ -49,8 +49,13 @@ public class Level {
         Sector first=new Sector();Collections.addAll(first.loop,a,b,c,d);sectors.add(first);
         int e=addVertex(17,3),f=addVertex(17,10);
         Sector second=new Sector();Collections.addAll(second.loop,b,e,f,c);second.floor=.5f;second.ceiling=3.5f;second.wallMaterial=4;sectors.add(second);
-        things.add(new Thing(13.5f,6.5f,"trooper"));
-        things.add(new Thing(8.5f,8.5f,"medkit"));
+        // a village elder with a quest and a merchant in the first room; the idol, a guard and a chest in the second
+        things.add(new Thing(4.5f,8.5f,"elder"));
+        things.add(new Thing(8.5f,8.8f,"merchant"));
+        things.add(new Thing(13.5f,6.5f,"skeleton"));
+        things.add(new Thing(15.8f,4.2f,"golden_idol"));
+        things.add(new Thing(15.6f,8.9f,"chest"));
+        things.add(new Thing(4f,4f,"torch"));
     }
     private Level(boolean empty){}
     static Level empty(){return new Level(true);}
@@ -81,7 +86,7 @@ public class Level {
         l.playerX=(float)json.optDouble("playerX",4.5);l.playerY=(float)json.optDouble("playerY",4.5);l.facing=(float)json.optDouble("facing",0);
         JSONArray a=json.optJSONArray("things");
         if(a!=null)for(int i=0;i<a.length();i++){JSONObject o=a.getJSONObject(i);
-            Thing t=o.has("def")?new Thing((float)o.getDouble("x"),(float)o.getDouble("y"),o.optString("def","trooper")):new Thing((float)o.getDouble("x"),(float)o.getDouble("y"),o.optInt("type",0));
+            Thing t=o.has("def")?new Thing((float)o.getDouble("x"),(float)o.getDouble("y"),o.optString("def","skeleton")):new Thing((float)o.getDouble("x"),(float)o.getDouble("y"),o.optInt("type",0));
             t.angle=(float)o.optDouble("angle",0);l.things.add(t);}
         JSONArray verts=json.optJSONArray("vertices");
         if(verts!=null)for(int i=0;i<verts.length();i++){JSONArray xy=verts.getJSONArray(i);l.vertices.add(new Vertex((float)xy.getDouble(0),(float)xy.getDouble(1)));}

@@ -15,6 +15,9 @@ final class Actor {
     FsmRuntime fsm;
     // Projectiles
     int projectileType=-1;Actor owner;int dmgMin,dmgMax;
+    int maxHealth;
+    /** Projectile attack data: to-hit bonus (or auto-hit), damage dice and type, area radius and save DC. */
+    int pAttack,pType,pDC;Rpg.Dice pDice;boolean pAuto;float pRadius;
     Actor(EntityDef d){def=d;}
     void stop(){vx=vy=0;wishX=wishY=0;wishActive=true;}
     /** Animation frame used by the renderer. */

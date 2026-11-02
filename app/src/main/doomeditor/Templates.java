@@ -30,8 +30,8 @@ final class Templates {
             else rect(l,x0,y0,x0+4,y0+4,0,4,2,11,3,200);
         }
         l.playerX=2f;l.playerY=2f;l.facing=(float)(Math.PI/4);
-        String[][] things={{"imp","18","2"},{"imp","2","18"},{"trooper","10","2"},{"trooper","2","10"},{"trooper","18","10"},{"demon","16","16"},
-            {"shotgun","10","10"},{"medkit","9","11"},{"armor","18","18"},{"shells","6","10"},{"clip","10","6"},{"barrel","14","2"},{"barrel","2","14"},{"stimpack","18","6"}};
+        String[][] things={{"goblin","18","2"},{"goblin","2","18"},{"skeleton","10","2"},{"skeleton_archer","2","10"},{"skeleton","18","10"},{"orc","16","16"},{"cultist","18","18"},
+            {"longsword","10","10"},{"healing_potion","9","11"},{"chain_mail","6","18"},{"arcana_potion","6","10"},{"gold","10","6"},{"barrel","14","2"},{"barrel","2","14"},{"chest","18","6"}};
         for(String[] t:things)l.things.add(new Level.Thing(Float.parseFloat(t[1]),Float.parseFloat(t[2]),t[0]));
         for(Level.Thing t:l.things)t.angle=(float)Math.atan2(l.playerY-t.y,l.playerX-t.x);
         return l;
@@ -48,8 +48,8 @@ final class Templates {
             else rect(l,x0,y0,x0+4,y0+4,0,8,edge?9:2,Textures.SKY,9,(gx+gy)%2==0?216:196);
         }
         l.playerX=2f;l.playerY=12f;l.facing=0;
-        String[][] things={{"imp","22","2"},{"imp","22","22"},{"trooper","12","2"},{"trooper","12","22"},{"trooper","21","12"},{"demon","18","12"},
-            {"shotgun","12","12"},{"medkit","11","13"},{"armor","2","2"},{"shells","6","12"},{"clip","12","6"},{"barrel","8","2"},{"barrel","8","22"},{"stimpack","2","22"}};
+        String[][] things={{"goblin","22","2"},{"goblin","22","22"},{"skeleton","12","2"},{"skeleton_archer","12","22"},{"skeleton","21","12"},{"orc","18","12"},
+            {"longsword","12","12"},{"healing_potion","11","13"},{"chain_mail","2","2"},{"gold","6","12"},{"gold","12","6"},{"barrel","8","2"},{"barrel","8","22"},{"chest","2","22"},{"brazier","6","6"},{"brazier","18","18"}};
         for(String[] t:things)l.things.add(new Level.Thing(Float.parseFloat(t[1]),Float.parseFloat(t[2]),t[0]));
         for(Level.Thing t:l.things)t.angle=(float)Math.atan2(l.playerY-t.y,l.playerX-t.x);
         return l;

@@ -10,7 +10,8 @@ import android.media.AudioTrack;
  */
 final class SoundFx {
     static final int PISTOL=0,SHOTGUN=1,CHAINGUN=2,ROCKET=3,EXPLODE=4,PUNCH=5,DOOR=6,SWITCH=7,PICKUP=8,WEAPON_PICKUP=9,ITEM=10,
-            PLAYER_PAIN=11,PLAYER_DEATH=12,MONSTER_SIGHT=13,MONSTER_PAIN=14,MONSTER_DEATH=15,FIREBALL=16,TELEPORT=17,SECRET=18,OOF=19,BEEP=20,COUNT=21;
+            PLAYER_PAIN=11,PLAYER_DEATH=12,MONSTER_SIGHT=13,MONSTER_PAIN=14,MONSTER_DEATH=15,FIREBALL=16,TELEPORT=17,SECRET=18,OOF=19,BEEP=20,
+            SWING=21,HIT=22,BOW=23,SPELL=24,HEAL=25,COIN=26,LEVEL_UP=27,POTION=28,COUNT=29;
     /** Built-in sound names, in id order. Also the values FSM sound parameters store for built-ins. */
     static final String[] NAMES=Actions.SOUNDS.split("\\|");
     static final int RATE=22050;
@@ -236,7 +237,7 @@ final class SoundFx {
     static short[] synth(int id){
         java.util.Random r=new java.util.Random(id*31+7);
         float len;
-        switch(id){case EXPLODE:case PLAYER_DEATH:case MONSTER_DEATH:len=.9f;break;case DOOR:len=.7f;break;case SHOTGUN:case ROCKET:case TELEPORT:case SECRET:len=.5f;break;default:len=.25f;}
+        switch(id){case EXPLODE:case PLAYER_DEATH:case MONSTER_DEATH:case LEVEL_UP:len=.9f;break;case DOOR:case HEAL:len=.7f;break;case SHOTGUN:case ROCKET:case TELEPORT:case SECRET:case SPELL:case POTION:len=.5f;break;case SWING:case COIN:len=.3f;break;default:len=.25f;}
         int n=(int)(RATE*len);short[] s=new short[n];
         float phase=0,lp=0,lp2=0;
         for(int i=0;i<n;i++){
@@ -258,6 +259,14 @@ final class SoundFx {
                 case MONSTER_SIGHT:env=Math.min(1,t*20)*(float)Math.exp(-t*5);phase+=(float)(2*Math.PI*(90+60*Math.sin(t*30))/RATE);lp+=(noise-lp)*.3f;v=((float)Math.sin(phase)+lp*.5f)*env*.7f;break;
                 case MONSTER_PAIN:env=(float)Math.exp(-t*12);phase+=(float)(2*Math.PI*(260-140*k)/RATE);v=(float)Math.sin(phase)*env*.6f+noise*env*.2f;break;
                 case FIREBALL:env=(float)Math.exp(-t*8);lp+=(noise-lp)*.1f;v=lp*env*2;break;
+                case SWING:env=(float)Math.sin(Math.PI*Math.min(1,k*1.2f));lp+=(noise-lp)*(.05f+.4f*k);v=lp*env*1.6f;break;   // whoosh
+                case HIT:env=(float)Math.exp(-t*30);lp+=(noise-lp)*.12f;phase+=(float)(2*Math.PI*(95-40*k)/RATE);v=(lp*1.8f+(float)Math.sin(phase)*.6f)*env;break;   // meaty thud
+                case BOW:env=(float)Math.exp(-t*14);phase+=(float)(2*Math.PI*(180+40*(float)Math.exp(-t*40))/RATE);v=((float)Math.sin(phase)*.7f+noise*.15f*(float)Math.exp(-t*60))*env;break;   // twang
+                case SPELL:env=Math.min(1,t*10)*(float)Math.exp(-t*4);phase+=(float)(2*Math.PI*(440+660*k+30*Math.sin(t*90))/RATE);v=((float)Math.sin(phase)*.45f+(float)Math.sin(phase*1.5f)*.25f)*env+noise*.08f*env;break;
+                case HEAL:env=Math.min(1,t*8)*Math.min(1,(len-t)*4);phase+=(float)(2*Math.PI*(k<.33f?523:k<.66f?659:784)/RATE);v=((float)Math.sin(phase)*.4f+(float)Math.sin(phase*2)*.12f)*env;break;   // rising chime
+                case COIN:env=(float)Math.exp(-t*12);phase+=(float)(2*Math.PI*(k<.25f?1320:1760)/RATE);v=((float)Math.sin(phase)*.45f+(float)Math.sin(phase*2.7f)*.15f)*env;break;
+                case LEVEL_UP:{env=Math.min(1,t*10)*Math.min(1,(len-t)*3);int step=Math.min(3,(int)(k*4));float[] notes={523,659,784,1047};phase+=(float)(2*Math.PI*notes[step]/RATE);v=((float)Math.signum(Math.sin(phase))*.18f+(float)Math.sin(phase)*.3f)*env;break;}
+                case POTION:env=Math.min(1,t*15)*(float)Math.exp(-t*3);phase+=(float)(2*Math.PI*(220+180*(float)Math.sin(t*25))/RATE);v=(float)Math.sin(phase)*.35f*env*(.6f+.4f*(float)Math.sin(t*60));break;   // glug
                 case TELEPORT:case SECRET:env=Math.min(1,(len-t)*5);phase+=(float)(2*Math.PI*(300+900*k)/RATE);v=(float)Math.sin(phase)*env*.35f;break;
                 default:env=(float)Math.exp(-t*20);phase+=(float)(2*Math.PI*880/RATE);v=(float)Math.sin(phase)*env*.4f;
             }

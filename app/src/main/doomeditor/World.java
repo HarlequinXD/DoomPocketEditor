@@ -12,16 +12,9 @@ import java.util.Random;
 final class World {
     // Physics constants (1 unit = one editor grid square).
     static final float STEP=.6f,GRAVITY=24f,EYE=1.15f,USE_RANGE=1.4f;
-    static final int FIRE_OK=0,FIRE_COOLING=1,FIRE_NO_AMMO=2;
-    static final int AM_BULLETS=0,AM_SHELLS=1,AM_ROCKETS=2;
-    static final int[] AMMO_MAX={200,50,50};
-    // Weapon table: ammo type (-1 none), ammo per shot, cooldown, damage min/max, pellets, spread, sound.
-    static final String[] WEAPON_NAMES={"Fist","Pistol","Shotgun","Chaingun","Rocket Launcher"};
-    static final int[] W_AMMO={-1,AM_BULLETS,AM_SHELLS,AM_BULLETS,AM_ROCKETS};
-    static final float[] W_COOLDOWN={.45f,.38f,.95f,.12f,.8f};
-    static final int[] W_DMIN={2,5,5,5,20},W_DMAX={20,15,15,15,160},W_PELLETS={1,1,7,1,1};
-    static final float[] W_SPREAD={0,.02f,.1f,.05f,0};
-    static final int[] W_SOUND={SoundFx.PUNCH,SoundFx.PISTOL,SoundFx.SHOTGUN,SoundFx.CHAINGUN,SoundFx.ROCKET};
+    static final int FIRE_OK=0,FIRE_COOLING=1,FIRE_NO_TARGET=2,FIRE_NO_POWER=3;
+    /** Projectile kinds: fire bolt, arrow, arcane missile. */
+    static final int P_FIRE=0,P_ARROW=1,P_MAGIC=2;
 
     final Project project;
     final Level level;
@@ -36,11 +29,12 @@ final class World {
     final SoundFx sfx;
     Actor player;
     float time;
-    // Player inventory & HUD
-    boolean[] weapons={true,true,false,false,false};
-    final int[] ammo={50,0,0};
-    boolean[] keys=new boolean[3];
-    int weapon=1,pendingWeapon=-1,armor;
+    // The hero (player character) and HUD state
+    Hero hero;
+    /** First-person weapon model currently shown (Rpg.FP_*). */
+    int weapon=Rpg.FP_FIST;
+    /** True while a dialogue, the inventory or another menu has paused the game. */
+    boolean paused;
     float weaponCooldown,weaponFlash,weaponRaise,bobPhase,viewZ,damageFlash,pickupFlash,shakeTime,shakeStrength;
     int flashColor=0xffff0000;
     String message="",center="";
@@ -52,6 +46,16 @@ final class World {
     private final boolean[] secretFound;
     private float damageTick;
 
+    /** Floating combat text (damage numbers, MISS, CRITICAL, +XP...). */
+    static final class Floater {float x,y,z,t;final String text;final int color;Floater(float x,float y,float z,String text,int color){this.x=x;this.y=y;this.z=z;this.text=text;this.color=color;}}
+    final ArrayList<Floater> floaters=new ArrayList<>();
+    void floater(Actor a,String text,int color){if(a==null)return;floaters.add(new Floater(a.x+(rng.nextFloat()-.5f)*.25f,a.y+(rng.nextFloat()-.5f)*.25f,a.z+a.height+.1f,text,color));if(floaters.size()>40)floaters.remove(0);}
+    /** NPC conversation shown over the game (pauses it). Choices send events back to the speaker's FSM. */
+    static final class Dialogue {String speaker,text;String[] choices,events;Actor who;}
+    Dialogue dialogue;
+    static final class Quest {final String id;String title,text;int state;Quest(String id){this.id=id;}}
+    static final int Q_INACTIVE=0,Q_ACTIVE=1,Q_DONE=2,Q_FAILED=3;
+    final java.util.LinkedHashMap<String,Quest> quests=new java.util.LinkedHashMap<>();
     static final class Effect {int type;float x,y,z,t,life;Effect(int type,float x,float y,float z,float life){this.type=type;this.x=x;this.y=y;this.z=z;this.life=life;}}
     /** Moves a floor or ceiling to a target, optionally waits and returns (doors, lifts). */
     static final class Mover {int sector;boolean ceiling;float target,speed,wait,returnTo;boolean returning;float delay;}
@@ -77,6 +81,7 @@ final class World {
             if(s.special==Level.SP_SECRET)totalSecrets++;}
         EntityDef pd=p.playerDef();
         player=makeActor(pd,level.playerX,level.playerY,level.facing);player.isPlayer=true;
+        hero=Hero.create(pd);player.health=hero.maxHp;weapon=hero.weaponOrFists().fp;
         player.z=floorAt(player.x,player.y);viewZ=player.z+EYE;
         actors.add(player);
         if(live){player.fsm=null;return;}
@@ -88,6 +93,8 @@ final class World {
     private Actor makeActor(EntityDef d,float x,float y,float angle){
         Actor a=new Actor(d);a.x=a.spawnX=x;a.y=a.spawnY=y;a.angle=angle;a.radius=d.radius;a.height=d.height;a.health=d.health;a.speed=d.speed;
         a.solid=d.solid;a.shootable=d.shootable;a.sprite=d.sprite;a.fsm=new FsmRuntime(d.fsm);
+        if(d.hitDice!=null&&!d.hitDice.trim().isEmpty()&&d.kind!=EntityDef.PLAYER)a.health=Math.max(1,Rpg.Dice.parse(d.hitDice).roll(rng));
+        a.maxHealth=a.health;
         return a;
     }
 
@@ -96,6 +103,9 @@ final class World {
         dt=Math.min(dt,.05f);
         time+=dt;
         if(levelComplete){completeTime+=dt;input.endFrame();return;}
+        for(int i=floaters.size()-1;i>=0;i--){Floater f=floaters.get(i);f.t+=dt;f.z+=dt*.45f;if(f.t>1.1f)floaters.remove(i);}
+        if(paused||dialogue!=null){input.endFrame();return;}
+        if(hero!=null){if(hero.wardTime>0)hero.wardTime-=dt;weapon=hero.weaponOrFists().fp;}
         for(int i=0;i<actors.size();i++){Actor a=actors.get(i);if(a.removed)continue;
             a.wishActive=false;
             if(a.fsm!=null)a.fsm.tick(this,a,dt);
@@ -113,7 +123,6 @@ final class World {
         for(int i=actors.size()-1;i>=0;i--)if(actors.get(i).removed)actors.remove(i);
         // weapon & view
         if(weaponCooldown>0)weaponCooldown-=dt;if(weaponFlash>0)weaponFlash-=dt;if(weaponRaise>0)weaponRaise-=dt*3;
-        if(pendingWeapon>=0&&weaponCooldown<=0){weapon=pendingWeapon;pendingWeapon=-1;weaponRaise=1;}
         float speed=(float)Math.hypot(player.vx,player.vy);
         if(player.onGround)bobPhase+=dt*speed*1.6f;
         float target=player.z+EYE*(player.alive?1:.25f);
@@ -335,18 +344,18 @@ final class World {
     void teleport(Actor a,float x,float y){if(level.sectorAt(x,y)<0)return;float ox=a.x,oy=a.y;a.x=x;a.y=y;if(!tryMove(a,x,y)){a.x=ox;a.y=oy;return;}a.z=floorAt(x,y);effect(Sprites.FX_TELEPORT,x,y,a.z+.8f);sound(SoundFx.TELEPORT,a);}
 
     // ------------------------------------------------------------------ combat
-    void damage(Actor t,int amount,Actor src){
+    void damage(Actor t,int amount,Actor src){damage(t,amount,src,false);}
+    /** Applies damage, shows the number, awards XP to the hero for kills and sends DAMAGED / DIED to the FSM. */
+    void damage(Actor t,int amount,Actor src,boolean crit){
         if(t==null||!t.alive||t.invulnerable||amount<=0||t.removed)return;
-        if(t.isPlayer){
-            if(armor>0){int saved=Math.min(armor,amount/3);armor-=saved;amount-=saved;}
-            damageFlash=Math.min(1,damageFlash+.25f+amount*.02f);flashColor=0xffff0000;
-        }
+        if(t.isPlayer){damageFlash=Math.min(1,damageFlash+.25f+amount*.02f);flashColor=0xffff0000;}
+        floater(t,crit?amount+"!":String.valueOf(amount),t.isPlayer?0xffff5a4a:crit?0xffffd040:0xffffffff);
         t.health-=amount;
         if(src!=null&&src!=t&&!t.isPlayer&&src.alive)t.target=src;
         if(t.health<=0){
             t.health=0;t.alive=false;t.shootable=false;t.solid=false;t.vx*=.3f;t.vy*=.3f;t.animClip=null;
             if(t.isPlayer){sound(SoundFx.PLAYER_DEATH,t);}
-            else{if(t.def.countKill)kills++;}
+            else{if(t.def.countKill)kills++;Actor killer=src!=null&&src.owner!=null?src.owner:src;if(killer==player&&hero!=null)awardXp(t.def.xp,t);}
             if(t.fsm!=null)t.fsm.send("DIED");
         }else{
             t.painTimer=Math.max(t.painTimer,.2f);
@@ -379,7 +388,9 @@ final class World {
                 float dx=o.x-src.x,dy=o.y-src.y,along=dx*(float)Math.cos(a)+dy*(float)Math.sin(a);if(along<=0||along>=best)continue;
                 float perp=Math.abs(-dx*(float)Math.sin(a)+dy*(float)Math.cos(a));if(perp<o.radius){best=along;hit=o;}}
             float hx=src.x+(float)Math.cos(a)*(best-.05f),hy=src.y+(float)Math.sin(a)*(best-.05f);
-            if(hit!=null){damage(hit,dmin+rng.nextInt(Math.max(1,dmax-dmin+1)),src);effect(Sprites.FX_BLOOD,hx,hy,hit.z+hit.height*.6f);}
+            if(hit!=null){int roll=Rpg.d20(rng);boolean crit=roll==20;
+                if(roll!=1&&(crit||roll+attackBonusOf(src)>=ac(hit))){damage(hit,(dmin+rng.nextInt(Math.max(1,dmax-dmin+1)))*(crit?2:1),src,crit);effect(Sprites.FX_BLOOD,hx,hy,hit.z+hit.height*.6f);}
+                else floater(hit,"miss",0xffb0b8c0);}
             else if(wallT<1)effect(Sprites.FX_PUFF,hx,hy,Math.min(z0,ceilAt(hx,hy)-.1f));
         }
     }
@@ -387,7 +398,9 @@ final class World {
         if(src==null||!src.alive||src.removed)return false;
         Actor t=src.target;if(t==null||!t.alive)return false;
         if(dist(src,t)>range+t.radius||!lineOfSight(src,t))return false;
-        damage(t,dmg,src);sound(SoundFx.PUNCH,src);return true;
+        int roll=Rpg.d20(rng);boolean crit=roll==20;sound(SoundFx.SWING,src);
+        if(roll==1||(!crit&&roll+attackBonusOf(src)<ac(t))){floater(t,"miss",0xffb0b8c0);return true;}
+        damage(t,dmg*(crit?2:1),src,crit);sound(SoundFx.HIT,t);return true;
     }
     void projectile(Actor src,int type,int dmin,int dmax,float speed){
         if(src==null||!src.alive||src.removed)return;
@@ -396,7 +409,22 @@ final class World {
         p.x=src.x+(float)Math.cos(ang)*(src.radius+.2f);p.y=src.y+(float)Math.sin(ang)*(src.radius+.2f);p.z=src.z+src.height*.6f;
         float dz=0;if(src.target!=null){float d=Math.max(.5f,dist(src,src.target));dz=((src.target.z+src.target.height*.5f)-p.z)/d;}
         p.vx=(float)Math.cos(ang)*speed;p.vy=(float)Math.sin(ang)*speed;p.vz=dz*speed;p.angle=ang;
-        spawned.add(p);sound(type==1?SoundFx.ROCKET:SoundFx.FIREBALL,src);
+        p.pAttack=attackBonusOf(src);
+        spawned.add(p);sound(type==P_ARROW?SoundFx.BOW:type==P_MAGIC?SoundFx.SPELL:SoundFx.FIREBALL,src);
+    }
+    /**
+     * Launches a projectile that carries its own attack: an attack-roll bonus (or auto-hit), damage dice and type,
+     * and optionally an area burst with a DEX saving throw. Aims at {@code at} (or straight ahead).
+     */
+    Actor shoot(Actor src,int type,Actor at,float angle,int attack,Rpg.Dice dice,int dmgType,boolean auto,float radius,int dc,float speed){
+        if(src==null||!src.alive||src.removed)return null;
+        float ang=at!=null?angleTo(src,at):angle;
+        Actor p=new Actor(null);p.projectileType=type;p.owner=src;p.radius=.12f;p.height=.25f;p.alive=true;p.noGravity=true;
+        p.pAttack=attack;p.pDice=dice;p.pType=dmgType;p.pAuto=auto;p.pRadius=radius;p.pDC=dc;
+        p.x=src.x+(float)Math.cos(ang)*(src.radius+.15f);p.y=src.y+(float)Math.sin(ang)*(src.radius+.15f);p.z=src.z+src.height*(src.isPlayer?.72f:.6f);
+        float dz=0;if(at!=null){float d=Math.max(.5f,dist(src,at));dz=((at.z+at.height*.55f)-p.z)/d;}else if(src.isPlayer)dz=(float)Math.tan(src.pitch);
+        p.vx=(float)Math.cos(ang)*speed;p.vy=(float)Math.sin(ang)*speed;p.vz=dz*speed;p.angle=ang;
+        spawned.add(p);return p;
     }
     private void projectileStep(Actor p,float dt){
         if(!p.alive)return;
@@ -414,49 +442,181 @@ final class World {
             if(Math.hypot(o.x-nx,o.y-ny)<o.radius+p.radius&&nz>=o.z&&nz<=o.z+o.height){victim=o;break;}}
         if(hitWall||victim!=null){
             p.alive=false;p.removed=true;
-            if(victim!=null)damage(victim,p.dmgMin+rng.nextInt(Math.max(1,p.dmgMax-p.dmgMin+1)),p.owner);
-            if(p.projectileType==1){effect(Sprites.FX_EXPLOSION,p.x,p.y,p.z);sound(SoundFx.EXPLODE,p);p.x=nx-p.vx*dt*.5f;p.y=ny-p.vy*dt*.5f;radiusDamage(p,128,3.2f);}
-            else effect(p.projectileType==2?Sprites.FX_PLASMA:Sprites.FX_EXPLOSION,p.x,p.y,p.z);
+            if(p.pRadius>0){   // area spell: everything in the blast makes a DEX save for half
+                p.x=nx-p.vx*dt*.5f;p.y=ny-p.vy*dt*.5f;effect(Sprites.FX_EXPLOSION,p.x,p.y,p.z);sound(SoundFx.EXPLODE,p);
+                areaDamage(p.owner,p.x,p.y,p.z,p.pRadius,p.pDice,p.pType,p.pDC);return;}
+            if(victim!=null){
+                if(p.pDice==null){   // legacy projectile (min..max damage)
+                    int roll=Rpg.d20(rng);if(roll!=1&&(roll==20||roll+p.pAttack>=ac(victim)))damage(victim,p.dmgMin+rng.nextInt(Math.max(1,p.dmgMax-p.dmgMin+1)),p.owner,roll==20);else floater(victim,"miss",0xffb0b8c0);}
+                else{int roll=p.pAuto?10:Rpg.d20(rng);boolean crit=!p.pAuto&&roll==20;
+                    if(p.pAuto||(roll!=1&&(crit||roll+p.pAttack>=ac(victim)))){int dmg=crit?p.pDice.rollCrit(rng):p.pDice.roll(rng);
+                        if(p.owner==player&&hero!=null&&hero.sneakDice()>0&&victim.target!=player){Rpg.Dice sd=new Rpg.Dice(hero.sneakDice()*(crit?2:1),6,0);dmg+=sd.roll(rng);floater(victim,"sneak attack",0xffc8a0ff);}
+                        damage(victim,Math.max(1,dmg),p.owner,crit);if(p.projectileType==P_ARROW)sound(SoundFx.HIT,victim);}
+                    else floater(victim,"miss",0xffb0b8c0);}
+            }
+            effect(p.projectileType==P_MAGIC?Sprites.FX_PLASMA:p.projectileType==P_ARROW?Sprites.FX_PUFF:Sprites.FX_EXPLOSION,p.x,p.y,p.z);
             return;
         }
         p.x=nx;p.y=ny;p.z=nz;
     }
 
-    // ------------------------------------------------------------------ player weapons
-    boolean weaponReady(){return weaponCooldown<=0&&pendingWeapon<0;}
-    int fireWeapon(){
+    // ------------------------------------------------------------------ RPG combat
+    int ac(Actor a){if(a==null)return 10;if(a.isPlayer&&hero!=null)return hero.ac();return a.def!=null?a.def.ac:10;}
+    int attackBonusOf(Actor a){if(a==null)return 0;if(a.isPlayer&&hero!=null)return hero.attackBonus(hero.weaponOrFists());if(a.owner!=null)return attackBonusOf(a.owner);return a.def!=null?a.def.attackBonus:2;}
+    int abilityMod(Actor a,int ability){if(a==null)return 0;if(a.isPlayer&&hero!=null)return hero.mod(ability);return a.def!=null?Rpg.mod(a.def.abilities[ability]):0;}
+    /** Saving throw: d20 + ability modifier (+ proficiency for the hero's class ability) against a DC. */
+    boolean save(Actor a,int ability,int dc){int r=Rpg.d20(rng);if(r==20)return true;if(r==1)return false;int bonus=abilityMod(a,ability)+(a.isPlayer&&hero!=null&&hero.cls.primary==ability?hero.prof():0);return r+bonus>=dc;}
+    boolean weaponReady(){return weaponCooldown<=0;}
+    /** The hero attacks with the equipped weapon: melee swing or a fired arrow. */
+    int attack(){
         if(!weaponReady())return FIRE_COOLING;
-        int at=W_AMMO[weapon];
-        if(at>=0&&ammo[at]<=0){sound(SoundFx.OOF,player);return FIRE_NO_AMMO;}
-        if(at>=0)ammo[at]--;
-        if(camMode==CAM_THIRD&&camStyle==CS_ORBIT)player.angle=camYaw;   // shoot where the camera looks
-        weaponCooldown=W_COOLDOWN[weapon];
-        sound(W_SOUND[weapon],player);
-        if(weapon==0){Actor t=nearestInFront(1.3f);if(t!=null)damage(t,W_DMIN[0]+rng.nextInt(W_DMAX[0]-W_DMIN[0]+1),player);return FIRE_OK;}
-        weaponFlash=.09f;
-        if(weapon==4){player.target=null;projectile(player,1,20,160,14f);return FIRE_OK;}
-        hitscan(player,player.angle,W_DMIN[weapon],W_DMAX[weapon],W_SPREAD[weapon],W_PELLETS[weapon],40);
-        if(weapon==2)shake(.15f,.12f);
+        if(hero==null)return FIRE_NO_TARGET;
+        if(camMode==CAM_THIRD&&camStyle==CS_ORBIT)player.angle=camYaw;   // attack where the camera looks
+        Rpg.Item w=hero.weaponOrFists();
+        weaponCooldown=w.cooldown;weaponFlash=.22f;player.attackTimer=.25f;
+        if(w.ranged){
+            Actor t=aimTarget(w.reach,.18f);sound(SoundFx.BOW,player);
+            shoot(player,P_ARROW,t,player.angle,hero.attackBonus(w),new Rpg.Dice(w.damage.n,w.damage.sides,w.damage.bonus+hero.damageBonus(w)),w.damageType,false,0,0,22f);
+            return FIRE_OK;
+        }
+        sound(SoundFx.SWING,player);
+        Actor t=meleeTarget(w.reach);
+        if(t==null)return FIRE_NO_TARGET;
+        int roll=Rpg.d20(rng);boolean crit=roll==20;
+        if(roll==1||(!crit&&roll+hero.attackBonus(w)<ac(t))){floater(t,"miss",0xffb0b8c0);if(t.fsm!=null&&t.target==null){t.target=player;t.fsm.send("DAMAGED");}return FIRE_OK;}
+        int dmg=(crit?w.damage.rollCrit(rng):w.damage.roll(rng))+hero.damageBonus(w);
+        if(hero.sneakDice()>0&&t.target!=player){dmg+=new Rpg.Dice(hero.sneakDice()*(crit?2:1),6,0).roll(rng);floater(t,"sneak attack",0xffc8a0ff);}
+        effect(Sprites.FX_BLOOD,t.x-(float)Math.cos(player.angle)*t.radius*.6f,t.y-(float)Math.sin(player.angle)*t.radius*.6f,t.z+t.height*.6f);
+        damage(t,Math.max(1,dmg),player,crit);sound(SoundFx.HIT,t);if(crit)shake(.12f,.12f);
         return FIRE_OK;
     }
-    private Actor nearestInFront(float range){
-        Actor best=null;float bd=range;
-        for(Actor o:actors){if(o==player||!o.shootable||!o.alive)continue;float d=dist(player,o)-o.radius;
-            if(d<bd&&Math.abs(angleDiff(angleTo(player,o),player.angle))<.6f){bd=d;best=o;}}
+    /** Closest living creature within reach in a cone in front of the player, with line of sight. */
+    private Actor meleeTarget(float reach){
+        Actor best=null;float bd=1e9f;
+        for(Actor o:actors){if(o==player||!o.shootable||!o.alive||o.removed)continue;float d=dist(player,o)-o.radius;
+            if(d>reach)continue;float da=Math.abs(angleDiff(angleTo(player,o),player.angle));if(da>.75f)continue;if(!lineOfSight(player,o))continue;
+            float score=d+da*.8f;if(score<bd){bd=score;best=o;}}
         return best;
     }
-    boolean selectWeapon(int w){if(w<0||w>4||!weapons[w])return false;if(w!=weapon)pendingWeapon=w;return true;}
-    void nextWeapon(){for(int i=1;i<=5;i++){int w=(weapon+i)%5;if(weapons[w]&&(W_AMMO[w]<0||ammo[W_AMMO[w]]>0)&&w!=weapon){pendingWeapon=w;return;}}}
-    boolean giveWeapon(int w,int am){
-        boolean had=weapons[w];weapons[w]=true;boolean got=W_AMMO[w]>=0&&giveAmmo(W_AMMO[w],am);
-        if(!had){pendingWeapon=w;return true;}return got;
+    /** Auto-aim for ranged attacks and spells: the creature nearest the crosshair within a narrow cone. */
+    Actor aimTarget(float range,float cone){
+        Actor best=null;float bd=1e9f;
+        for(Actor o:actors){if(o==player||!o.shootable||!o.alive||o.removed||o.projectileType>=0)continue;float d=dist(player,o);if(d>range)continue;
+            float da=Math.abs(angleDiff(angleTo(player,o),player.angle));if(da>cone+Math.atan2(o.radius,Math.max(.5f,d)))continue;if(!lineOfSight(player,o))continue;
+            if(da<bd){bd=da;best=o;}}
+        return best;
     }
-    boolean hasWeapon(int w){return w>=0&&w<5&&weapons[w];}
-    boolean giveAmmo(int t,int am){if(t<0||t>2||ammo[t]>=AMMO_MAX[t])return false;ammo[t]=Math.min(AMMO_MAX[t],ammo[t]+am);return true;}
-    boolean giveKey(int k){if(k<0||k>2)return false;keys[k]=true;return true;}
-    boolean hasKey(int k){return k>=0&&k<3&&keys[k];}
-    boolean giveHealth(Actor a,int amount,int max){if(a==null||!a.alive||a.health>=max)return false;a.health=Math.min(max,a.health+amount);return true;}
-    boolean giveArmor(int amount,int max){if(armor>=max)return false;armor=Math.min(max,armor+amount);return true;}
+    /** The hero casts a spell (scrolls cast for free). Returns FIRE_* status. */
+    int castSpell(Rpg.Spell sp,boolean free){
+        if(hero==null||sp==null)return FIRE_NO_TARGET;
+        if(!weaponReady())return FIRE_COOLING;
+        int cost=free?0:Rpg.spellCost(sp.level);
+        if(cost>hero.sp){message("Not enough spell points for "+sp.name,2);sound(SoundFx.OOF,player);return FIRE_NO_POWER;}
+        if(camMode==CAM_THIRD&&camStyle==CS_ORBIT)player.angle=camYaw;
+        hero.sp-=cost;weaponCooldown=sp.level==0?.8f:1.1f;weaponFlash=.3f;player.attackTimer=.3f;
+        int atk=free?5+Math.max(hero.spellAttack(),0):hero.spellAttack(),dc=free?13:hero.saveDC(),mod=free?2:hero.castMod();
+        sound(SoundFx.SPELL,player);
+        // cantrips grow stronger at levels 5, 11 and 17
+        int scale=sp.level==0?(hero.level>=17?4:hero.level>=11?3:hero.level>=5?2:1):1;
+        Rpg.Dice dice=new Rpg.Dice(sp.dice.n*scale,sp.dice.sides,sp.dice.bonus);
+        switch(sp.kind){
+            case Rpg.S_BOLT:shoot(player,P_FIRE,aimTarget(sp.range,.2f),player.angle,atk,dice,sp.damageType,false,0,0,16f);break;
+            case Rpg.S_MISSILE:{Actor t=aimTarget(sp.range,.35f);for(int k=0;k<3;k++){Actor m=shoot(player,P_MAGIC,t,player.angle+(k-1)*.12f,0,dice,sp.damageType,true,0,0,13f+k);if(m!=null&&t==null)m.angle+=0;}break;}
+            case Rpg.S_AREA:shoot(player,P_FIRE,aimTarget(sp.range,.2f),player.angle,0,dice,sp.damageType,true,sp.radius,dc,14f);break;
+            case Rpg.S_SAVE_TARGET:{Actor t=aimTarget(sp.range,.3f);if(t==null){message("No target in sight",1.5f);break;}
+                effect(Sprites.FX_TELEPORT,t.x,t.y,t.z+.2f);if(save(t,Rpg.DEX,dc))floater(t,"saved",0xffb0b8c0);else damage(t,dice.roll(rng),player,false);if(t.target==null)t.target=player;break;}
+            case Rpg.S_CONE:{float cs=(float)Math.cos(player.angle),sn=(float)Math.sin(player.angle);effect(Sprites.FX_EXPLOSION,player.x+cs*1.2f,player.y+sn*1.2f,player.z+.8f);
+                for(int i=0;i<actors.size();i++){Actor o=actors.get(i);if(o==player||!o.shootable||!o.alive)continue;float d=dist(player,o)-o.radius;if(d>sp.range)continue;
+                    if(Math.abs(angleDiff(angleTo(player,o),player.angle))>.6f||!lineOfSight(player,o))continue;int dmg=dice.roll(rng);boolean ok=save(o,Rpg.DEX,dc);damage(o,Math.max(1,ok?dmg/2:dmg),player,false);if(ok)floater(o,"half",0xffb0b8c0);}break;}
+            case Rpg.S_HEAL:{int h=dice.roll(rng)+mod;heal(player,h);effect(Sprites.FX_TELEPORT,player.x+(float)Math.cos(player.angle)*.6f,player.y+(float)Math.sin(player.angle)*.6f,player.z+.6f);sound(SoundFx.HEAL,player);break;}
+            case Rpg.S_WARD:hero.wardAC=Math.max(1,dice.bonus);hero.wardTime=8;flash(3,.3f);message(sp.name+": +"+hero.wardAC+" AC",2);break;
+        }
+        return FIRE_OK;
+    }
+    /** Fireball-style blast: DEX save for half damage. */
+    void areaDamage(Actor src,float x,float y,float z,float radius,Rpg.Dice dice,int type,int dc){
+        int dmg=dice==null?20:dice.roll(rng);
+        for(int i=0;i<actors.size();i++){Actor a=actors.get(i);if(!a.shootable||!a.alive||a.projectileType>=0)continue;
+            float d=(float)Math.hypot(a.x-x,a.y-y)-a.radius;if(d>=radius)continue;
+            boolean ok=save(a,Rpg.DEX,dc);damage(a,Math.max(1,ok?dmg/2:dmg),src,false);if(ok)floater(a,"half",0xffb0b8c0);}
+        if(player!=null&&Math.hypot(player.x-x,player.y-y)<radius*2)shake(.4f,.35f);
+    }
+    /** Heals an actor up to its maximum; shows a green number. */
+    int heal(Actor a,int amount){if(a==null||!a.alive)return 0;int max=a.isPlayer&&hero!=null?hero.maxHp:Math.max(a.maxHealth,1);int before=a.health;a.health=Math.min(max,a.health+Math.max(0,amount));int got=a.health-before;if(got>0)floater(a,"+"+got,0xff60e070);return got;}
+    /** Monster melee using its own stats: d20 + attack bonus against AC, damage dice on a hit. */
+    boolean meleeAttack(Actor src,float reach){
+        if(src==null||!src.alive||src.def==null)return false;Actor t=src.target;if(t==null||!t.alive)return false;
+        if(dist(src,t)>reach+t.radius||!lineOfSight(src,t))return false;
+        src.attackTimer=.35f;sound(SoundFx.SWING,src);
+        int roll=Rpg.d20(rng);boolean crit=roll==20;
+        if(roll==1||(!crit&&roll+src.def.attackBonus<ac(t))){floater(t,"miss",0xffb0b8c0);return true;}
+        Rpg.Dice dd=Rpg.Dice.parse(src.def.damage);damage(t,Math.max(1,crit?dd.rollCrit(rng):dd.roll(rng)),src,crit);sound(SoundFx.HIT,t);return true;
+    }
+    /** Monster ranged attack (arrow or bolt) using its own stats. */
+    void rangedAttack(Actor src,int type){
+        if(src==null||!src.alive||src.def==null)return;src.attackTimer=.35f;
+        shoot(src,type,src.target,src.angle,src.def.attackBonus,Rpg.Dice.parse(src.def.damage),src.def.damageType,false,0,0,type==P_ARROW?18f:12f);
+        sound(type==P_ARROW?SoundFx.BOW:SoundFx.SPELL,src);
+    }
+    /** Monster spellcasting (spell attack = its attack bonus, save DC = 8 + attack bonus). */
+    void monsterCast(Actor src,Rpg.Spell sp){
+        if(src==null||!src.alive||src.def==null||sp==null)return;src.attackTimer=.4f;Actor t=src.target;int atk=src.def.attackBonus,dc=8+atk;
+        sound(SoundFx.SPELL,src);
+        switch(sp.kind){
+            case Rpg.S_HEAL:heal(src,sp.dice.roll(rng)+2);effect(Sprites.FX_TELEPORT,src.x,src.y,src.z+.5f);break;
+            case Rpg.S_MISSILE:for(int k=0;k<3;k++)shoot(src,P_MAGIC,t,src.angle+(k-1)*.12f,0,sp.dice,sp.damageType,true,0,0,11f);break;
+            case Rpg.S_AREA:shoot(src,P_FIRE,t,src.angle,0,sp.dice,sp.damageType,true,sp.radius,dc,11f);break;
+            case Rpg.S_SAVE_TARGET:case Rpg.S_CONE:if(t!=null&&dist(src,t)<sp.range&&lineOfSight(src,t)){effect(Sprites.FX_TELEPORT,t.x,t.y,t.z+.2f);int dmg=sp.dice.roll(rng);damage(t,save(t,Rpg.DEX,dc)?dmg/2:dmg,src,false);}break;
+            default:shoot(src,P_FIRE,t,src.angle,atk,sp.dice,sp.damageType,false,0,0,12f);
+        }
+    }
+    /** Hero gains XP; levels up with a fanfare. */
+    void awardXp(int amount,Actor from){
+        if(hero==null||amount<=0)return;int hpBefore=hero.maxHp;
+        if(from!=null)floater(from,"+"+amount+" XP",0xff9ad0ff);
+        int gained=hero.gainXp(amount);
+        if(gained>0){player.health+=hero.maxHp-hpBefore;hero.sp=hero.maxSp;
+            centerPrint("Level "+hero.level+"!",2.5f);message("You are now a level "+hero.level+" "+hero.cls.name.toLowerCase()+" ("+hero.maxHp+" HP"+(hero.isCaster()?", "+hero.maxSp+" SP":"")+")",4);
+            flash(1,.45f);sound(SoundFx.LEVEL_UP,player);levelUps+=gained;}
+    }
+    int levelUps;
+    /** Inventory screen requested by an FSM action (the editor opens it). */
+    boolean menuRequested;
+    /** Equips the next weapon in the hero's pack. */
+    void nextWeapon(){Hero h=hero;if(h==null)return;java.util.ArrayList<Rpg.Item> ws=new java.util.ArrayList<>();for(Hero.Stack st:h.inventory)if(st.item.kind==Rpg.I_WEAPON&&!ws.contains(st.item))ws.add(st.item);
+        if(ws.size()>1){int k=(ws.indexOf(h.weapon)+1)%ws.size();String err=h.equip(ws.get(k));message(err!=null?err:"Wielding "+ws.get(k).name,1.5f);weaponRaise=1;}}
+    /** Gives the hero an item (equips it if the slot is empty). */
+    boolean giveItem(Rpg.Item it,int count){
+        if(hero==null||it==null)return false;hero.add(it,count);
+        if(it.kind==Rpg.I_WEAPON&&(hero.weapon==null))hero.equip(it);
+        if(it.kind==Rpg.I_ARMOR&&hero.armour==null)hero.equip(it);
+        if(it.kind==Rpg.I_SHIELD&&hero.shield==null)hero.equip(it);
+        return true;
+    }
+    void giveGold(int g){if(hero==null||g==0)return;hero.gold=Math.max(0,hero.gold+g);if(g>0){floater(player,"+"+g+" gold",0xffffd040);sound(SoundFx.COIN,player);}}
+    /** Uses an inventory item: drink a potion, read a scroll, equip gear. Returns a message. */
+    String useItem(Rpg.Item it){
+        if(hero==null||it==null||hero.count(it)==0)return "You don't have that";
+        switch(it.kind){
+            case Rpg.I_POTION:{
+                if(it.heal!=null){if(player.health>=hero.maxHp)return "You're already at full health";hero.remove(it,1);int h=heal(player,it.heal.roll(rng));sound(SoundFx.POTION,player);flash(3,.25f);return "You drink the "+it.name.toLowerCase()+" (+"+h+" HP)";}
+                if(hero.sp>=hero.maxSp)return hero.maxSp==0?"Nothing happens":"Your magic is already full";
+                hero.remove(it,1);hero.sp=Math.min(hero.maxSp,hero.sp+it.spellPoints);sound(SoundFx.POTION,player);return "Arcane power flows back (+"+it.spellPoints+" SP)";}
+            case Rpg.I_SCROLL:{Rpg.Spell sp=Rpg.spell(it.spell);if(sp==null)return "The scroll is blank";hero.remove(it,1);paused=false;castSpell(sp,true);return "You read the "+it.name.toLowerCase();}
+            case Rpg.I_WEAPON:case Rpg.I_ARMOR:case Rpg.I_SHIELD:{if(hero.isEquipped(it)){hero.unequip(it);return "Unequipped "+it.name;}String err=hero.equip(it);return err!=null?err:"Equipped "+it.name;}
+            default:return it.name+" — "+it.stats();
+        }
+    }
+    /** Quick heal button: drinks the best healing potion. */
+    boolean quaff(){if(hero==null)return false;Rpg.Item p=hero.bestPotion(hero.maxHp-player.health);if(p==null){message("No healing potions",1.5f);sound(SoundFx.OOF,player);return false;}String m=useItem(p);message(m,2);return true;}
+    boolean giveKey(int k){if(k<0||k>2||hero==null)return false;Rpg.Item it=Rpg.item(k==0?"bronze_key":k==1?"silver_key":"gold_key");return giveItem(it,1);}
+    boolean hasKey(int k){return hero!=null&&hero.hasKey(k);}
+    // ---- dialogue & quests
+    void say(Actor who,String speaker,String text,String[] choices,String[] events){Dialogue d=new Dialogue();d.who=who;d.speaker=speaker;d.text=text;d.choices=choices;d.events=events;dialogue=d;input.clear();}
+    void chooseDialogue(int i){Dialogue d=dialogue;dialogue=null;if(d==null)return;if(d.events!=null&&i>=0&&i<d.events.length&&d.events[i]!=null&&!d.events[i].isEmpty()&&d.who!=null&&d.who.fsm!=null)d.who.fsm.send(d.events[i]);}
+    Quest quest(String id){Quest q=quests.get(id);if(q==null){q=new Quest(id);q.title=id;q.text="";quests.put(id,q);}return q;}
+    int questState(String id){Quest q=quests.get(id);return q==null?Q_INACTIVE:q.state;}
+    boolean giveHealth(Actor a,int amount,int max){if(a==null||!a.alive)return false;if(a.isPlayer&&hero!=null)max=hero.maxHp;if(a.health>=max)return false;int b=a.health;a.health=Math.min(max,a.health+amount);floater(a,"+"+(a.health-b),0xff60e070);return true;}
 
     // ------------------------------------------------------------------ use, touch, specials
     /** Use whatever is directly in front: a door/lift linedef or an entity. */
@@ -476,7 +636,7 @@ final class World {
             if(s==sectorIndex(a)&&special(bestL.back)!=Level.SP_NONE)s=bestL.back;
             Level.Sector sec=level.sectors.get(s);
             if(sec.special==Level.SP_DOOR){
-                if(sec.tag>0&&!keys[sec.tag-1]){message("You need a "+Level.KEY_NAMES[sec.tag].toLowerCase()+" to open this door",2.5f);sound(SoundFx.OOF,a);return;}
+                if(sec.tag>0&&!hasKey(sec.tag-1)){message("You need the "+Level.KEY_NAMES[sec.tag].toLowerCase()+" to open this door",2.5f);sound(SoundFx.OOF,a);return;}
                 openDoor(s,true);return;}
             if(sec.special==Level.SP_LIFT){lift(s);return;}
         }

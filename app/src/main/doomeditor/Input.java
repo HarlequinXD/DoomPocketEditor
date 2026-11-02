@@ -2,7 +2,8 @@ package com.retro.doomeditor;
 
 /** Player input for one frame: joystick axes, look deltas and button edges. */
 final class Input {
-    static final int FIRE=0,USE=1,JUMP=2,WEAPON=3,ALT=4,COUNT=5;
+    /** FIRE = attack, WEAPON = next spell, ALT = run, SPELL = cast, POTION = quick heal, MENU = inventory. */
+    static final int FIRE=0,USE=1,JUMP=2,WEAPON=3,ALT=4,SPELL=5,POTION=6,MENU=7,COUNT=8;
     float moveX,moveY,lookX,lookY;
     private final boolean[] down=new boolean[COUNT],was=new boolean[COUNT],tapped=new boolean[COUNT];
     void setButton(int b,boolean on){if(on&&!down[b])tapped[b]=true;down[b]=on;}

@@ -31,7 +31,7 @@ public class EditorView extends View {
     // Touch target ids registered while drawing.
     private static final int H_MODE=100,H_FSM=110,H_SAVE=111,H_RESET=112,H_PAGE=120,H_TOOL=200,H_APPLY=520,H_MAT=400,
             H_RAISE=500,H_LOWER=501,H_LIGHTUP=502,H_LIGHTDN=503,H_FLY=504,H_UP=505,H_DOWN=506,H_EDITFSM3D=507,H_START3D=508,
-            H_FIRE=510,H_USE=511,H_JUMP=512,H_WEAPON=513,H_EXITPLAY=514,H_RETRY=530,H_BACK=531,
+            H_FIRE=510,H_USE=511,H_JUMP=512,H_WEAPON=513,H_EXITPLAY=514,H_SPELL=515,H_POTION=516,H_BAG=517,H_DLG=3200,H_INV_ITEM=3300,H_INV_SPELL=3600,H_INV_CLOSE=3700,H_INV_TAB=3710,H_RETRY=530,H_BACK=531,
             H_NEWDEF=590,H_LOGO=593,H_SPRITES=594,H_EDITSPRITE=813,H_ZOOMIN=591,H_ZOOMOUT=592,H_DEF=2000,H_PROP=700,H_ETOOL=800,H_EDITFSM=810,H_DUPDEF=811,H_DELDEF=812;
     // Sector tools (cursor + Apply) and immediate actions.
     private static final int DRAW=1,RECT=2,PREFAB=3,STAIRS=4,SELECT=5,MOVE=6,SPLIT=7,EXTRUDE=8,DUPLICATE=9,DELETE=10,SPECIAL=11,START=12;
@@ -82,7 +82,7 @@ public class EditorView extends View {
     private float w,h,toolbarH,statusH,cell;
     private float downX,downY,lastX,lastY,pinchDist;private boolean dragged,panning;private long lastTapTime;private float lastTapX,lastTapY;
     // entities
-    private String selDef="trooper";private int selThing=-1,entityTool=0,entStage=0;private float defScroll,propScroll,matScroll;
+    private String selDef="skeleton";private int selThing=-1,entityTool=0,entStage=0;private float defScroll,propScroll,matScroll;
     private int scrollTarget=0; // 1 def list, 2 property panel, 3 texture browser
     // 3D
     private ArrayList<Level.LineDef> mapLines;private long mapLinesSig;private Level mapLinesLevel;   // cached wall topology for the 2D map
@@ -92,7 +92,7 @@ public class EditorView extends View {
     private int joyPointer=-1,lookPointer=-1,upPointer=-1,downPointer=-1;private float lookLastX,lookLastY,lookDownX,lookDownY;
     private long last3DTapTime;private float last3DTapX,last3DTapY;
     // play
-    private World world;private final int[] buttonPointer={-1,-1,-1,-1,-1};
+    private World world;private final int[] buttonPointer={-1,-1,-1,-1,-1,-1,-1,-1};
     private long lastFrame=System.nanoTime(),messageUntil,resetArmedUntil;
     private String message="";
     private String drawError;
@@ -219,6 +219,7 @@ public class EditorView extends View {
     /** Android back: close the launcher, leave Play, leave an editor for Home; false means leave the project. */
     boolean goBack(){
         if(launcherOpen){launcherOpen=false;invalidate();return true;}
+        if(mode==PLAY&&bagOpen){closeBag();invalidate();return true;}
         if(mode==PLAY){changeMode(returnMode);invalidate();return true;}
         if(mode!=HOME){changeMode(HOME);invalidate();return true;}
         return false;
@@ -392,9 +393,10 @@ public class EditorView extends View {
     }
     private void drawToast(Canvas c){
         if(System.currentTimeMillis()>=messageUntil||message.isEmpty())return;
+        if(mode==PLAY&&world!=null&&(bagOpen||world.dialogue!=null))return;
         float cl=mode==POLY3D?browserW():in2D()?mapL():0,cr=in2D()?mapR():w,maxW=cr-cl-dp(40);
         String t=ui.ellipsize(message,12.5f,1,maxW-dp(52));
-        float tw=ui.measure(t,12.5f,1)+dp(52),cx=(cl+cr)*.5f,top=toolbarH+dp(12)+(mode==PLAY?dp(40):0),ph=dp(34);
+        float tw=ui.measure(t,12.5f,1)+dp(52),cx=(cl+cr)*.5f,ph=dp(34),top=mode==PLAY?h-dp(52)-dp(12)-ph:toolbarH+dp(12);
         ui.pill(c,cx-tw*.5f,top,cx+tw*.5f,top+ph,0xf2262c34);
         ui.icon(c,Icons.INFO,cx-tw*.5f+dp(20),top+ph*.5f,16,0xff8fbcff);ui.textMid(c,t,cx-tw*.5f+dp(36),top+ph*.5f,12.5f,Ui.TEXT,1,-1);
         postInvalidateDelayed(Math.max(16,messageUntil-System.currentTimeMillis()));
@@ -500,7 +502,7 @@ public class EditorView extends View {
         if(ww>hh*1.4f){ww=hh*1.4f;hh=ww*b.getHeight()/b.getWidth();}
         r.set(x-ww*.5f,y-hh*.5f,x+ww*.5f,y+hh*.5f);c.drawBitmap(b,null,r,pixelPaint);
     }
-    private static int kindColor(int k){switch(k){case EntityDef.PLAYER:return Ui.GREEN;case EntityDef.MONSTER:return Ui.RED;case EntityDef.PICKUP:return Ui.AMBER;case EntityDef.TRIGGER:return 0xffb07cff;default:return Ui.TEXT_2;}}
+    private static int kindColor(int k){switch(k){case EntityDef.PLAYER:return Ui.GREEN;case EntityDef.MONSTER:return Ui.RED;case EntityDef.PICKUP:return Ui.AMBER;case EntityDef.TRIGGER:return 0xffb07cff;case EntityDef.NPC:return 0xff5ab8ff;default:return Ui.TEXT_2;}}
     private final java.util.HashMap<String,Bitmap> customThumbs=new java.util.HashMap<>();
     /** Thumbnail for an entity type: its custom sprite if it has one, otherwise the built-in sprite. */
     private Bitmap defThumb(EntityDef d){
@@ -826,7 +828,7 @@ public class EditorView extends View {
         switch(i){
             case 0:host.prompt("Entity name",null,d.name,false,t->{if(!t.trim().isEmpty()){d.name=t.trim();changed(null);}});break;
             case 1:if(d.kind==EntityDef.PLAYER){hint("The player type can't be changed");return;}
-                String[] kinds={"Monster","Pickup","Decoration","Trigger"};host.choose("Type",kinds,Math.max(0,d.kind-1),k->{d.kind=k+1;if(d.kind==EntityDef.MONSTER){d.countKill=true;d.shootable=true;}if(d.kind==EntityDef.PICKUP){d.countItem=true;d.solid=false;}changed(null);});break;
+                String[] kinds={"Monster","Pickup","Decoration","Trigger","NPC"};host.choose("Type",kinds,Math.max(0,d.kind-1),k->{d.kind=k+1;if(d.kind==EntityDef.MONSTER){d.countKill=true;d.shootable=true;}if(d.kind==EntityDef.PICKUP){d.countItem=true;d.solid=false;}changed(null);});break;
             case 2:{String[] items=new String[Sprites.COUNT+project.sprites.size()+1];
                 for(int k=0;k<project.sprites.size();k++)items[k]="Custom: "+project.sprites.get(k).name;
                 for(int k=0;k<Sprites.COUNT;k++)items[project.sprites.size()+k]="Built-in: "+Sprites.NAMES[k];
@@ -969,7 +971,7 @@ public class EditorView extends View {
     }
 
     // ---------------------------------------------------------------- Play
-    private void startPlay(){world=new World(project,sfx);sfx.start();for(int i=0;i<buttonPointer.length;i++)buttonPointer[i]=-1;joyPointer=lookPointer=-1;joyVisible=false;}
+    private void startPlay(){bagOpen=false;world=new World(project,sfx);sfx.start();for(int i=0;i<buttonPointer.length;i++)buttonPointer[i]=-1;joyPointer=lookPointer=-1;joyVisible=false;}
     private void drawPlay(Canvas c,float dt){
         if(world==null)startPlay();
         if(world.restartRequested){startPlay();hint("Level restarted");}
@@ -983,7 +985,7 @@ public class EditorView extends View {
         for(Actor a:world.actors){if((a==pl&&!tp)||!a.visible||a.removed)continue;
             Sprites.Sprite s;boolean bright=false;
             if(a.projectileType>=0){s=Sprites.effect(a.projectileType==1?Sprites.FX_ROCKET:a.projectileType==2?Sprites.FX_PLASMA:Sprites.FX_FIREBALL,0,true);bright=true;}
-            else{int f=a.def!=null&&(a.def.kind==EntityDef.MONSTER||a.def.kind==EntityDef.PLAYER)?a.frame():a.sprite==Sprites.TORCH?((int)(world.time*8)&1):a.alive?Sprites.F_IDLE:Sprites.F_DEAD;
+            else{int f=a.def!=null&&a.def.animated()?a.frame():a.sprite==Sprites.TORCH?((int)(world.time*8)&1):a.alive?Sprites.F_IDLE:Sprites.F_DEAD;
                 // which side of the actor the camera sees (sprite angles / rear views)
                 float view=World.angleDiff((float)Math.atan2(cy-a.y,cx-a.x),a.angle);
                 s=project.actorSprite(a,f,world.time,view);}
@@ -999,18 +1001,41 @@ public class EditorView extends View {
         renderer.present(c,view3d);
         if(tp&&pl.alive){float mx=w*.5f,my=h*.5f;p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(1.5f));p.setColor(0xccffffff);
             c.drawCircle(mx,my,dp(6),p);p.setStyle(Paint.Style.FILL);c.drawCircle(mx,my,dp(1.5f),p);}
+        drawFloaters(c);
         drawHud(c);
-        if(!world.levelComplete){drawJoystick(c);drawPlayButtons(c);}
-        else drawComplete(c);
+        if(world.menuRequested){world.menuRequested=false;openBag();}
+        if(world.levelComplete)drawComplete(c);
+        else if(bagOpen)drawBag(c);
+        else if(world.dialogue!=null)drawDialogue(c);
+        else{drawJoystick(c);drawPlayButtons(c);}
         nextFrame();
     }
+    // ---------------------------------------------------------------- RPG play UI
+    private float bagDragY;private boolean bagDragged;
+    private boolean bagOpen;private int bagTab;private float bagScroll;private String bagNote="";private long bagNoteUntil;
+    private final java.util.HashMap<Integer,Bitmap> itemThumbs=new java.util.HashMap<>();
+    private final float[] proj=new float[3];
+    private Bitmap thumbFor(int sprite){Bitmap b=itemThumbs.get(sprite);if(b==null){b=Sprites.preview(sprite);itemThumbs.put(sprite,b);}return b;}
+    private void openBag(){bagOpen=true;bagTab=0;bagScroll=0;world.paused=true;for(int i=0;i<buttonPointer.length;i++)buttonPointer[i]=-1;world.input.clear();joyPointer=lookPointer=-1;joyVisible=false;moveX=moveY=0;}
+    private void closeBag(){bagOpen=false;world.paused=false;}
+    private void drawFloaters(Canvas c){
+        for(World.Floater f:world.floaters){if(!renderer.project(f.x,f.y,f.z,view3d,proj))continue;
+            float a=Math.max(0,Math.min(1,(1.1f-f.t)*2.5f));float sz=Math.max(11,Math.min(22,proj[2]*h/ui.dp(1)*.32f));
+            int al=(int)(a*255);ui.text(c,f.text,proj[0]+dp(1),proj[1]+dp(1),sz,(al<<24),2,0);ui.text(c,f.text,proj[0],proj[1],sz,(al<<24)|(f.color&0xffffff),2,0);}
+    }
     private void drawPlayButtons(Canvas c){
-        float bar=dp(44);
-        float fr=dp(38),fx=w-dp(22)-fr,fy=h-bar-dp(18)-fr;
-        playButton(c,fx,fy,fr,0xffe0533d,Icons.CROSSHAIR,"FIRE",H_FIRE,buttonPointer[Input.FIRE]>=0);
-        playButton(c,fx-fr-dp(40),fy+dp(8),dp(26),0xcc2a3038,Icons.DOOR,"USE",H_USE,buttonPointer[Input.USE]>=0);
-        playButton(c,fx,fy-fr-dp(36),dp(24),0xcc2a3038,Icons.ARROW_UP,"JUMP",H_JUMP,buttonPointer[Input.JUMP]>=0);
-        playButton(c,fx-fr-dp(36),fy-fr-dp(22),dp(24),0xcc2a3038,Icons.CHEVRON_RIGHT,"WPN",H_WEAPON,buttonPointer[Input.WEAPON]>=0);
+        Hero hero=world.hero;float bar=dp(52);
+        float fr=dp(38),fx=w-dp(24)-fr,fy=h-bar-dp(16)-fr;
+        playButton(c,fx,fy,fr,0xffc8402e,Icons.SWORD,"ATTACK",H_FIRE,buttonPointer[Input.FIRE]>=0);
+        boolean caster=hero!=null&&!hero.spells.isEmpty();
+        if(caster){Rpg.Spell sp=hero.currentSpell();boolean can=hero.sp>=Rpg.spellCost(sp.level);
+            playButton(c,fx-fr-dp(38),fy-fr*.15f,dp(28),can?0xdd6a3ab8:0x88403a50,Icons.SPARKLE,"CAST",H_SPELL,buttonPointer[Input.SPELL]>=0);}
+        playButton(c,fx-fr*.2f,fy-fr-dp(40),dp(24),0xcc2a3038,Icons.ARROW_UP,"JUMP",H_JUMP,buttonPointer[Input.JUMP]>=0);
+        playButton(c,fx-fr-dp(caster?94:40),fy+dp(caster?18:8),dp(25),0xcc2a3038,Icons.DOOR,"USE",H_USE,buttonPointer[Input.USE]>=0);
+        int pots=hero==null?0:hero.potionCount();
+        playButton(c,fx-fr-dp(caster?62:18),fy-fr-dp(caster?44:30),dp(24),pots>0?0xcc8a2030:0x882a3038,Icons.POTION,pots>0?"x"+pots:"0",H_POTION,buttonPointer[Input.POTION]>=0);
+        // bag (top right) and exit (top left)
+        float br=dp(22);float bx=w-dp(16)-br,by=dp(16)+br;p.setColor(0xcc2a3038);c.drawCircle(bx,by,br,p);ui.icon(c,Icons.BACKPACK,bx,by,20,0xffffffff);ui.hit(bx-br,by-br,bx+br,by+br,H_BAG);
         float er=dp(18);p.setColor(0x99101318);c.drawCircle(dp(14)+er,dp(14)+er,er,p);ui.icon(c,Icons.CANCEL,dp(14)+er,dp(14)+er,18,0xddffffff);ui.hit(dp(6),dp(6),dp(22)+er*2,dp(22)+er*2,H_EXITPLAY);
     }
     private void playButton(Canvas c,float x,float y,float rad,int col,int icon,String label,int hid,boolean down){
@@ -1019,29 +1044,150 @@ public class EditorView extends View {
         ui.icon(c,icon,x,y-(rad>dp(30)?dp(5):dp(3)),rad>dp(30)?24:16,0xffffffff);ui.text(c,label,x,y+rad*.62f,rad>dp(30)?10:8,0xffffffff,2,0);
         ui.hit(x-rad-dp(4),y-rad-dp(4),x+rad+dp(4),y+rad+dp(4),hid);
     }
+    /** A labelled bar (HP, SP, XP). */
+    private void bar(Canvas c,float l,float t,float r,float b,float frac,int col,String text){
+        ui.round(c,l,t,r,b,(b-t)*.5f,0xff0e1013);float f=Math.max(0,Math.min(1,frac));
+        if(f>0)ui.round(c,l,t,l+Math.max(b-t,(r-l)*f),b,(b-t)*.5f,col);
+        ui.outline(c,l,t,r,b,(b-t)*.5f,0x30ffffff,dp(1));
+        if(text!=null)ui.textMid(c,text,(l+r)*.5f,(t+b)*.5f,10,0xffffffff,2,0);
+    }
     private void drawHud(Canvas c){
-        float bar=dp(44),top=h-bar;
-        ui.rect(c,0,top,w,h,0xee15181c);ui.hline(c,0,w,top,0xff3a3f46);
-        String[] labels={"AMMO","HEALTH","ARMS","ARMOR"};
-        int at=World.W_AMMO[world.weapon];
-        String[] vals={at<0?"—":String.valueOf(world.ammo[at]),Math.max(0,world.player.health)+"%",World.WEAPON_NAMES[world.weapon].toUpperCase(),world.armor+"%"};
-        float cw=Math.min(dp(150),(w-dp(120))/4f),x=w*.5f-cw*2-dp(40);
-        for(int i=0;i<4;i++){float cx=x+cw*i+cw*.5f;
-            int col=i==1?(world.player.health<=25?0xffff5050:0xffff3b30):i==3?0xff4cd964:i==0?0xffffcc33:Ui.TEXT;
-            ui.text(c,vals[i],cx,top+dp(26),i==2?13:20,col,2,0);ui.text(c,labels[i],cx,top+dp(39),8.5f,Ui.TEXT_3,1,0);
-            if(i>0)ui.rect(c,x+cw*i,top+dp(8),x+cw*i+dp(1),h-dp(8),0x33ffffff);}
-        float kx=x+cw*4+dp(20);int[] kc={0xff3060e0,0xffe0c020,0xffd02020};
-        for(int k=0;k<3;k++){float ky=top+dp(8)+k*dp(10);ui.round(c,kx,ky,kx+dp(16),ky+dp(8),dp(2),world.keys[k]?kc[k]:0x22ffffff);}
-        // stats
-        ui.text(c,"K "+world.kills+"/"+world.totalKills+"   I "+world.items+"/"+world.totalItems+"   S "+world.secrets+"/"+world.totalSecrets,w-dp(14),dp(26),10.5f,0xccffffff,1,1);
+        Hero hero=world.hero;if(hero==null)return;
+        float barH=dp(52),top=h-barH;
+        ui.rect(c,0,top,w,h,0xf0141619);ui.hline(c,0,w,top,0xff3a3f46);
+        float x=dp(12),cy=top+barH*.5f;
+        // class badge
+        float bs=dp(36);ui.round(c,x,cy-bs*.5f,x+bs,cy+bs*.5f,dp(8),0xff2a3a5a);ui.textMid(c,String.valueOf(hero.level),x+bs*.5f,cy-dp(3),15,0xffffffff,2,0);ui.textMid(c,"LV",x+bs*.5f,cy+dp(11),7.5f,0xffa8b8d8,2,0);
+        x+=bs+dp(10);
+        float bw=Math.min(dp(170),w*.2f);
+        ui.text(c,hero.cls.name.toUpperCase(),x,top+dp(13),9,Ui.TEXT_3,2,-1);
+        bar(c,x,top+dp(17),x+bw,top+dp(31),world.player.health/(float)Math.max(1,hero.maxHp),world.player.health*4<=hero.maxHp?0xffe0402a:0xffb8282a,Math.max(0,world.player.health)+" / "+hero.maxHp+" HP");
+        if(hero.maxSp>0)bar(c,x,top+dp(34),x+bw,top+dp(44),hero.sp/(float)Math.max(1,hero.maxSp),0xff3a5ad0,hero.sp+" / "+hero.maxSp+" SP");
+        else{ui.text(c,"AC "+hero.ac()+(hero.wardTime>0?" (shielded)":""),x,top+dp(43),11,Ui.TEXT_2,2,-1);}
+        // XP strip along the top edge of the bar
+        float xf=hero.xpFraction();ui.rect(c,0,top-dp(3),w,top,0xff0e1013);ui.rect(c,0,top-dp(3),w*xf,top,0xffd8a830);
+        x+=bw+dp(18);
+        // weapon + spell
+        Rpg.Item wpn=hero.weaponOrFists();
+        ui.text(c,"WEAPON",x,top+dp(13),9,Ui.TEXT_3,2,-1);ui.text(c,wpn.name,x,top+dp(29),13,Ui.TEXT,2,-1);
+        ui.text(c,wpn.damage+Rpg.signed(hero.damageBonus(wpn))+" "+Rpg.DAMAGE_TYPES[wpn.damageType].toLowerCase()+"  ·  "+Rpg.signed(hero.attackBonus(wpn))+" to hit",x,top+dp(43),10,Ui.TEXT_2,1,-1);
+        if(!hero.spells.isEmpty()&&w>dp(720)){float sx=x+Math.max(dp(170),ui.measure(wpn.name,13,2)+dp(20));Rpg.Spell sp=hero.currentSpell();
+            ui.text(c,"SPELL",sx,top+dp(13),9,Ui.TEXT_3,2,-1);ui.text(c,sp.name,sx,top+dp(29),13,0xffc8b0ff,2,-1);ui.text(c,(sp.level==0?"cantrip":Rpg.spellCost(sp.level)+" SP")+"  ·  "+sp.dice,sx,top+dp(43),10,Ui.TEXT_2,1,-1);}
+        // gold + keys (right)
+        float rx=w-dp(14);
+        int[] kc={0xffc87a3a,0xffd0d4dc,0xffe8b830};
+        for(int k=2;k>=0;k--){boolean has=hero.hasKey(k);float kx=rx-dp(14);ui.icon(c,Icons.TAG,kx,cy,15,has?kc[k]:0x26ffffff);rx-=dp(20);}
+        rx-=dp(8);String g=String.valueOf(hero.gold);ui.text(c,g,rx,cy+dp(5),15,0xffffd040,2,1);float gw=ui.measure(g,15,2);ui.icon(c,Icons.COIN,rx-gw-dp(12),cy,16,0xffffd040);
+        // active quest tracker
+        World.Quest q=null;for(World.Quest qq:world.quests.values())if(qq.state==World.Q_ACTIVE)q=qq;
+        if(q!=null){float qw=Math.min(dp(260),w*.32f),qx=w-dp(70)-qw,qy=dp(14);ui.round(c,qx,qy,qx+qw,qy+dp(44),dp(8),0xb0101216);
+            ui.icon(c,Icons.SCROLL,qx+dp(16),qy+dp(15),13,0xffd8a830);ui.text(c,ui.ellipsize(q.title,11.5f,2,qw-dp(36)),qx+dp(28),qy+dp(19),11.5f,0xffffe0a0,2,-1);
+            ui.text(c,ui.ellipsize(q.text,10,1,qw-dp(20)),qx+dp(10),qy+dp(35),10,Ui.TEXT_2,1,-1);}
         if(world.messageTime>0){float a=Math.min(1,world.messageTime*2);ui.text(c,world.message,dp(62)+dp(1),dp(30)+dp(1),13,((int)(a*200)<<24),1,-1);ui.text(c,world.message,dp(62),dp(30),13,((int)(a*255)<<24)|0xffe2e2,1,-1);}
-        if(world.centerTime>0&&!world.center.isEmpty()){float a=Math.min(1,world.centerTime*2);ui.text(c,world.center,w*.5f+dp(2),h*.38f+dp(2),26,((int)(a*200)<<24),2,0);ui.text(c,world.center,w*.5f,h*.38f,26,((int)(a*255)<<24)|0xffffff,2,0);}
+        if(world.centerTime>0&&!world.center.isEmpty()){float a=Math.min(1,world.centerTime*2);ui.text(c,world.center,w*.5f+dp(2),h*.36f+dp(2),26,((int)(a*200)<<24),2,0);ui.text(c,world.center,w*.5f,h*.36f,26,((int)(a*255)<<24)|0xffe8b0,2,0);}
+    }
+    /** Word-wraps text to a width. */
+    private ArrayList<String> wrap(String text,float size,int weight,float max){
+        ArrayList<String> out=new ArrayList<>();StringBuilder line=new StringBuilder();
+        for(String word:text.split(" ")){String t=line.length()==0?word:line+" "+word;if(ui.measure(t,size,weight)>max&&line.length()>0){out.add(line.toString());line=new StringBuilder(word);}else{line=new StringBuilder(t);}}
+        if(line.length()>0)out.add(line.toString());return out;
+    }
+    private void drawDialogue(Canvas c){
+        World.Dialogue d=world.dialogue;
+        ui.rect(c,0,0,w,h,0x66000000);
+        float pw=Math.min(w-dp(40),dp(720)),L=(w-pw)*.5f,R=L+pw;
+        ArrayList<String> lines=wrap(d.text,14,1,pw-dp(44));
+        float ah=dp(40),gap=dp(8),ph=dp(56)+lines.size()*dp(21)+d.choices.length*(ah+gap)+dp(8),B=h-dp(64),T=B-ph;
+        ui.round(c,L,T+dp(4),R,B+dp(4),dp(14),0x80000000);ui.round(c,L,T,R,B,dp(14),0xf21a1d22);ui.outline(c,L,T,R,B,dp(14),0xff8a6a3a,dp(1.5f));
+        ui.round(c,L+dp(16),T-dp(14),L+dp(16)+ui.measure(d.speaker,13,2)+dp(28),T+dp(14),dp(14),0xff6a4a24);ui.textMid(c,d.speaker,L+dp(30),T,13,0xffffe8c0,2,-1);
+        float y=T+dp(36);for(String ln:lines){ui.text(c,ln,L+dp(22),y,14,Ui.TEXT,1,-1);y+=dp(21);}
+        y+=dp(6);
+        for(int i=0;i<d.choices.length;i++){r.set(L+dp(18),y,R-dp(18),y+ah);ui.round(c,r,dp(10),0xff262a31);ui.outline(c,r,dp(10),0x30ffffff,dp(1));
+            ui.textMid(c,(i+1)+".",r.left+dp(16),r.centerY(),13,0xffd8a830,2,-1);ui.textMid(c,ui.ellipsize(d.choices[i],13.5f,1,r.width()-dp(56)),r.left+dp(36),r.centerY(),13.5f,Ui.TEXT,1,-1);
+            ui.hit(r,H_DLG+i);y+=ah+gap;}
+    }
+    /** Character sheet, inventory, spells and quest journal (the game is paused). */
+    private void drawBag(Canvas c){
+        Hero hero=world.hero;if(hero==null){closeBag();return;}
+        ui.rect(c,0,0,w,h,0xff0c0d10);
+        float pad=dp(16),L=pad,R=w-pad,T=pad,B=h-dp(52)-pad;
+        // header: tabs + close
+        String[] tabs={"Inventory","Spells","Journal"};float tx=L;
+        ui.text(c,hero.cls.name+" · level "+hero.level,L,T+dp(18),17,Ui.TEXT,2,-1);
+        float hx=L+ui.measure(hero.cls.name+" · level "+hero.level,17,2)+dp(24);
+        for(int i=0;i<tabs.length;i++){float tw2=ui.measure(tabs[i],12.5f,1)+dp(30);r.set(hx,T,hx+tw2,T+dp(32));ui.button(c,r,-1,tabs[i],bagTab==i?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_INV_TAB+i);hx+=tw2+dp(6);}
+        r.set(R-dp(40),T,R,T+dp(32));ui.button(c,r,Icons.CANCEL,null,Ui.GHOST);ui.hit(r,H_INV_CLOSE);
+        float top=T+dp(46);
+        // left column: character sheet
+        float cw=Math.min(dp(250),w*.3f);
+        ui.round(c,L,top,L+cw,B,dp(12),0xff181b20);
+        float y=top+dp(22),x=L+dp(14);
+        ui.text(c,"CHARACTER",x,y,9.5f,Ui.TEXT_3,2,-1);y+=dp(18);
+        bar(c,x,y,L+cw-dp(14),y+dp(14),world.player.health/(float)Math.max(1,hero.maxHp),0xffb8282a,world.player.health+" / "+hero.maxHp+" HP");y+=dp(19);
+        if(hero.maxSp>0){bar(c,x,y,L+cw-dp(14),y+dp(14),hero.sp/(float)Math.max(1,hero.maxSp),0xff3a5ad0,hero.sp+" / "+hero.maxSp+" SP");y+=dp(19);}
+        bar(c,x,y,L+cw-dp(14),y+dp(10),hero.xpFraction(),0xffd8a830,null);y+=dp(22);
+        ui.text(c,hero.xp+" / "+Rpg.xpForNext(hero.level)+" XP",x,y,10.5f,Ui.TEXT_2,1,-1);y+=dp(20);
+        Rpg.Item wpn=hero.weaponOrFists();
+        String[][] rows={{"Armour class",String.valueOf(hero.ac())},{"Attack",Rpg.signed(hero.attackBonus(wpn))+" · "+wpn.damage+Rpg.signed(hero.damageBonus(wpn))},{"Proficiency",Rpg.signed(hero.prof())},{"Gold",String.valueOf(hero.gold)}};
+        for(String[] rw:rows){ui.text(c,rw[0],x,y,11.5f,Ui.TEXT_2,1,-1);ui.text(c,rw[1],L+cw-dp(14),y,11.5f,Ui.TEXT,2,1);y+=dp(18);}
+        y+=dp(6);float aw=(cw-dp(28))/3f;
+        for(int i=0;i<6;i++){float ax=x+(i%3)*aw,ay=y+(i/3)*dp(44);r.set(ax+dp(2),ay,ax+aw-dp(2),ay+dp(40));ui.round(c,r,dp(8),0xff22262c);
+            ui.textMid(c,Rpg.ABILITIES[i],r.centerX(),ay+dp(10),8.5f,Ui.TEXT_3,2,0);ui.textMid(c,Rpg.signed(hero.mod(i)),r.centerX(),ay+dp(24),14,Ui.TEXT,2,0);ui.textMid(c,String.valueOf(hero.scores[i]),r.centerX(),ay+dp(35),8.5f,Ui.TEXT_3,1,0);}
+        // right: tab content
+        float l2=L+cw+dp(12),r2=R;
+        ui.round(c,l2,top,r2,B,dp(12),0xff181b20);
+        int save=c.save();c.clipRect(l2,top,r2,B);
+        float rowH=dp(52),yy=top+dp(10)-bagScroll;
+        if(bagTab==0){
+            if(hero.inventory.isEmpty())ui.text(c,"Your pack is empty.",l2+dp(16),top+dp(30),13,Ui.TEXT_3,1,-1);
+            for(int i=0;i<hero.inventory.size();i++){Hero.Stack st=hero.inventory.get(i);Rpg.Item it=st.item;
+                r.set(l2+dp(10),yy,r2-dp(10),yy+rowH-dp(6));boolean eq=hero.isEquipped(it)&&(i==firstIndex(hero,it));
+                ui.round(c,r,dp(10),eq?0xff26324a:0xff22262c);if(eq)ui.outline(c,r,dp(10),Ui.ACCENT,dp(1.5f));
+                if(it.sprite>=0){Bitmap tb=thumbFor(it.sprite);float th=rowH-dp(16),tw=Math.min(th*1.4f,th*tb.getWidth()/(float)Math.max(1,tb.getHeight()));
+                    RectF d=new RectF(r.left+dp(8)+(th*1.4f-tw)*.5f,r.top+dp(5),r.left+dp(8)+(th*1.4f-tw)*.5f+tw,r.top+dp(5)+th);c.drawBitmap(tb,null,d,null);}
+                float ix=r.left+dp(8)+(rowH-dp(16))*1.4f+dp(10);
+                ui.text(c,it.name+(st.count>1?"  ×"+st.count:""),ix,r.top+dp(19),13,Ui.TEXT,2,-1);
+                ui.text(c,ui.ellipsize(Rpg.ITEM_KINDS[it.kind]+" · "+it.stats(),10.5f,1,r.right-ix-dp(90)),ix,r.top+dp(36),10.5f,Ui.TEXT_3,1,-1);
+                String act=it.kind==Rpg.I_POTION?"Drink":it.kind==Rpg.I_SCROLL?"Read":it.kind<=Rpg.I_SHIELD?(eq?"Equipped":"Equip"):"";
+                if(!act.isEmpty()){float bw2=ui.measure(act,11.5f,1)+dp(24);RectF b2=new RectF(r.right-dp(8)-bw2,r.centerY()-dp(14),r.right-dp(8),r.centerY()+dp(14));ui.button(c,b2,-1,act,eq?Ui.ACTIVE:Ui.NORMAL);}
+                if(r.bottom>top&&r.top<B)ui.hit(Math.max(l2,r.left),Math.max(top,r.top),r.right,Math.min(B,r.bottom),H_INV_ITEM+i);
+                yy+=rowH;}
+        }else if(bagTab==1){
+            if(hero.spells.isEmpty())ui.text(c,hero.cls.name+"s don't cast spells.",l2+dp(16),top+dp(30),13,Ui.TEXT_3,1,-1);
+            for(int i=0;i<hero.spells.size();i++){Rpg.Spell sp=hero.spells.get(i);boolean sel=i==hero.selectedSpell;
+                r.set(l2+dp(10),yy,r2-dp(10),yy+rowH-dp(6));ui.round(c,r,dp(10),sel?0xff2e2448:0xff22262c);if(sel)ui.outline(c,r,dp(10),0xff9a7aff,dp(1.5f));
+                ui.icon(c,Icons.SPARKLE,r.left+dp(22),r.centerY(),18,sel?0xffc8b0ff:Ui.TEXT_2);
+                ui.text(c,sp.name+"  ·  "+(sp.level==0?"cantrip":"level "+sp.level+" · "+Rpg.spellCost(sp.level)+" SP"),r.left+dp(42),r.top+dp(19),13,Ui.TEXT,2,-1);
+                ui.text(c,ui.ellipsize(sp.desc+" ("+sp.dice+" "+Rpg.DAMAGE_TYPES[sp.damageType].toLowerCase()+")",10.5f,1,r.width()-dp(56)),r.left+dp(42),r.top+dp(36),10.5f,Ui.TEXT_3,1,-1);
+                ui.hit(r,H_INV_SPELL+i);yy+=rowH;}
+            if(!hero.spells.isEmpty())ui.text(c,"Tap a spell to ready it for the CAST button. Save DC "+hero.saveDC()+" · spell attack "+Rpg.signed(hero.spellAttack()),l2+dp(14),yy+dp(16),10.5f,Ui.TEXT_3,1,-1);
+        }else{
+            if(world.quests.isEmpty())ui.text(c,"No quests yet. Talk to people you meet.",l2+dp(16),top+dp(30),13,Ui.TEXT_3,1,-1);
+            for(World.Quest q:world.quests.values()){if(q.state==World.Q_INACTIVE)continue;
+                r.set(l2+dp(10),yy,r2-dp(10),yy+rowH-dp(6));ui.round(c,r,dp(10),0xff22262c);
+                int col=q.state==World.Q_DONE?Ui.GREEN:q.state==World.Q_FAILED?Ui.RED:0xffd8a830;
+                ui.icon(c,q.state==World.Q_DONE?Icons.CHECK:q.state==World.Q_FAILED?Icons.CANCEL:Icons.SCROLL,r.left+dp(22),r.centerY(),16,col);
+                ui.text(c,q.title+(q.state==World.Q_DONE?"  (complete)":q.state==World.Q_FAILED?"  (failed)":""),r.left+dp(42),r.top+dp(19),13,Ui.TEXT,2,-1);
+                ui.text(c,ui.ellipsize(q.text,10.5f,1,r.width()-dp(56)),r.left+dp(42),r.top+dp(36),10.5f,Ui.TEXT_3,1,-1);yy+=rowH;}
+        }
+        c.restoreToCount(save);
+        if(System.currentTimeMillis()<bagNoteUntil){float nw=ui.measure(bagNote,12.5f,1)+dp(40);ui.pill(c,w*.5f-nw*.5f,B-dp(48),w*.5f+nw*.5f,B-dp(14),0xf2262c34);ui.textMid(c,bagNote,w*.5f,B-dp(31),12.5f,Ui.TEXT,1,0);postInvalidateDelayed(200);}
+    }
+    private static int firstIndex(Hero h,Rpg.Item it){for(int i=0;i<h.inventory.size();i++)if(h.inventory.get(i).item==it)return i;return -1;}
+    private boolean bagTap(int hid){
+        Hero hero=world.hero;if(hero==null)return true;
+        if(hid==H_INV_CLOSE){closeBag();return true;}
+        if(hid>=H_INV_TAB&&hid<H_INV_TAB+3){bagTab=hid-H_INV_TAB;bagScroll=0;return true;}
+        if(hid>=H_INV_SPELL&&hid<H_INV_SPELL+50){hero.selectedSpell=hid-H_INV_SPELL;bagNote="Readied "+hero.currentSpell().name;bagNoteUntil=System.currentTimeMillis()+1800;return true;}
+        if(hid>=H_INV_ITEM&&hid<H_INV_ITEM+300){int i=hid-H_INV_ITEM;if(i<hero.inventory.size()){Rpg.Item it=hero.inventory.get(i).item;
+            boolean wasScroll=it.kind==Rpg.I_SCROLL;bagNote=world.useItem(it);bagNoteUntil=System.currentTimeMillis()+2200;if(wasScroll)closeBag();}return true;}
+        return true;
     }
     private void drawComplete(Canvas c){
         ui.rect(c,0,0,w,h,0xcc0a0b0d);
         float cx=w*.5f,y=h*.24f;
-        ui.text(c,"LEVEL COMPLETE",cx,y,26,Ui.AMBER,2,0);
-        String[] rows={"Kills","Items","Secrets","Time"};
+        ui.text(c,"QUEST STAGE COMPLETE",cx,y,26,Ui.AMBER,2,0);if(world.hero!=null)ui.text(c,"Level "+world.hero.level+" "+world.hero.cls.name.toLowerCase()+" · "+world.hero.xp+" XP · "+world.hero.gold+" gold",cx,y+dp(22),12,Ui.TEXT_2,1,0);
+        String[] rows={"Foes slain","Treasure","Secrets","Time"};
         String[] vals={pct(world.kills,world.totalKills),pct(world.items,world.totalItems),pct(world.secrets,world.totalSecrets),String.format(java.util.Locale.US,"%d:%02d",(int)(world.time-world.completeTime)/60,(int)(world.time-world.completeTime)%60)};
         for(int i=0;i<4;i++){ui.text(c,rows[i],cx-dp(20),y+dp(46)+i*dp(28),16,Ui.TEXT_2,1,1);ui.text(c,vals[i],cx+dp(20),y+dp(46)+i*dp(28),16,Ui.TEXT,2,-1);}
         float by=y+dp(170);
@@ -1076,7 +1222,7 @@ public class EditorView extends View {
         lastFrame=System.nanoTime();
         if(next==PLAY)startPlay();
         setKeepScreenOn(next==PLAY);   // the screen may sleep normally while editing
-        if(next!=HOME)hint(next==PLAY?"Left: move · right: look · Fire, Use, Jump, Weapon on the right":next==POLY?"Pick a tool, move the cursor, tap Apply":next==THINGS?"Pick an entity type, then Apply to place it":"Left: move · right: look · double-tap a surface to texture it");
+        if(next!=HOME)hint(next==PLAY?"Left: move · right: look · Attack, Cast, Use and Potion on the right · Bag top right":next==POLY?"Pick a tool, move the cursor, tap Apply":next==THINGS?"Pick an entity type, then Apply to place it":"Left: move · right: look · double-tap a surface to texture it");
     }
 
     // ---------------------------------------------------------------- touch
@@ -1213,14 +1359,18 @@ public class EditorView extends View {
         if(a==MotionEvent.ACTION_DOWN||a==MotionEvent.ACTION_POINTER_DOWN){
             int hid=ui.hitAt(x,y);
             if(world.levelComplete){if(hid==H_RETRY)startPlay();else if(hid==H_BACK)changeMode(returnMode);return true;}
+            if(bagOpen){bagTap(hid);bagDragY=y;bagDragged=false;return true;}
+            if(world.dialogue!=null){if(hid>=H_DLG&&hid<H_DLG+3)world.chooseDialogue(hid-H_DLG);return true;}
             if(hid==H_EXITPLAY){changeMode(returnMode);return true;}
-            int b=hid==H_FIRE?Input.FIRE:hid==H_USE?Input.USE:hid==H_JUMP?Input.JUMP:hid==H_WEAPON?Input.WEAPON:-1;
+            if(hid==H_BAG){openBag();return true;}
+            int b=hid==H_FIRE?Input.FIRE:hid==H_USE?Input.USE:hid==H_JUMP?Input.JUMP:hid==H_WEAPON?Input.WEAPON:hid==H_SPELL?Input.SPELL:hid==H_POTION?Input.POTION:-1;
             if(b>=0){buttonPointer[b]=id;world.input.setButton(b,true);return true;}
             if(x<w*.45f){if(joyPointer<0){joyPointer=id;joyVisible=true;joyOriginX=joyX=x;joyOriginY=joyY=y;moveX=moveY=0;}}
             else if(lookPointer<0){lookPointer=id;lookLastX=x;lookLastY=y;}
             return true;
         }
         if(a==MotionEvent.ACTION_MOVE){
+            if(bagOpen){bagScroll=Math.max(0,bagScroll-(y-bagDragY));bagDragY=y;return true;}
             for(int i=0;i<e.getPointerCount();i++){int pid=e.getPointerId(i);float px=e.getX(i),py=e.getY(i);
                 if(pid==joyPointer)moveJoystick(px,py);
                 if(pid==lookPointer){world.input.lookX+=px-lookLastX;world.input.lookY+=py-lookLastY;lookLastX=px;lookLastY=py;}}

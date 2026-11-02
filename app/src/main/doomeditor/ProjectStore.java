@@ -14,7 +14,7 @@ import java.util.Collections;
 final class ProjectStore {
     private ProjectStore(){}
     static final String[] TEMPLATES={"Starter level","Arena","Empty project","Third person"};
-    static final String[] TEMPLATE_DESC={"Two rooms, a monster and pickups. All 20 entity types.","Big open arena with platforms, pillars, monsters and weapons.","A blank map with just the player type. Build from scratch.","Open courtyard with a third-person player: orbit camera, run where you push."};
+    static final String[] TEMPLATE_DESC={"A village elder with a quest, a merchant, and a guarded idol.","Open arena full of goblins, skeletons, an orc and loot.","A blank map with just the player type. Build from scratch.","Courtyard battle with a third-person hero and orbit camera."};
 
     static final class Meta {String id,name,template;long created,modified;int sectors,entities,sprites;}
 

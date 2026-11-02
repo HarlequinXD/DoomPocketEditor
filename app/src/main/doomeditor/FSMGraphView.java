@@ -416,14 +416,14 @@ public class FSMGraphView extends View {
         ui.text(c,"to "+(selected==null?"":selected.name),L+dp(16)+ui.measure("Add Action",15,1)+dp(8),T+dp(28),12,Ui.TEXT_3);
         r.set(R-dp(44),T+dp(8),R-dp(8),T+dp(40));ui.button(c,r,Icons.CANCEL,null,Ui.GHOST);ui.hit(r,H_BROWSER_CLOSE);
         float sw=Math.min(dp(260),(R-L)*.4f);r.set(R-dp(52)-sw,T+dp(8),R-dp(52),T+dp(40));ui.round(c,r,dp(8),Ui.BG);ui.outline(c,r,dp(8),Ui.BORDER,dp(1));
-        ui.icon(c,Icons.SEARCH,r.left+dp(16),r.centerY(),14,Ui.TEXT_3);ui.textMid(c,browserQuery.isEmpty()?"Search "+Actions.ALL.size()+" actions":browserQuery,r.left+dp(30),r.centerY(),12.5f,browserQuery.isEmpty()?Ui.TEXT_3:Ui.TEXT,browserQuery.isEmpty()?0:1,-1);ui.hit(r,H_BROWSER_SEARCH);
+        ui.icon(c,Icons.SEARCH,r.left+dp(16),r.centerY(),14,Ui.TEXT_3);ui.textMid(c,browserQuery.isEmpty()?"Search "+Actions.visibleCount()+" actions":browserQuery,r.left+dp(30),r.centerY(),12.5f,browserQuery.isEmpty()?Ui.TEXT_3:Ui.TEXT,browserQuery.isEmpty()?0:1,-1);ui.hit(r,H_BROWSER_SEARCH);
         ui.hline(c,L,R,T+dp(48),Ui.BORDER);
         // categories
         float cw=Math.max(dp(120),Math.min(dp(170),(R-L)*.26f)),ct=T+dp(56),rowH=dp(30);
         for(int i=-1;i<Actions.CATEGORIES.length;i++){float y=ct+(i+1)*rowH;if(y+rowH>B)break;
             boolean on=browserQuery.isEmpty()&&browserCat==i;r.set(L+dp(8),y,L+cw,y+rowH-dp(3));
             if(on)ui.round(c,r,dp(6),Ui.ACCENT_SOFT);
-            String name=i<0?"All actions":Actions.CATEGORIES[i];int count=i<0?Actions.ALL.size():Actions.inCategory(name).size();
+            String name=i<0?"All actions":Actions.CATEGORIES[i];int count=i<0?Actions.visibleCount():Actions.inCategory(name).size();
             ui.icon(c,i<0?Icons.LIST:Actions.CATEGORY_ICONS[i],r.left+dp(14),r.centerY(),13,on?0xff8fbcff:Ui.TEXT_3);
             ui.textMid(c,name,r.left+dp(28),r.centerY(),12,on?Ui.TEXT:Ui.TEXT_2,1,-1);ui.textMid(c,String.valueOf(count),r.right-dp(8),r.centerY(),10.5f,Ui.TEXT_3,1,1);
             ui.hit(r,H_CAT+i+1);}

@@ -261,22 +261,29 @@ final class Renderer {
             }
         }
     }
+    /** Projects a world point into the destination rectangle used by present(); false if it is behind the camera. */
+    boolean project(float x,float y,float z,RectF dst,float[] out){
+        float dx=x-camX,dy=y-camY,cx=-dx*sn+dy*cs,cz=dx*cs+dy*sn;if(cz<NEAR*2)return false;float sc=focal/cz;
+        out[0]=dst.left+(W*.5f+cx*sc)/W*dst.width();out[1]=dst.top+(horizon-(z-eye)*sc)/H*dst.height();out[2]=sc/H;return true;
+    }
     private void tintHighlight(){
         for(int i=0;i<pix.length;i++)if(ids[i]==highlight){int c=pix[i];int r=(c>>16)&255,g=(c>>8)&255,b=c&255;pix[i]=0xff000000|((r*5/8+30)<<16)|((g*5/8+96)<<8)|(b*5/8+60);}
     }
     /** Draws the first-person weapon (and muzzle flash) into the frame. */
-    void weapon(int weapon,float bobX,float bobY,float raise,boolean flash,int light){
+    void weapon(int weapon,float bobX,float bobY,float raise,boolean attacking,int light){
         if(pix==null)return;
-        Sprites.Sprite s=Sprites.weaponSprite(weapon);
-        float sc=H/118f;int w=Math.round(s.w*sc),h=Math.round(s.h*sc);
-        int x0=Math.round(W*.5f-w*.5f+bobX*W*.04f),y0=Math.round(H-h+Math.abs(bobY)*H*.05f+raise*h+H*.02f);
-        int mulv=Textures.lightMul(Math.max(10,Math.min(31,light(light)+4)));
-        if(flash){mulv=256;Sprites.Sprite f=Sprites.flashSprite(weapon);int fw=Math.round(f.w*sc),fh=Math.round(f.h*sc);blitSprite(f,x0+w/2-fw/2,y0-fh*2/3,fw,fh,256);}
+        Sprites.Sprite s=Sprites.fpSprite(weapon,attacking);
+        // model sprites are sized by their real dimensions: one world unit is ~60% of the screen height
+        float sc=H*.62f/s.ppu;int w=Math.round(s.w*sc),h=Math.round(s.h*sc);
+        int x0=Math.round(W*.5f-w*.5f+bobX*W*.04f),y0=Math.round(H-h+Math.abs(bobY)*H*.05f+raise*h*.8f+H*.02f);
+        int mulv=s.bright||attacking&&weapon==Rpg.FP_STAFF?256:Textures.lightMul(Math.max(10,Math.min(31,light(light)+4)));
         blitSprite(s,x0,y0,w,h,mulv);
     }
     private void blitSprite(Sprites.Sprite s,int x0,int y0,int w,int h,int mulv){
         for(int y=Math.max(0,y0);y<Math.min(H,y0+h);y++){int v=(y-y0)*s.h/h;
-            for(int x=Math.max(0,x0);x<Math.min(W,x0+w);x++){int u=(x-x0)*s.w/w;int c=s.px[v*s.w+u];if((c>>>24)==0)continue;pix[y*W+x]=mulv>=256?c:Textures.mul(c,mulv);}}
+            for(int x=Math.max(0,x0);x<Math.min(W,x0+w);x++){int u=(x-x0)*s.w/w;int c=s.px[v*s.w+u];int al=c>>>24;if(al==0)continue;int lit=mulv>=256?c:Textures.mul(c,mulv);
+                if(al<250){int b=pix[y*W+x],ia=255-al;lit=0xff000000|((((lit>>16)&255)*al+((b>>16)&255)*ia)/255<<16)|((((lit>>8)&255)*al+((b>>8)&255)*ia)/255<<8)|(((lit&255)*al+(b&255)*ia)/255);}
+                pix[y*W+x]=lit|0xff000000;}}
     }
     /** Full-screen colour tint for pain / pickup flashes. */
     void tint(int color,float amount){

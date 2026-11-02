@@ -18,7 +18,7 @@ final class Icons {
             WALL_TEX=29,FLOOR_TEX=30,CEIL_TEX=31,NEXT_TEX=32,PREV_TEX=33,LAYERS=34,SUN=35,SUN_DIM=36,GRID=37,
             CROSSHAIR=38,HELP=39,SKULL=40,MEDKIT=41,CHECK=42,CHEVRON_UP=43,CHEVRON_DOWN=44,CHEVRON_LEFT=45,
             CHEVRON_RIGHT=46,ARROW_UP=47,ARROW_DOWN=48,INFO=49,HEART=50,ZAP=51,PLUS_SQUARE=52,LINK=53,FLAG=54,
-            STOP=55,ARROW_LEFT=56,FIT=57,LIST=58,TAG=59,PLUS=60,MINUS=61,LOGO=62,CLOCK=63,DOT_CIRCLE=64,CLOUD=65,SEARCH=66,FOLDER=67,ERASER=68,BUCKET=69,DROPPER=70,LINE_TOOL=71,SQUARE=72,SQUARE_FILL=73,CIRCLE=74,CHECKER=75,MOON=76,MIRROR=77,SELECT_RECT=78,PALETTE=79,MORE=80,PIXEL=81,FILM=82,CHEVRONS=83,CAMERA=84,PERSON=85,SPEAKER=86,MUSIC=87,WAVE=88,PIANO=89;
+            STOP=55,ARROW_LEFT=56,FIT=57,LIST=58,TAG=59,PLUS=60,MINUS=61,LOGO=62,CLOCK=63,DOT_CIRCLE=64,CLOUD=65,SEARCH=66,FOLDER=67,ERASER=68,BUCKET=69,DROPPER=70,LINE_TOOL=71,SQUARE=72,SQUARE_FILL=73,CIRCLE=74,CHECKER=75,MOON=76,MIRROR=77,SELECT_RECT=78,PALETTE=79,MORE=80,PIXEL=81,FILM=82,CHEVRONS=83,CAMERA=84,PERSON=85,SPEAKER=86,MUSIC=87,WAVE=88,PIANO=89,SWORD=90,CHAT=91,SCROLL=92,DICE=93,COIN=94,SHIELD=95,POTION=96,BACKPACK=97;
 
     private static final Path path=new Path();
     private static final RectF oval=new RectF();
@@ -182,6 +182,14 @@ final class Icons {
             case FILM: rrect(c,p,3,5,21,19,2);line(c,p,7,5,7,19);line(c,p,17,5,17,19);line(c,p,3,12,7,12);line(c,p,17,12,21,12);break;
             case CAMERA: rrect(c,p,2,7,16,17,2);poly(c,p,true,16,10,22,7,22,17,16,14);dot(c,p,6,11,1.3f);break;
             case PERSON: c.drawCircle(12,6.5f,3.5f,p);poly(c,p,false,5,21,5,16,8,12,16,12,19,16,19,21);break;
+            case SWORD: line(c,p,19,5,8,16);poly(c,p,false,19,5,19,8,16,8);line(c,p,6,13,11,18);line(c,p,8,16,5,19);break;
+            case CHAT: rrect(c,p,3,4,21,16,4);poly(c,p,false,8,16,7,21,12,16);break;
+            case SCROLL: poly(c,p,false,7,4,18,4);poly(c,p,false,6,20,17,20);arc(c,p,7,6,2,90,180);line(c,p,5,6,5,18);arc(c,p,17,18,2,-90,180);line(c,p,19,6,19,18);line(c,p,9,9,15,9);line(c,p,9,13,15,13);break;
+            case DICE: poly(c,p,true,12,2,21,7,21,17,12,22,3,17,3,7);poly(c,p,false,3,7,12,12,21,7);line(c,p,12,12,12,22);break;
+            case COIN: c.drawCircle(12,12,8.5f,p);c.drawCircle(12,12,5,p);break;
+            case SHIELD: poly(c,p,true,12,3,20,6,19,13,12,21,5,13,4,6);line(c,p,12,6,12,18);break;
+            case POTION: poly(c,p,false,10,3,14,3);poly(c,p,false,10,3,10,8,5,14,5,18,8,21,16,21,19,18,19,14,14,8,14,3);line(c,p,6,14,18,14);break;
+            case BACKPACK: rrect(c,p,5,6,19,21,3);poly(c,p,false,9,6,9,3,15,3,15,6);rrect(c,p,8,12,16,17,1.5f);break;
             case SPEAKER: poly(c,p,true,3,9.5f,7,9.5f,12,5,12,19,7,14.5f,3,14.5f);arc(c,p,13,12,4,-50,100);arc(c,p,13,12,8,-50,100);break;
             case MUSIC: poly(c,p,false,9,18,9,5,20,3,20,16);c.drawCircle(6.5f,18,2.6f,p);c.drawCircle(17.5f,16,2.6f,p);break;
             case WAVE: poly(c,p,false,2,12,4,12,6,6,8.5f,18,11,4,13.5f,20,16,8,18,15,20,12,22,12);break;

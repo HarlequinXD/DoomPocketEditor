@@ -13,13 +13,15 @@ final class Actions {
     static final int T_FLOAT=0,T_INT=1,T_BOOL=2,T_TEXT=3,T_EVENT=4,T_VAR=5,T_CHOICE=6,T_ENTITY=7,T_MATERIAL=8,T_SECTOR=9,T_CLIP=10,T_SOUND=11,T_SONG=12;
     static final int DONE=0,RUNNING=1;
     static final String CAM_STYLES="Orbit|Shoulder|Chase";
-    static final String[] CATEGORIES={"Flow","Animation","Variables","Input","Weapons","Health","Movement","Camera","AI","World","Entities","Feedback","Audio"};
-    static final int[] CATEGORY_ICONS={Icons.GRAPH,Icons.FILM,Icons.TAG,Icons.MOVE,Icons.CROSSHAIR,Icons.HEART,Icons.ARROW_UP,Icons.CAMERA,Icons.SKULL,Icons.LAYERS,Icons.ENTITIES,Icons.INFO,Icons.SPEAKER};
+    static final String[] CATEGORIES={"Flow","Animation","Variables","Input","Combat","Character","Inventory","Dialogue","Quests","Health","Movement","Camera","AI","World","Entities","Feedback","Audio"};
+    static final int[] CATEGORY_ICONS={Icons.GRAPH,Icons.FILM,Icons.TAG,Icons.MOVE,Icons.SWORD,Icons.PERSON,Icons.PACKAGE,Icons.CHAT,Icons.SCROLL,Icons.HEART,Icons.ARROW_UP,Icons.CAMERA,Icons.SKULL,Icons.LAYERS,Icons.ENTITIES,Icons.INFO,Icons.SPEAKER};
     static final String WEAPONS="Fist|Pistol|Shotgun|Chaingun|Rocket Launcher";
     static final String AMMO="Bullets|Shells|Rockets";
-    static final String BUTTONS="Fire|Use|Jump|Weapon|Alt";
-    static final String KEYS="Blue|Yellow|Red";
-    static final String SOUNDS="Pistol|Shotgun|Chaingun|Rocket|Explosion|Punch|Door|Switch|Pickup|Weapon Pickup|Item|Player Pain|Player Death|Monster Sight|Monster Pain|Monster Death|Fireball|Teleport|Secret|Oof|Beep";
+    static final String BUTTONS="Fire|Use|Jump|Weapon|Alt|Spell|Potion|Inventory";
+    static final String KEYS=Rpg.KEYS;
+    static final String WHO="Player|Self|Target";
+    static final String ABIL="STR|DEX|CON|INT|WIS|CHA";
+    static final String SOUNDS="Pistol|Shotgun|Chaingun|Rocket|Explosion|Punch|Door|Switch|Pickup|Weapon Pickup|Item|Player Pain|Player Death|Monster Sight|Monster Pain|Monster Death|Fireball|Teleport|Secret|Oof|Beep|Sword Swing|Hit|Bow|Spell|Heal|Coin|Level Up|Potion";
 
     static final class Param {
         final String key,label;final int type;final String def;final String[] options;
@@ -34,8 +36,11 @@ final class Actions {
     }
     static final LinkedHashMap<String,Spec> ALL=new LinkedHashMap<>();
     static Spec get(String id){return id==null?null:ALL.get(id);}
-    static ArrayList<Spec> inCategory(String cat){ArrayList<Spec> out=new ArrayList<>();for(Spec s:ALL.values())if(cat==null||s.category.equals(cat))out.add(s);return out;}
-    static ArrayList<Spec> search(String q){ArrayList<Spec> out=new ArrayList<>();String l=q.toLowerCase();for(Spec s:ALL.values())if(s.name.toLowerCase().contains(l)||s.desc.toLowerCase().contains(l)||s.category.toLowerCase().contains(l))out.add(s);return out;}
+    /** Actions kept only so older projects still run; never offered in the browser. */
+    static boolean hidden(Spec s){return s.category.equals("Legacy");}
+    static int visibleCount(){int n=0;for(Spec s:ALL.values())if(!hidden(s))n++;return n;}
+    static ArrayList<Spec> inCategory(String cat){ArrayList<Spec> out=new ArrayList<>();for(Spec s:ALL.values())if(!hidden(s)&&(cat==null||s.category.equals(cat)))out.add(s);return out;}
+    static ArrayList<Spec> search(String q){ArrayList<Spec> out=new ArrayList<>();String l=q.toLowerCase();for(Spec s:ALL.values())if(!hidden(s)&&(s.name.toLowerCase().contains(l)||s.desc.toLowerCase().contains(l)||s.category.toLowerCase().contains(l)))out.add(s);return out;}
 
     /** Parses "key:type=default" where type is f,i,b,t,e,v,E,M,A,X,S (sound),U (song) or c(A|B|C). */
     private static Param parse(String spec){
@@ -150,30 +155,106 @@ final class Actions {
         def("joystick_moved","Joystick Moved","Input",Icons.MOVE,"Sends an event while the joystick is moved, or when it is idle.",c->{
             boolean mv=Math.hypot(c.w.input.moveX,c.w.input.moveY)>c.f("threshold");c.send(mv?"movingEvent":"idleEvent");return RUNNING;},"threshold:f=0.2","movingEvent:e=","idleEvent:e=");
         def("use_on_button","Use On Button","Input",Icons.DOOR,"Opens doors, presses switches and uses entities when the button is pressed.",c->{if(c.w.input.pressed(c.choice("button",BUTTONS)))c.w.use(c.self);return RUNNING;},"button:c("+BUTTONS+")=Use");
-        def("weapon_on_button","Switch Weapon On Button","Input",Icons.RESET,"Cycles to the next weapon when the button is pressed.",c->{if(c.w.input.pressed(c.choice("button",BUTTONS)))c.w.nextWeapon();return RUNNING;},"button:c("+BUTTONS+")=Weapon");
+        def("weapon_on_button","Switch Weapon On Button","Input",Icons.RESET,"Equips the next weapon in the pack when the button is pressed.",c->{if(c.w.input.pressed(c.choice("button",BUTTONS)))c.w.nextWeapon();return RUNNING;},"button:c("+BUTTONS+")=Weapon");
         def("set_move_speed","Set Move Speed","Input",Icons.ARROW_UP,"Sets the entity's movement speed used by AI movement.",c->{c.self.speed=c.f("speed");return DONE;},"speed:f=6");
 
-        // ------------------------------------------------------------------ Weapons
-        def("fire_weapon","Fire Weapon","Weapons",Icons.CROSSHAIR,"Fires the player's current weapon, then sends the ready event once it can fire again.",c->{
+        // ------------------------------------------------------------------ Combat (d20)
+        def("attack","Attack With Weapon","Combat",Icons.SWORD,"The hero swings or fires the equipped weapon: d20 + modifier + proficiency against the target's AC. Sends the ready event once the weapon can be used again.",c->{
             if(c.enter){c.m[0]=0;}
-            if(c.m[0]==0){if(!c.w.weaponReady())return RUNNING;int r=c.w.fireWeapon();if(r==World.FIRE_NO_AMMO){c.send("noAmmoEvent");return DONE;}c.m[0]=1;return RUNNING;}
+            if(c.m[0]==0){if(!c.w.weaponReady())return RUNNING;c.w.attack();c.m[0]=1;return RUNNING;}
+            if(c.w.weaponReady()){c.send("readyEvent");return DONE;}return RUNNING;},"readyEvent:e=READY");
+        def("cast_spell","Cast Spell","Combat",Icons.SPARKLE,"The hero casts a spell they know (or the selected one), paying spell points. Sends the ready event when done, the fail event if there aren't enough points.",c->{
+            if(c.enter){c.m[0]=0;}
+            if(c.m[0]==0){if(!c.w.weaponReady())return RUNNING;String n=c.s("spell");Rpg.Spell sp=n.equalsIgnoreCase("Selected")||n.isEmpty()?(c.w.hero==null?null:c.w.hero.currentSpell()):Rpg.spell(n);
+                if(sp==null){c.w.message("You don't know any spells",1.5f);c.send("failEvent");return DONE;}
+                if(c.w.castSpell(sp,false)==World.FIRE_NO_POWER){c.send("failEvent");return DONE;}c.m[0]=1;return RUNNING;}
+            if(c.w.weaponReady()){c.send("readyEvent");return DONE;}return RUNNING;},"spell:c(Selected|"+Rpg.SPELLS_JOINED+")=Selected","readyEvent:e=READY","failEvent:e=READY");
+        def("next_spell","Select Next Spell","Combat",Icons.CHEVRON_RIGHT,"Cycles the hero's selected spell.",c->{Hero h=c.w.hero;if(h!=null&&!h.spells.isEmpty()){h.selectedSpell=(h.selectedSpell+1)%h.spells.size();c.w.message("Spell: "+h.currentSpell().name+" ("+Rpg.spellCost(h.currentSpell().level)+" SP)",1.5f);}return DONE;});
+        def("next_weapon","Next Weapon","Combat",Icons.CHEVRON_RIGHT,"Equips the next weapon in the hero's pack.",c->{c.w.nextWeapon();return DONE;});
+        def("weapon_ready_event","Weapon Ready","Combat",Icons.CHECK,"Sends an event once the hero can attack again.",c->{if(c.w.weaponReady()){c.send("event");return DONE;}return RUNNING;},"event:e=READY");
+        def("creature_melee","Creature Melee Attack","Combat",Icons.SKULL,"Attacks the target with this creature's stats (attack bonus vs AC, damage dice). Sends the miss event if the target is out of reach.",c->{
+            if(!c.w.meleeAttack(c.self,c.f("reach")))c.send("outOfReachEvent");return DONE;},"reach:f=1.3","outOfReachEvent:e=");
+        def("creature_ranged","Creature Ranged Attack","Combat",Icons.CROSSHAIR,"Shoots an arrow, fire bolt or arcane bolt at the target using this creature's attack bonus and damage dice.",c->{
+            int t=c.choice("projectile","Fire Bolt|Arrow|Arcane");c.w.rangedAttack(c.self,t==1?World.P_ARROW:t==2?World.P_MAGIC:World.P_FIRE);return DONE;},"projectile:c(Fire Bolt|Arrow|Arcane)=Arrow");
+        def("creature_cast","Creature Casts Spell","Combat",Icons.SPARKLE,"This creature casts a spell at its target (spell attack = its attack bonus, save DC = 8 + attack bonus).",c->{c.w.monsterCast(c.self,Rpg.spell(c.s("spell")));return DONE;},"spell:c("+Rpg.SPELLS_JOINED+")=Fire Bolt");
+        def("roll_dice","Roll Dice","Combat",Icons.DICE,"Rolls dice like 1d20, 2d6+3 or 4d8 and stores the total. Sends the success event if it meets the target.",c->{
+            int r=Rpg.Dice.parse(c.s("dice")).roll(c.w.rng);c.setVar("store",r);if(r>=c.i("target"))c.send("successEvent");else c.send("failEvent");return DONE;},"dice:t=1d20","store:v=roll","target:i=10","successEvent:e=","failEvent:e=");
+        def("ability_check","Ability Check","Combat",Icons.DICE,"d20 + ability modifier against a difficulty class (the hero adds proficiency for their class's main ability).",c->{
+            Actor a=c.who("who");int ab=c.choice("ability",ABIL);if(a!=null&&c.w.save(a,ab,c.i("dc")))c.send("successEvent");else c.send("failEvent");return DONE;},"who:c("+WHO+")=Player","ability:c("+ABIL+")=STR","dc:i=12","successEvent:e=","failEvent:e=");
+        def("saving_throw","Saving Throw","Combat",Icons.VALIDATE,"Makes an entity roll a saving throw; on a failure it takes the damage dice (half on a success if 'halfOnSave').",c->{
+            Actor a=c.who("who");if(a==null)return DONE;boolean ok=c.w.save(a,c.choice("ability",ABIL),c.i("dc"));int dmg=Rpg.Dice.parse(c.s("damage")).roll(c.w.rng);
+            if(!ok){if(dmg>0)c.w.damage(a,dmg,c.self);c.send("failEvent");}else{if(dmg>0&&c.b("halfOnSave"))c.w.damage(a,dmg/2,c.self);c.w.floater(a,"saved",0xffb0b8c0);c.send("successEvent");}return DONE;},
+            "who:c("+WHO+")=Player","ability:c("+ABIL+")=DEX","dc:i=13","damage:t=2d6","halfOnSave:b=true","successEvent:e=","failEvent:e=");
+        def("damage_dice","Deal Damage (Dice)","Combat",Icons.MINUS,"Deals rolled damage to the player, this entity or its target.",c->{Actor a=c.who("to");if(a!=null)c.w.damage(a,Math.max(1,Rpg.Dice.parse(c.s("dice")).roll(c.w.rng)),c.self);return DONE;},"to:c("+WHO+")=Target","dice:t=1d6");
+        def("area_damage","Area Damage (Save)","Combat",Icons.SUN,"Damages everything around this entity; each makes a DEX save for half (like a trap or explosion).",c->{
+            c.w.effect(Sprites.FX_EXPLOSION,c.self.x,c.self.y,c.self.z+.5f);c.w.areaDamage(c.self,c.self.x,c.self.y,c.self.z,c.f("radius"),Rpg.Dice.parse(c.s("dice")),Rpg.FIRE,c.i("dc"));return DONE;},"radius:f=2.5","dice:t=4d6","dc:i=13");
+
+        // ------------------------------------------------------------------ Character
+        def("give_xp","Give Experience","Character",Icons.SPARKLE,"Awards experience points to the hero (levelling up when they reach the next threshold).",c->{c.w.awardXp(c.i("amount"),c.w.player);return DONE;},"amount:i=50");
+        def("get_hero_stat","Get Hero Stat","Character",Icons.TAG,"Stores one of the hero's numbers in a variable.",c->{Hero h=c.w.hero;if(h==null)return DONE;int v;
+            switch(c.choice("stat","HP|Max HP|SP|Max SP|AC|Level|XP|Gold|STR|DEX|CON|INT|WIS|CHA")){case 0:v=c.w.player.health;break;case 1:v=h.maxHp;break;case 2:v=h.sp;break;case 3:v=h.maxSp;break;case 4:v=h.ac();break;case 5:v=h.level;break;case 6:v=h.xp;break;case 7:v=h.gold;break;
+                default:v=h.scores[c.choice("stat","HP|Max HP|SP|Max SP|AC|Level|XP|Gold|STR|DEX|CON|INT|WIS|CHA")-8];}
+            c.setVar("store",v);return c.doneOrRun();},"stat:c(HP|Max HP|SP|Max SP|AC|Level|XP|Gold|STR|DEX|CON|INT|WIS|CHA)=Level","store:v=stat","everyFrame:b=false");
+        def("level_at_least","Level At Least","Character",Icons.VALIDATE,"Sends an event depending on whether the hero has reached a level.",c->{if(c.w.hero!=null&&c.w.hero.level>=c.i("level"))c.send("yesEvent");else c.send("noEvent");return DONE;},"level:i=3","yesEvent:e=","noEvent:e=");
+        def("is_class","Hero Class Is","Character",Icons.PERSON,"Sends an event if the hero is a particular class.",c->{if(c.w.hero!=null&&c.w.hero.cls.name.equalsIgnoreCase(c.s("class")))c.send("yesEvent");else c.send("noEvent");return DONE;},"class:c("+Rpg.CLASSES_JOINED+")=Fighter","yesEvent:e=","noEvent:e=");
+        def("long_rest","Rest","Character",Icons.MOON,"Fully restores the hero's hit points and spell points (e.g. at an inn or shrine).",c->{Hero h=c.w.hero;if(h!=null){c.w.heal(c.w.player,h.maxHp);h.sp=h.maxSp;c.w.sound(SoundFx.HEAL,c.w.player);c.w.message("You feel rested",2);}return DONE;});
+        def("restore_sp","Restore Spell Points","Character",Icons.SPARKLE,"Gives the hero spell points (up to their maximum).",c->{Hero h=c.w.hero;if(h!=null)h.sp=Math.min(h.maxSp,h.sp+c.i("amount"));return DONE;},"amount:i=4");
+        def("open_character","Open Character Sheet","Character",Icons.PERSON,"Opens the hero's inventory and character sheet (pauses the game).",c->{c.w.menuRequested=true;return DONE;});
+
+        // ------------------------------------------------------------------ Inventory
+        def("give_item","Give Item","Inventory",Icons.PACKAGE,"Puts an item in the hero's pack (weapons and armour are equipped if that slot is empty).",c->{Rpg.Item it=Rpg.itemByName(c.s("item"));if(it==null||!c.w.giveItem(it,Math.max(1,c.i("count"))))c.send("failEvent");return DONE;},"item:c("+Rpg.ITEMS_JOINED+")=Potion of Healing","count:i=1","failEvent:e=");
+        def("take_item","Take Item","Inventory",Icons.MINUS,"Removes items from the hero's pack; sends the fail event if they don't have enough.",c->{Rpg.Item it=Rpg.itemByName(c.s("item"));if(c.w.hero==null||it==null||!c.w.hero.remove(it,Math.max(1,c.i("count"))))c.send("failEvent");else c.send("doneEvent");return DONE;},"item:c("+Rpg.ITEMS_JOINED+")=Gemstone","count:i=1","doneEvent:e=","failEvent:e=");
+        def("has_item","Has Item","Inventory",Icons.VALIDATE,"Checks whether the hero carries at least a number of an item.",c->{Rpg.Item it=Rpg.itemByName(c.s("item"));if(c.w.hero!=null&&it!=null&&c.w.hero.count(it)>=Math.max(1,c.i("count")))c.send("yesEvent");else c.send("noEvent");return DONE;},"item:c("+Rpg.ITEMS_JOINED+")=Gemstone","count:i=1","yesEvent:e=","noEvent:e=");
+        def("equip_item","Equip Item","Inventory",Icons.SHIELD,"Equips a weapon, armour or shield the hero carries.",c->{Rpg.Item it=Rpg.itemByName(c.s("item"));if(c.w.hero==null||it==null||c.w.hero.count(it)==0||c.w.hero.equip(it)!=null)c.send("failEvent");return DONE;},"item:c("+Rpg.itemNames(Rpg.I_WEAPON)+"|"+Rpg.itemNames(Rpg.I_ARMOR)+"|Shield)=Longsword","failEvent:e=");
+        def("give_gold","Give Gold","Inventory",Icons.COIN,"Gives the hero gold pieces.",c->{c.w.giveGold(Rpg.Dice.parse(c.s("amount")).roll(c.w.rng));return DONE;},"amount:t=2d6");
+        def("pay_gold","Pay Gold","Inventory",Icons.COIN,"Takes gold from the hero; sends the fail event (and takes nothing) if they can't afford it.",c->{Hero h=c.w.hero;int a=c.i("amount");if(h==null||h.gold<a){c.send("failEvent");return DONE;}h.gold-=a;c.w.sound(SoundFx.COIN,c.w.player);c.send("paidEvent");return DONE;},"amount:i=10","paidEvent:e=","failEvent:e=");
+        def("sell_item","Sell Item To Hero","Inventory",Icons.COIN,"A shop sale: if the hero can pay the price they get the item.",c->{Hero h=c.w.hero;Rpg.Item it=Rpg.itemByName(c.s("item"));int price=c.i("price");
+            if(h==null||it==null||h.gold<price){c.w.message("You can't afford that",2);c.send("failEvent");return DONE;}h.gold-=price;c.w.giveItem(it,1);c.w.sound(SoundFx.COIN,c.w.player);c.w.message("Bought "+it.name,2);c.send("boughtEvent");return DONE;},
+            "item:c("+Rpg.ITEMS_JOINED+")=Potion of Healing","price:i=50","boughtEvent:e=","failEvent:e=");
+        def("has_gold","Has Gold","Inventory",Icons.COIN,"Checks whether the hero has at least an amount of gold.",c->{if(c.w.hero!=null&&c.w.hero.gold>=c.i("amount"))c.send("yesEvent");else c.send("noEvent");return DONE;},"amount:i=10","yesEvent:e=","noEvent:e=");
+        def("give_key","Give Key","Inventory",Icons.TAG,"Gives the hero a door key.",c->{if(!c.w.giveKey(c.choice("key",KEYS)))c.send("failEvent");return DONE;},"key:c("+KEYS+")=Bronze","failEvent:e=");
+        def("has_key","Has Key","Inventory",Icons.VALIDATE,"Checks whether the hero has a key.",c->{if(c.w.hasKey(c.choice("key",KEYS)))c.send("yesEvent");else c.send("noEvent");return DONE;},"key:c("+KEYS+")=Bronze","yesEvent:e=","noEvent:e=");
+        def("drink_potion","Drink Healing Potion","Inventory",Icons.HEART,"Drinks the hero's best healing potion.",c->{if(!c.w.quaff())c.send("noneEvent");return DONE;},"noneEvent:e=");
+        def("use_now","Use","Inventory",Icons.DOOR,"Uses whatever is in front of the entity: talk to someone, open a door, pull a lever.",c->{c.w.use(c.self);return DONE;});
+
+        // ------------------------------------------------------------------ Dialogue
+        def("say","Say / Ask","Dialogue",Icons.CHAT,"Shows a conversation box (the game pauses). Up to three answers; each sends its event to this entity. With no answers it shows Continue and sends the done event.",c->{
+            if(c.enter){java.util.ArrayList<String> ch=new java.util.ArrayList<>(),ev=new java.util.ArrayList<>();
+                for(int k=1;k<=3;k++){String t=c.s("answer"+k);if(!t.isEmpty()){ch.add(t);ev.add(c.s("event"+k));}}
+                if(ch.isEmpty()){ch.add("Continue");ev.add(c.s("doneEvent"));}
+                String sp=c.s("speaker");if(sp.isEmpty()&&c.self.def!=null)sp=c.self.def.name;
+                c.w.say(c.self,sp,c.s("text"),ch.toArray(new String[0]),ev.toArray(new String[0]));c.m[0]=1;return RUNNING;}
+            return c.w.dialogue==null?DONE:RUNNING;},
+            "speaker:t=","text:t=Well met, traveller.","answer1:t=","event1:e=","answer2:t=","event2:e=","answer3:t=","event3:e=","doneEvent:e=");
+        def("dialogue_open","Is Talking","Dialogue",Icons.CHAT,"Sends an event while a conversation box is open.",c->{if(c.w.dialogue!=null)c.send("event");return c.doneOrRun();},"event:e=","everyFrame:b=true");
+
+        // ------------------------------------------------------------------ Quests
+        def("start_quest","Start Quest","Quests",Icons.SCROLL,"Adds a quest to the hero's journal.",c->{World.Quest q=c.w.quest(c.s("id"));if(q.state==World.Q_INACTIVE){q.state=World.Q_ACTIVE;q.title=c.s("title").isEmpty()?q.id:c.s("title");q.text=c.s("objective");c.w.centerPrint("New quest: "+q.title,3);c.w.sound(SoundFx.SECRET,c.w.player);}return DONE;},
+            "id:t=quest1","title:t=The Lost Relic","objective:t=Find the relic in the crypt.");
+        def("update_quest","Update Quest","Quests",Icons.SCROLL,"Changes a quest's current objective.",c->{World.Quest q=c.w.quest(c.s("id"));q.text=c.s("objective");if(q.state==World.Q_ACTIVE)c.w.message("Journal updated: "+q.text,3);return DONE;},"id:t=quest1","objective:t=Return the relic to the priest.");
+        def("complete_quest","Complete Quest","Quests",Icons.CHECK,"Completes a quest and rewards the hero with XP and gold.",c->{World.Quest q=c.w.quest(c.s("id"));if(q.state!=World.Q_DONE){q.state=World.Q_DONE;c.w.centerPrint("Quest complete: "+q.title,3);c.w.sound(SoundFx.LEVEL_UP,c.w.player);
+                if(c.i("gold")>0)c.w.giveGold(c.i("gold"));c.w.awardXp(c.i("xp"),c.w.player);}return DONE;},"id:t=quest1","xp:i=100","gold:i=25");
+        def("fail_quest","Fail Quest","Quests",Icons.CANCEL,"Marks a quest as failed.",c->{World.Quest q=c.w.quest(c.s("id"));q.state=World.Q_FAILED;c.w.message("Quest failed: "+q.title,3);return DONE;},"id:t=quest1");
+        def("quest_state","Quest State","Quests",Icons.SCROLL,"Sends an event for a quest's state: not started, active, done or failed.",c->{
+            int st=c.w.questState(c.s("id"));c.send(st==World.Q_ACTIVE?"activeEvent":st==World.Q_DONE?"doneEvent":st==World.Q_FAILED?"failedEvent":"notStartedEvent");return DONE;},"id:t=quest1","notStartedEvent:e=","activeEvent:e=","doneEvent:e=","failedEvent:e=");
+
+        // ------------------------------------------------------------------ Legacy (older projects; hidden from the browser)
+        def("fire_weapon","Fire Weapon (old)","Legacy",Icons.SWORD,"Older projects: attacks with the hero's weapon.",c->{
+            if(c.enter){c.m[0]=0;}
+            if(c.m[0]==0){if(!c.w.weaponReady())return RUNNING;c.w.attack();c.m[0]=1;return RUNNING;}
             if(c.w.weaponReady()){c.send("readyEvent");return DONE;}return RUNNING;},"readyEvent:e=READY","noAmmoEvent:e=NO_AMMO");
-        def("select_weapon","Select Weapon","Weapons",Icons.CROSSHAIR,"Switches to a weapon the player owns.",c->{if(!c.w.selectWeapon(c.choice("weapon",WEAPONS)))c.send("failEvent");return DONE;},"weapon:c("+WEAPONS+")=Pistol","failEvent:e=");
-        def("next_weapon","Next Weapon","Weapons",Icons.CHEVRON_RIGHT,"Switches to the next owned weapon that has ammo.",c->{c.w.nextWeapon();return DONE;});
-        def("give_weapon","Give Weapon","Weapons",Icons.PACKAGE,"Gives the player a weapon and some ammo for it.",c->{if(!c.w.giveWeapon(c.choice("weapon",WEAPONS),c.i("ammo")))c.send("failEvent");return DONE;},"weapon:c("+WEAPONS+")=Shotgun","ammo:i=8","failEvent:e=");
-        def("has_weapon","Has Weapon","Weapons",Icons.VALIDATE,"Checks whether the player owns a weapon.",c->{if(c.w.hasWeapon(c.choice("weapon",WEAPONS)))c.send("yesEvent");else c.send("noEvent");return DONE;},"weapon:c("+WEAPONS+")=Shotgun","yesEvent:e=","noEvent:e=");
-        def("give_ammo","Give Ammo","Weapons",Icons.PACKAGE,"Gives the player ammo. Sends the fail event if already full.",c->{if(!c.w.giveAmmo(c.choice("type",AMMO),c.i("amount")))c.send("failEvent");return DONE;},"type:c("+AMMO+")=Bullets","amount:i=10","failEvent:e=");
-        def("get_ammo","Get Ammo","Weapons",Icons.TAG,"Stores how much ammo of a type the player has.",c->{c.setVar("store",c.w.ammo[c.choice("type",AMMO)]);return c.doneOrRun();},"type:c("+AMMO+")=Bullets","store:v=ammo","everyFrame:b=false");
-        def("check_ammo","Check Ammo","Weapons",Icons.VALIDATE,"Sends an event depending on whether there is enough ammo.",c->{if(c.w.ammo[c.choice("type",AMMO)]>=c.i("min"))c.send("enoughEvent");else c.send("emptyEvent");return c.doneOrRun();},"type:c("+AMMO+")=Bullets","min:i=1","enoughEvent:e=","emptyEvent:e=","everyFrame:b=false");
-        def("give_key","Give Key","Weapons",Icons.TAG,"Gives the player a key card.",c->{if(!c.w.giveKey(c.choice("key",KEYS)))c.send("failEvent");return DONE;},"key:c("+KEYS+")=Blue","failEvent:e=");
-        def("has_key","Has Key","Weapons",Icons.VALIDATE,"Checks whether the player has a key card.",c->{if(c.w.hasKey(c.choice("key",KEYS)))c.send("yesEvent");else c.send("noEvent");return DONE;},"key:c("+KEYS+")=Blue","yesEvent:e=","noEvent:e=");
-        def("use_now","Use","Weapons",Icons.DOOR,"Uses whatever is in front of the entity (doors, lifts, switches).",c->{c.w.use(c.self);return DONE;});
-        def("weapon_ready_event","Weapon Ready","Weapons",Icons.CHECK,"Sends an event once the current weapon can fire again.",c->{if(c.w.weaponReady()){c.send("event");return DONE;}return RUNNING;},"event:e=READY");
-        def("take_ammo","Take Ammo","Weapons",Icons.MINUS,"Removes ammo from the player.",c->{int t=c.choice("type",AMMO);c.w.ammo[t]=Math.max(0,c.w.ammo[t]-c.i("amount"));return DONE;},"type:c("+AMMO+")=Bullets","amount:i=1");
+        def("select_weapon","Select Weapon (old)","Legacy",Icons.SWORD,"Older projects: no effect.",c->DONE,"weapon:t=","failEvent:e=");
+        def("give_weapon","Give Weapon (old)","Legacy",Icons.PACKAGE,"Older projects: gives a comparable fantasy weapon.",c->{String w=c.s("weapon");String id=w.equalsIgnoreCase("Shotgun")?"longsword":w.equalsIgnoreCase("Chaingun")?"longbow":w.equalsIgnoreCase("Rocket Launcher")?"greatsword":"dagger";
+            c.w.giveItem(Rpg.item(id),1);c.w.message("You found a "+Rpg.item(id).name.toLowerCase()+"!",2);return DONE;},"weapon:t=Shotgun","ammo:i=0","failEvent:e=");
+        def("has_weapon","Has Weapon (old)","Legacy",Icons.VALIDATE,"Older projects.",c->{c.send("yesEvent");return DONE;},"weapon:t=","yesEvent:e=","noEvent:e=");
+        def("give_ammo","Give Ammo (old)","Legacy",Icons.COIN,"Older projects: gives a little gold instead.",c->{c.w.giveGold(Math.max(1,c.i("amount")/4));return DONE;},"type:t=","amount:i=10","failEvent:e=");
+        def("get_ammo","Get Ammo (old)","Legacy",Icons.TAG,"Older projects.",c->DONE,"type:t=","store:v=ammo","everyFrame:b=false");
+        def("check_ammo","Check Ammo (old)","Legacy",Icons.VALIDATE,"Older projects: always enough.",c->{c.send("enoughEvent");return DONE;},"type:t=","min:i=1","enoughEvent:e=","emptyEvent:e=","everyFrame:b=false");
+        def("take_ammo","Take Ammo (old)","Legacy",Icons.MINUS,"Older projects.",c->DONE,"type:t=","amount:i=1");
+        def("give_armor","Give Armor (old)","Legacy",Icons.SHIELD,"Older projects: gives chain mail.",c->{c.w.giveItem(Rpg.item("chainmail"),1);return DONE;},"amount:i=100","max:i=100","failEvent:e=");
 
         // ------------------------------------------------------------------ Health
         def("give_health","Give Health","Health",Icons.HEART,"Heals up to a maximum. Sends the fail event if already at the maximum.",c->{if(!c.w.giveHealth(c.w.player,c.i("amount"),c.i("max")))c.send("failEvent");return DONE;},"amount:i=25","max:i=100","failEvent:e=");
-        def("give_armor","Give Armor","Health",Icons.VALIDATE,"Adds armor up to a maximum. Sends the fail event if already full.",c->{if(!c.w.giveArmor(c.i("amount"),c.i("max")))c.send("failEvent");return DONE;},"amount:i=100","max:i=100","failEvent:e=");
         def("damage_self","Damage Self","Health",Icons.MINUS,"Hurts this entity.",c->{c.w.damage(c.self,c.i("amount"),null);return DONE;},"amount:i=10");
         def("damage_target","Damage Entity","Health",Icons.MINUS,"Hurts the target or the player.",c->{Actor t=c.who("to");if(t!=null)c.w.damage(t,c.i("amount"),c.self);return DONE;},"amount:i=10","to:c(Target|Player)=Target");
         def("kill_self","Kill Self","Health",Icons.SKULL,"Kills this entity (sends DIED).",c->{c.w.damage(c.self,100000,null);return DONE;});
