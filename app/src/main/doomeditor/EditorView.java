@@ -1120,9 +1120,9 @@ public class EditorView extends View {
         th.panel(c,p,L,top,L+cw,B,D,.97f,false);
         float y=top+dp(22),x=L+dp(14);
         ui.text(c,"CHARACTER",x,y,9.5f,th.textFaint(),2,-1);y+=dp(18);
-        th.bar(c,p,ui,c,x,y,L+cw-dp(14),y+dp(14),world.player.health/(float)Math.max(1,hero.maxHp),0xffb8282a,world.player.health+" / "+hero.maxHp+" HP",D,1);y+=dp(19);
-        if(hero.maxSp>0){th.bar(c,p,ui,c,x,y,L+cw-dp(14),y+dp(14),hero.sp/(float)Math.max(1,hero.maxSp),0xff3a5ad0,hero.sp+" / "+hero.maxSp+" SP",D,1);y+=dp(19);}
-        th.bar(c,p,ui,c,x,y,L+cw-dp(14),y+dp(10),hero.xpFraction(),0xffd8a830,null,D,1);y+=dp(22);
+        th.bar(c,p,ui,x,y,L+cw-dp(14),y+dp(14),world.player.health/(float)Math.max(1,hero.maxHp),0xffb8282a,world.player.health+" / "+hero.maxHp+" HP",D,1);y+=dp(19);
+        if(hero.maxSp>0){th.bar(c,p,ui,x,y,L+cw-dp(14),y+dp(14),hero.sp/(float)Math.max(1,hero.maxSp),0xff3a5ad0,hero.sp+" / "+hero.maxSp+" SP",D,1);y+=dp(19);}
+        th.bar(c,p,ui,x,y,L+cw-dp(14),y+dp(10),hero.xpFraction(),0xffd8a830,null,D,1);y+=dp(22);
         ui.text(c,hero.xp+" / "+Rpg.xpForNext(hero.level)+" XP",x,y,10.5f,th.textDim(),1,-1);y+=dp(20);
         Rpg.Item wpn=hero.weaponOrFists();
         String[][] rows={{"Armour class",String.valueOf(hero.ac())},{"Attack",Rpg.signed(hero.attackBonus(wpn))+" · "+wpn.damage+Rpg.signed(hero.damageBonus(wpn))},{"Proficiency",Rpg.signed(hero.prof())},{"Gold",String.valueOf(hero.gold)}};
@@ -1140,8 +1140,8 @@ public class EditorView extends View {
             for(int i=0;i<hero.inventory.size();i++){Hero.Stack st=hero.inventory.get(i);Rpg.Item it=st.item;
                 r.set(l2+dp(10),yy,r2-dp(10),yy+rowH-dp(6));boolean eq=hero.isEquipped(it)&&(i==firstIndex(hero,it));
                 th.card(c,p,ui,r,eq,D);
-                if(it.sprite>=0){Bitmap tb=thumbFor(it.sprite);float th=rowH-dp(16),tw=Math.min(th*1.4f,th*tb.getWidth()/(float)Math.max(1,tb.getHeight()));
-                    RectF d=new RectF(r.left+dp(8)+(th*1.4f-tw)*.5f,r.top+dp(5),r.left+dp(8)+(th*1.4f-tw)*.5f+tw,r.top+dp(5)+th);c.drawBitmap(tb,null,d,null);}
+                if(it.sprite>=0){Bitmap tb=thumbFor(it.sprite);float thH=rowH-dp(16),tw=Math.min(thH*1.4f,thH*tb.getWidth()/(float)Math.max(1,tb.getHeight()));
+                    RectF d=new RectF(r.left+dp(8)+(thH*1.4f-tw)*.5f,r.top+dp(5),r.left+dp(8)+(thH*1.4f-tw)*.5f+tw,r.top+dp(5)+thH);c.drawBitmap(tb,null,d,null);}
                 float ix=r.left+dp(8)+(rowH-dp(16))*1.4f+dp(10);
                 ui.text(c,it.name+(st.count>1?"  ×"+st.count:""),ix,r.top+dp(19),13,th.text,2,-1);
                 ui.text(c,ui.ellipsize(Rpg.ITEM_KINDS[it.kind]+" · "+it.stats(),10.5f,1,r.right-ix-dp(90)),ix,r.top+dp(36),10.5f,th.textFaint(),1,-1);
