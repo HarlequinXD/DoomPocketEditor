@@ -597,8 +597,11 @@ public class EditorView extends View {
         c.restoreToCount(save);
         if(maxScroll>0){float bar=(bottom-top)*(bottom-top)/(bottom-top+maxScroll);float by=top+(bottom-top-bar)*defScroll/maxScroll;ui.round(c,pw-dp(5),by,pw-dp(2),by+bar,dp(2),0x33ffffff);}
     }
-    private String[] propLabels(EntityDef d){return new String[]{"Name","Type","Sprite","Health","Speed","Radius","Height","Solid","Shootable","Animations"};}
+    private String[] propLabels(EntityDef d){
+        if(d.kind==EntityDef.PLAYER)return new String[]{"Name","Type","Sprite","Health","Speed","Radius","Height","Solid","Shootable","Animations","Class","Starting level","Starting gold"};
+        return new String[]{"Name","Type","Sprite","Health","Speed","Radius","Height","Solid","Shootable","Animations"};}
     private String propValue(EntityDef d,int i){switch(i){case 0:return d.name;case 1:return EntityDef.KIND_NAMES[d.kind];case 2:{CustomSprite cs=project.sprite(d.customSprite);return cs!=null?cs.name+" (custom)":Sprites.NAMES[Math.max(0,Math.min(Sprites.COUNT-1,d.sprite))];}
+        case 10:return Rpg.heroClass(d.heroClass).name;case 11:return String.valueOf(Math.max(1,Math.min(Rpg.MAX_LEVEL,d.level)));case 12:return d.startGold+" gp";
         case 3:return String.valueOf(d.health);case 4:return fmt(d.speed);case 5:return fmt(d.radius);case 6:return fmt(d.height);case 7:return d.solid?"Yes":"No";case 8:return d.shootable?"Yes":"No";default:{CustomSprite cs=project.sprite(d.customSprite);return cs==null?"Built-in poses":cs.clips.size()+" clips";}}}
     private void drawPropertyPanel(Canvas c,float x0,float l,float rr){
         EntityDef d=currentDef();if(d==null)return;
@@ -841,6 +844,11 @@ public class EditorView extends View {
                     else if(k<items.length-1){d.customSprite="";d.sprite=k-project.sprites.size();}
                     else{openSprites(d.id);return;}
                     changed(null);});break;}
+            case 10:{String[] items=new String[Rpg.CLASSES.length];int cur=0;
+                for(int k=0;k<items.length;k++){Rpg.HeroClass hc=Rpg.CLASSES[k];items[k]=hc.name+" – "+hc.desc;if(hc.name.equalsIgnoreCase(d.heroClass))cur=k;}
+                host.choose("Hero class",items,cur,k->{d.heroClass=Rpg.CLASSES[k].name;renderer.invalidate();changed("Hero is now a "+d.heroClass+": class gear, spells and look apply in Play");});break;}
+            case 11:host.prompt("Starting level","1 to "+Rpg.MAX_LEVEL,String.valueOf(d.level),true,t->{try{d.level=Math.max(1,Math.min(Rpg.MAX_LEVEL,Math.round(Float.parseFloat(t))));changed(null);}catch(NumberFormatException ignored){}});break;
+            case 12:host.prompt("Starting gold",null,String.valueOf(d.startGold),true,t->{try{d.startGold=Math.max(0,Math.round(Float.parseFloat(t)));changed(null);}catch(NumberFormatException ignored){}});break;
             case 3:host.prompt("Health",null,String.valueOf(d.health),true,t->{try{d.health=Math.max(1,Math.round(Float.parseFloat(t)));changed(null);}catch(NumberFormatException ignored){}});break;
             case 4:host.prompt("Speed (units per second)",null,fmt(d.speed),true,t->{try{d.speed=Math.max(0,Float.parseFloat(t));changed(null);}catch(NumberFormatException ignored){}});break;
             case 5:host.prompt("Radius",null,fmt(d.radius),true,t->{try{d.radius=Math.max(.1f,Math.min(2,Float.parseFloat(t)));changed(null);}catch(NumberFormatException ignored){}});break;
