@@ -22,6 +22,8 @@ final class Project {
     float musicVolume=.8f,sfxVolume=1f;
     /** On-screen controls and HUD positions from the UI Editor. */
     HudLayout hud=new HudLayout();
+    /** UI style for the HUD, menus and dialogue boxes, from the UI Editor's Theme page. */
+    UiTheme theme=new UiTheme();
     String loadWarning;
 
     /** The open project; opens the last one used, or creates a starter project. */
@@ -114,7 +116,7 @@ final class Project {
         JSONObject au=new JSONObject();JSONObject ov=new JSONObject();for(java.util.Map.Entry<String,String> e:soundOverrides.entrySet())ov.put(e.getKey(),e.getValue());
         au.put("overrides",ov);au.put("levelMusic",levelMusic);au.put("musicVolume",(double)musicVolume);au.put("sfxVolume",(double)sfxVolume);o.put("audio",au);
         // UI Editor data. Keep this when changing the save format.
-        JSONObject ui=new JSONObject();ui.put("hud",hud.toJson());o.put("ui",ui);
+        JSONObject ui=new JSONObject();ui.put("hud",hud.toJson());ui.put("theme",theme.toJson());o.put("ui",ui);
         return o;
     }
     static Project fromJson(JSONObject o)throws Exception{
@@ -128,7 +130,7 @@ final class Project {
         JSONObject au=o.optJSONObject("audio");
         if(au!=null){JSONObject ov=au.optJSONObject("overrides");if(ov!=null){java.util.Iterator<String> k=ov.keys();while(k.hasNext()){String key=k.next();p.soundOverrides.put(key,ov.optString(key));}}
             p.levelMusic=au.optString("levelMusic","");p.musicVolume=(float)Math.max(0,Math.min(1,au.optDouble("musicVolume",.8)));p.sfxVolume=(float)Math.max(0,Math.min(1,au.optDouble("sfxVolume",1)));}
-        JSONObject ui=o.optJSONObject("ui");if(ui!=null)p.hud=HudLayout.fromJson(ui.optJSONObject("hud"));
+        JSONObject ui=o.optJSONObject("ui");if(ui!=null){p.hud=HudLayout.fromJson(ui.optJSONObject("hud"));JSONObject th=ui.optJSONObject("theme");if(th!=null)p.theme=UiTheme.fromJson(th);}
         if(!p.level.isConsistent())throw new IllegalStateException("inconsistent map");
         p.fixUp();return p;
     }

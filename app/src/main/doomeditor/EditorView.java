@@ -1060,7 +1060,7 @@ public class EditorView extends View {
     private GameHud hud;private final boolean[] hudDown=new boolean[HudLayout.N];
     private GameHud hud(){
         if(hud==null){hud=new GameHud(ui,project.hud);hud.hitIds=new int[]{H_FIRE,H_SPELL,H_JUMP,H_USE,H_POTION,H_BAG,H_EXITPLAY,-1,-1,-1,-1};}
-        hud.layout=project.hud;return hud;
+        hud.layout=project.hud;hud.theme=project.theme;return hud;
     }
     private void drawPlayControls(Canvas c){
         hudDown[HudLayout.ATTACK]=buttonPointer[Input.FIRE]>=0;hudDown[HudLayout.CAST]=buttonPointer[Input.SPELL]>=0;hudDown[HudLayout.JUMP]=buttonPointer[Input.JUMP]>=0;
@@ -1092,12 +1092,14 @@ public class EditorView extends View {
         float pw=Math.min(w-dp(40),dp(720)),L=(w-pw)*.5f,R=L+pw;
         ArrayList<String> lines=wrap(d.text,14,1,pw-dp(44));
         float ah=dp(40),gap=dp(8),ph=dp(56)+lines.size()*dp(21)+d.choices.length*(ah+gap)+dp(8),B=h-dp(64),T=B-ph;
-        ui.round(c,L,T+dp(4),R,B+dp(4),dp(14),0x80000000);ui.round(c,L,T,R,B,dp(14),0xf21a1d22);ui.outline(c,L,T,R,B,dp(14),0xff8a6a3a,dp(1.5f));
-        ui.round(c,L+dp(16),T-dp(14),L+dp(16)+ui.measure(d.speaker,13,2)+dp(28),T+dp(14),dp(14),0xff6a4a24);ui.textMid(c,d.speaker,L+dp(30),T,13,0xffffe8c0,2,-1);
-        float y=T+dp(36);for(String ln:lines){ui.text(c,ln,L+dp(22),y,14,Ui.TEXT,1,-1);y+=dp(21);}
+        UiTheme th=project.theme;
+        ui.round(c,L,T+dp(4),R,B+dp(4),dp(14),0x80000000);th.panel(c,p,L,T,R,B,ui.dp,.97f,false);
+        ui.round(c,L+dp(16),T-dp(14),L+dp(16)+ui.measure(d.speaker,13,2)+dp(28),T+dp(14),dp(14),UiTheme.shade(th.accent,.42f));ui.outline(c,L+dp(16),T-dp(14),L+dp(16)+ui.measure(d.speaker,13,2)+dp(28),T+dp(14),dp(14),th.accent,dp(1.2f));
+        ui.textMid(c,d.speaker,L+dp(30),T,13,0xffffffff,2,-1);
+        float y=T+dp(36);for(String ln:lines){ui.text(c,ln,L+dp(22),y,14,th.text,1,-1);y+=dp(21);}
         y+=dp(6);
         for(int i=0;i<d.choices.length;i++){r.set(L+dp(18),y,R-dp(18),y+ah);ui.round(c,r,dp(10),0xff262a31);ui.outline(c,r,dp(10),0x30ffffff,dp(1));
-            ui.textMid(c,(i+1)+".",r.left+dp(16),r.centerY(),13,0xffd8a830,2,-1);ui.textMid(c,ui.ellipsize(d.choices[i],13.5f,1,r.width()-dp(56)),r.left+dp(36),r.centerY(),13.5f,Ui.TEXT,1,-1);
+            ui.textMid(c,(i+1)+".",r.left+dp(16),r.centerY(),13,th.lightPanel()?0xffd8a830:th.accent,2,-1);ui.textMid(c,ui.ellipsize(d.choices[i],13.5f,1,r.width()-dp(56)),r.left+dp(36),r.centerY(),13.5f,Ui.TEXT,1,-1);
             ui.hit(r,H_DLG+i);y+=ah+gap;}
     }
     /** Character sheet, inventory, spells and quest journal (the game is paused). */

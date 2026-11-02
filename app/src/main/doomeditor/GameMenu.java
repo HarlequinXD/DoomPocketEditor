@@ -109,8 +109,8 @@ final class GameMenu {
         String title=project.name==null||project.name.isEmpty()?"Untitled Adventure":project.name;
         float size=Math.min(34,Math.max(20,(w*.55f)/Math.max(1,title.length())/ui.dp(1)*1.7f));
         ui.text(c,ui.ellipsize(title,size,2,w*.6f),L+dp(2),y+dp(2),size,0xc0000000,2,-1);
-        ui.text(c,ui.ellipsize(title,size,2,w*.6f),L,y,size,GOLD,2,-1);
-        ui.rect(c,L,y+dp(12),L+Math.min(w*.4f,dp(220)),y+dp(14),0x80e8c070);
+        int tc=UiTheme.luma(th().accent)<.35f?0xffe8c070:th().accent;ui.text(c,ui.ellipsize(title,size,2,w*.6f),L,y,size,tc,2,-1);
+        ui.rect(c,L,y+dp(12),L+Math.min(w*.4f,dp(220)),y+dp(14),UiTheme.alpha(tc,.5f));
         float by=y+dp(44),bw=Math.min(dp(280),w*.4f),bh=Math.max(dp(40),Math.min(dp(50),(h-by-dp(60))/4.6f)),gap=dp(10);
         if(paused){menuButton(c,L,by,bw,bh,Icons.PLAY,"Continue",H_CONTINUE,true);by+=bh+gap;}
         menuButton(c,L,by,bw,bh,Icons.FLAG,paused?"Restart level":"New Game",H_NEW,!paused);by+=bh+gap;
@@ -120,25 +120,29 @@ final class GameMenu {
         float ls=dp(22);ui.logo(c,L,h-dp(16)-ls,ls);
         ui.textMid(c,"Powered by RPG Pocket Editor",L+ls+dp(8),h-dp(16)-ls*.5f,10.5f,0xb0e8ecf1,1,-1);
     }
+    private UiTheme th(){return project.theme;}
+    /** Accent that reads on the panel (dark accents are lifted on dark panels and vice versa). */
+    private int acc(){UiTheme t=th();return t.lightPanel()?(UiTheme.luma(t.accent)>.55f?UiTheme.shade(t.accent,.5f):t.accent):(UiTheme.luma(t.accent)<.35f?0xffe8c070:t.accent);}
     private void menuButton(Canvas c,float l,float t,float bw,float bh,int icon,String label,int id,boolean primary){
         r.set(l,t,l+bw,t+bh);
         ui.round(c,r.left,r.top+dp(3),r.right,r.bottom+dp(3),dp(10),0x70000000);
-        ui.round(c,r,dp(10),primary?0xf0402a10:0xd01a1420);
-        ui.outline(c,r,dp(10),primary?GOLD:0x80e8c070,dp(primary?2:1));
-        ui.icon(c,icon,r.left+dp(26),r.centerY(),18,primary?GOLD:0xffe8ecf1);
-        ui.textMid(c,label,r.left+dp(50),r.centerY(),16,primary?GOLD:0xffe8ecf1,2,-1);
+        th().panel(c,p,r.left,r.top,r.right,r.bottom,ui.dp,primary?1f:.88f,false);
+        if(primary){p.setStyle(Paint.Style.FILL);p.setColor(UiTheme.alpha(th().accent,.16f));c.drawRect(r.left+dp(3),r.top+dp(3),r.right-dp(3),r.bottom-dp(3),p);}
+        int fg=primary?acc():th().text;
+        ui.icon(c,icon,r.left+dp(26),r.centerY(),18,fg);
+        ui.textMid(c,label,r.left+dp(50),r.centerY(),16,fg,2,-1);
         ui.hit(r,id);
     }
     private void drawOptions(Canvas c,float w,float h){
         float pw=Math.min(w-dp(40),dp(560)),ph=Math.min(h-dp(32),dp(360)),L=(w-pw)*.5f,T=(h-ph)*.5f,R=L+pw,B=T+ph;
-        ui.round(c,L,T+dp(4),R,B+dp(4),dp(16),0x90000000);ui.round(c,L,T,R,B,dp(16),0xf0181220);ui.outline(c,L,T,R,B,dp(16),0x90e8c070,dp(1.5f));
-        ui.text(c,"Options",L+dp(22),T+dp(36),20,GOLD,2,-1);
+        ui.round(c,L,T+dp(4),R,B+dp(4),dp(16),0x90000000);th().panel(c,p,L,T,R,B,ui.dp,.97f,false);
+        ui.text(c,"Options",L+dp(22),T+dp(36),20,acc(),2,-1);
         r.set(R-dp(110),T+dp(14),R-dp(16),T+dp(48));ui.button(c,r,Icons.ARROW_LEFT,"Back",Ui.NORMAL);ui.hit(r,H_BACK);
         String[] tabs={"Game","Audio"};float tx=L+dp(22);
         for(int i=0;i<2;i++){r.set(tx,T+dp(58),tx+dp(110),T+dp(90));ui.button(c,r,i==0?Icons.PERSON:Icons.SPEAKER,tabs[i],optTab==i?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_TAB+i);tx+=dp(118);}
         float y=T+dp(104),l=L+dp(22),rr=R-dp(22);
         if(optTab==0){
-            ui.textMid(c,"Difficulty",l,y+dp(17),13,Ui.TEXT,1,-1);
+            ui.textMid(c,"Difficulty",l,y+dp(17),13,th().text,1,-1);
             float sw=(rr-l-dp(140))/3f;
             for(int i=0;i<3;i++){r.set(l+dp(140)+i*sw,y,l+dp(140)+(i+1)*sw-dp(6),y+dp(34));ui.button(c,r,-1,GameSettings.DIFFICULTIES[i],GameSettings.difficulty==i?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_DIFF+i);}
             y+=dp(44);
@@ -149,20 +153,20 @@ final class GameMenu {
         }else{
             y=slider(c,l,rr,y,ROW_MUSIC,"Music volume",GameSettings.musicVolume,0,1,Math.round(GameSettings.musicVolume*100)+"%");
             y=slider(c,l,rr,y,ROW_SOUND,"Sound effects volume",GameSettings.soundVolume,0,1,Math.round(GameSettings.soundVolume*100)+"%");
-            ui.text(c,project.levelMusic.isEmpty()?"This game has no level music yet.":"Music: "+project.songLabel(project.levelMusic),l,y+dp(16),11.5f,Ui.TEXT_3);
+            ui.text(c,project.levelMusic.isEmpty()?"This game has no level music yet.":"Music: "+project.songLabel(project.levelMusic),l,y+dp(16),11.5f,th().textFaint());
         }
     }
     private float slider(Canvas c,float l,float rr,float y,int row,String label,float v,float min,float max,String shown){
-        ui.textMid(c,label,l,y+dp(14),13,Ui.TEXT,1,-1);ui.textMid(c,shown,rr,y+dp(14),12.5f,GOLD,1,1);
+        ui.textMid(c,label,l,y+dp(14),13,th().text,1,-1);ui.textMid(c,shown,rr,y+dp(14),12.5f,acc(),1,1);
         float tl=l,tr=rr,ty=y+dp(36),n=(v-min)/(max-min);
-        ui.round(c,tl,ty-dp(3),tr,ty+dp(3),dp(3),0xff332a40);ui.round(c,tl,ty-dp(3),tl+(tr-tl)*n,ty+dp(3),dp(3),GOLD_DARK);
-        p.setColor(GOLD);c.drawCircle(tl+(tr-tl)*n,ty,dp(9),p);
+        ui.round(c,tl,ty-dp(3),tr,ty+dp(3),dp(3),UiTheme.alpha(0xff000000,.35f));ui.round(c,tl,ty-dp(3),tl+(tr-tl)*n,ty+dp(3),dp(3),UiTheme.shade(acc(),.6f));
+        p.setColor(acc());c.drawCircle(tl+(tr-tl)*n,ty,dp(9),p);
         track[row].set(tl,y,tr,y+dp(50));ui.hit(track[row],H_ROW+row);
         return y+dp(56);
     }
     private float toggle(Canvas c,float l,float rr,float y,int row,String label,boolean on){
-        r.set(l,y,rr,y+dp(38));ui.textMid(c,label,l,y+dp(19),13,Ui.TEXT,1,-1);
-        float tx=rr-dp(44),ty=y+dp(11);ui.round(c,tx,ty,tx+dp(40),ty+dp(20),dp(10),on?GOLD_DARK:0xff332a40);p.setColor(on?GOLD:0xffa6b0bd);c.drawCircle(on?tx+dp(30):tx+dp(10),ty+dp(10),dp(8),p);
+        r.set(l,y,rr,y+dp(38));ui.textMid(c,label,l,y+dp(19),13,th().text,1,-1);
+        float tx=rr-dp(44),ty=y+dp(11);ui.round(c,tx,ty,tx+dp(40),ty+dp(20),dp(10),on?UiTheme.shade(acc(),.6f):UiTheme.alpha(0xff000000,.35f));p.setColor(on?acc():th().textFaint());c.drawCircle(on?tx+dp(30):tx+dp(10),ty+dp(10),dp(8),p);
         track[row].setEmpty();ui.hit(r,H_ROW+row);
         return y+dp(42);
     }

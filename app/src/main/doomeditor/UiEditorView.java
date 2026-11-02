@@ -34,7 +34,7 @@ public class UiEditorView extends View {
     private final float[] pt=new float[2];
     // touch
     private int mode;   // 0 none, 1 drag element, 2 drag panel, 3 slider size, 4 slider alpha, 5 panel tap
-    private float grabX,grabY,downX,downY;private int downHit;private boolean moved;
+    private float grabX,grabY,downX,downY,lastY;private int downHit;private boolean moved;
     private String hint;private long hintUntil;
     private final Paint dash=new Paint(Paint.ANTI_ALIAS_FLAG);
 
@@ -54,9 +54,10 @@ public class UiEditorView extends View {
         vw=getWidth();vh=getHeight();barH=dp(48);
         w=vw;h=vh;   // HUD positions use the real screen size
         scale=Math.min(1,(vh-barH-dp(8))/vh);offX=(vw-w*scale)*.5f;offY=barH+dp(4);
-        hud.layout=project.hud;
+        hud.layout=project.hud;hud.theme=project.theme;
         ui.clearHits();
         c.drawColor(Ui.BG);
+        if(tab==1){drawThemeTab(c);drawTopBar(c);drawHint(c);return;}
         if(tab!=0){drawTopBar(c);drawComingSoon(c);return;}
         c.save();c.translate(offX,offY);c.scale(scale,scale);c.clipRect(0,0,w,h);
         drawBackdrop(c);
@@ -95,6 +96,119 @@ public class UiEditorView extends View {
         }
         c.drawBitmap(backdrop,0,0,null);
     }
+    // ================================================================== Theme page
+    private static final int H_PRESET=200,H_RANDOM=220,H_MUTATE=221,H_UNDO=222,H_PROP=230,H_TEXTURE=250;
+    private final RectF side=new RectF(),texTrack=new RectF();
+    private float sideScroll,sideContent;
+    private final UiTheme[] presetThemes=new UiTheme[UiTheme.PRESETS.length];
+    private final java.util.ArrayDeque<UiTheme> undo=new java.util.ArrayDeque<>();
+    private final java.util.Random rng=new java.util.Random();
+    private static final String[] PROPS={"Material","Panel colour","Accent colour","Text colour","Border","Corners","Button shape","Button fill","Bar style"};
+    private void drawHint(Canvas c){
+        if(hint!=null&&System.currentTimeMillis()<hintUntil){float tw=ui.measure(hint,12,1)+dp(32),cx=vw*.5f,t=barH+dp(12);ui.pill(c,cx-tw*.5f,t,cx+tw*.5f,t+dp(32),0xf02a313a);ui.textMid(c,hint,cx,t+dp(16),12,Ui.TEXT,1,0);postInvalidateDelayed(300);}
+    }
+    private void drawThemeTab(Canvas c){
+        float sideW=Math.min(dp(300),vw*.42f);side.set(vw-sideW,barH,vw,vh);
+        float aw=vw-sideW-dp(12),ah=vh-barH-dp(8);
+        scale=Math.min(aw/w,ah/h);offX=dp(6)+(aw-w*scale)*.5f;offY=barH+dp(4);
+        UiTheme th=project.theme;
+        c.save();c.translate(offX,offY);c.scale(scale,scale);c.clipRect(0,0,w,h);
+        drawBackdrop(c);
+        float[] jc=hud.joyCenter(w,h);hud.drawJoystick(c,jc[0],jc[1],jc[0]+dp(14),jc[1]-dp(10),.9f);
+        hud.drawStatus(c,w,h,world,true);
+        hud.drawControls(c,w,h,world.hero,null,true);
+        // sample dialogue box and menu button so the whole style can be judged
+        float dl=w*.18f,dr=w*.62f,dt=h*.3f,db=dt+dp(92);
+        th.panel(c,p,dl,dt,dr,db,ui.dp,.97f,false);
+        float pw=ui.measure("Old Merrick",13,2)+dp(28);ui.round(c,dl+dp(16),dt-dp(14),dl+dp(16)+pw,dt+dp(14),dp(14),UiTheme.shade(th.accent,.42f));ui.outline(c,dl+dp(16),dt-dp(14),dl+dp(16)+pw,dt+dp(14),dp(14),th.accent,dp(1.2f));
+        ui.textMid(c,"Old Merrick",dl+dp(30),dt,13,0xffffffff,2,-1);
+        ui.text(c,"Welcome, traveller. The crypt lies east.",dl+dp(22),dt+dp(38),14,th.text,1,-1);
+        ui.text(c,"1.  Tell me more",dl+dp(22),dt+dp(66),13,th.textDim(),1,-1);
+        float ml=w*.18f,mt=db+dp(20);th.panel(c,p,ml,mt,ml+dp(220),mt+dp(46),ui.dp,1,false);ui.icon(c,Icons.FLAG,ml+dp(26),mt+dp(23),18,th.text);ui.textMid(c,"New Game",ml+dp(50),mt+dp(23),16,th.text,2,-1);
+        c.restore();
+        ui.clearHits();
+        // side panel
+        ui.rect(c,side.left,side.top,side.right,side.bottom,Ui.SURFACE);ui.vline(c,side.left,side.top,side.bottom,Ui.BORDER);
+        c.save();c.clipRect(side);
+        float l=side.left+dp(12),rr=side.right-dp(12),y=side.top+dp(12)-sideScroll;
+        ui.text(c,ui.ellipsize(th.name,15,1,rr-l),l,y+dp(14),15,Ui.TEXT,1,-1);ui.text(c,"Current theme",l,y+dp(30),10.5f,Ui.TEXT_3);y+=dp(42);
+        float bw=(rr-l-dp(12))/3f;
+        r.set(l,y,l+bw,y+dp(34));ui.button(c,r,Icons.SPARKLE,"Random",Ui.PRIMARY);sideHit(r,H_RANDOM);
+        r.set(l+bw+dp(6),y,l+bw*2+dp(6),y+dp(34));ui.button(c,r,Icons.RESET,"Mutate",Ui.ACTIVE);sideHit(r,H_MUTATE);
+        r.set(l+bw*2+dp(12),y,rr,y+dp(34));ui.button(c,r,Icons.UNDO,"Undo",undo.isEmpty()?Ui.DISABLED:Ui.NORMAL);sideHit(r,H_UNDO);y+=dp(44);
+        ui.caption(c,"Built-in themes",l,y+dp(8),Ui.TEXT_3);y+=dp(16);
+        float tw=(rr-l-dp(8))/2f;
+        for(int i=0;i<presetThemes.length;i++){if(presetThemes[i]==null)presetThemes[i]=UiTheme.preset(i);UiTheme pt2=presetThemes[i];
+            float x=l+(i%2)*(tw+dp(8)),yy=y+(i/2)*dp(58);
+            pt2.panel(c,p,x,yy,x+tw,yy+dp(50),ui.dp,1,false);
+            pt2.button(c,p,x+tw-dp(20),yy+dp(25),dp(11),0xffc8402e,false,ui.dp,1);
+            ui.text(c,ui.ellipsize(UiTheme.PRESETS[i],11.5f,2,tw-dp(44)),x+dp(10),yy+dp(22),11.5f,pt2.text,2,-1);
+            ui.text(c,UiTheme.MATERIALS[pt2.material],x+dp(10),yy+dp(38),9.5f,pt2.textDim(),1,-1);
+            if(th.name.equals(UiTheme.PRESETS[i])){ui.outline(c,x-dp(2),yy-dp(2),x+tw+dp(2),yy+dp(52),dp(8),Ui.ORANGE,dp(2));}
+            r.set(x,yy,x+tw,yy+dp(50));sideHit(r,H_PRESET+i);}
+        y+=((presetThemes.length+1)/2)*dp(58)+dp(6);
+        ui.caption(c,"Customise",l,y+dp(8),Ui.TEXT_3);y+=dp(16);
+        for(int i=0;i<PROPS.length;i++){r.set(l,y,rr,y+dp(40));ui.round(c,r,dp(7),Ui.SURFACE_2);
+            ui.text(c,PROPS[i],l+dp(10),y+dp(15),10.5f,Ui.TEXT_3,1,-1);
+            String v;int sw=0;
+            switch(i){case 0:v=UiTheme.MATERIALS[th.material];break;case 1:v=colorName(th.panel,UiTheme.PANEL_NAMES,UiTheme.PANEL_COLS);sw=th.panel;break;
+                case 2:v=colorName(th.accent,UiTheme.ACCENT_NAMES,UiTheme.ACCENT_COLS);sw=th.accent;break;case 3:v=colorName(th.text,UiTheme.TEXT_NAMES,UiTheme.TEXT_COLS);sw=th.text;break;
+                case 4:v=UiTheme.BORDERS[th.border];break;case 5:v=UiTheme.CORNERS[th.corners];break;case 6:v=UiTheme.BUTTON_SHAPES[th.buttonShape];break;case 7:v=UiTheme.BUTTON_FILLS[th.buttonFill];break;default:v=UiTheme.BAR_STYLES[th.barStyle];}
+            float vx=l+dp(10);if(sw!=0){ui.round(c,vx,y+dp(22),vx+dp(14),y+dp(36),dp(3),sw);ui.outline(c,vx,y+dp(22),vx+dp(14),y+dp(36),dp(3),0x60ffffff,dp(1));vx+=dp(20);}
+            ui.text(c,ui.ellipsize(v,12.5f,1,rr-vx-dp(30)),vx,y+dp(33),12.5f,Ui.TEXT,1,-1);ui.icon(c,Icons.CHEVRON_DOWN,rr-dp(14),y+dp(20),13,Ui.TEXT_3);
+            sideHit(r,H_PROP+i);y+=dp(46);}
+        // texture strength slider
+        r.set(l,y,rr,y+dp(46));ui.round(c,r,dp(7),Ui.SURFACE_2);
+        ui.text(c,"Texture strength",l+dp(10),y+dp(16),10.5f,Ui.TEXT_3,1,-1);ui.text(c,Math.round(th.texture*100)+"%",rr-dp(10),y+dp(16),11.5f,Ui.TEXT,1,1);
+        float tl=l+dp(12),tr=rr-dp(12),ty=y+dp(32);ui.round(c,tl,ty-dp(2),tr,ty+dp(2),dp(2),Ui.SURFACE_3);ui.round(c,tl,ty-dp(2),tl+(tr-tl)*th.texture,ty+dp(2),dp(2),Ui.ACCENT);p.setColor(0xffffffff);c.drawCircle(tl+(tr-tl)*th.texture,ty,dp(7),p);
+        texTrack.set(tl,y,tr,y+dp(46));sideHit(r,H_TEXTURE);y+=dp(56);
+        ui.text(c,"The theme styles the status bar, buttons, joystick,",l,y+dp(4),10.5f,Ui.TEXT_3);
+        ui.text(c,"quest tracker, main menu, Options and dialogue.",l,y+dp(18),10.5f,Ui.TEXT_3);y+=dp(30);
+        sideContent=y+sideScroll-side.top;c.restore();
+        float max=Math.max(0,sideContent-side.height());if(sideScroll>max||sideScroll<0){sideScroll=Math.max(0,Math.min(max,sideScroll));invalidate();}
+    }
+    private void sideHit(RectF rr,int id){if(rr.bottom<side.top||rr.top>side.bottom)return;ui.hit(rr.left,Math.max(rr.top,side.top),rr.right,Math.min(rr.bottom,side.bottom),id);}
+    private static String colorName(int c,String[] names,int[] cols){for(int i=0;i<cols.length;i++)if((cols[i]|0xff000000)==(c|0xff000000))return names[i];return String.format("#%06X",c&0xffffff);}
+    private void pushUndo(){undo.push(project.theme.copy());while(undo.size()>20)undo.removeLast();}
+    private void themeChanged(){project.theme.changed();changed();invalidate();}
+    private void setTexture(float x){project.theme.texture=Math.round(Math.max(0,Math.min(1,(x-texTrack.left)/Math.max(1,texTrack.width())))*20)/20f;project.theme.changed();invalidate();}
+    private void themeTap(int hid){
+        UiTheme th=project.theme;
+        if(hid>=H_PRESET&&hid<H_PRESET+UiTheme.PRESETS.length){pushUndo();project.theme=UiTheme.preset(hid-H_PRESET);themeChanged();hint(UiTheme.PRESETS[hid-H_PRESET]+" theme");return;}
+        switch(hid){
+            case H_RANDOM:pushUndo();project.theme=UiTheme.random(rng);themeChanged();hint("Generated "+UiTheme.MATERIALS[project.theme.material].toLowerCase()+" theme · Mutate to tweak, Undo to go back");return;
+            case H_MUTATE:pushUndo();th.mutate(rng);themeChanged();return;
+            case H_UNDO:if(!undo.isEmpty()){project.theme=undo.pop();themeChanged();}return;
+        }
+        if(hid<H_PROP||hid>=H_PROP+PROPS.length||host==null)return;
+        int i=hid-H_PROP;
+        String[] items;int cur;
+        switch(i){
+            case 0:items=UiTheme.MATERIALS;cur=th.material;break;
+            case 1:items=withRandom(UiTheme.PANEL_NAMES);cur=indexOf(UiTheme.PANEL_COLS,th.panel);break;
+            case 2:items=withRandom(UiTheme.ACCENT_NAMES);cur=indexOf(UiTheme.ACCENT_COLS,th.accent);break;
+            case 3:items=withRandom(UiTheme.TEXT_NAMES);cur=indexOf(UiTheme.TEXT_COLS,th.text);break;
+            case 4:items=UiTheme.BORDERS;cur=th.border;break;
+            case 5:items=UiTheme.CORNERS;cur=th.corners;break;
+            case 6:items=UiTheme.BUTTON_SHAPES;cur=th.buttonShape;break;
+            case 7:items=UiTheme.BUTTON_FILLS;cur=th.buttonFill;break;
+            default:items=UiTheme.BAR_STYLES;cur=th.barStyle;
+        }
+        final String[] it=items;
+        host.choose(PROPS[i],items,cur,k->{
+            pushUndo();UiTheme t=project.theme;boolean rnd=k==it.length-1&&(i>=1&&i<=3);
+            switch(i){
+                case 0:t.material=k;break;
+                case 1:t.panel=rnd?UiTheme.hsv(rng.nextFloat()*360,.1f+rng.nextFloat()*.5f,.1f+rng.nextFloat()*.3f):UiTheme.PANEL_COLS[k];if(UiTheme.luma(t.panel)>.5f!=UiTheme.luma(t.text)<.5f)t.fixText();break;
+                case 2:t.accent=rnd?UiTheme.hsv(rng.nextFloat()*360,.5f+rng.nextFloat()*.4f,.8f+rng.nextFloat()*.2f):UiTheme.ACCENT_COLS[k];break;
+                case 3:t.text=rnd?UiTheme.hsv(rng.nextFloat()*360,.1f,.95f):UiTheme.TEXT_COLS[k];break;
+                case 4:t.border=k;break;case 5:t.corners=k;break;case 6:t.buttonShape=k;break;case 7:t.buttonFill=k;break;default:t.barStyle=k;
+            }
+            t.name="Custom";themeChanged();});
+    }
+    private static String[] withRandom(String[] names){String[] o=java.util.Arrays.copyOf(names,names.length+1);o[names.length]="Random colour";return o;}
+    private static int indexOf(int[] cols,int c){for(int i=0;i<cols.length;i++)if((cols[i]|0xff000000)==(c|0xff000000))return i;return -1;}
+
     private void drawTopBar(Canvas c){
         ui.rect(c,0,0,vw,barH,Ui.SURFACE);ui.hline(c,0,vw,barH-dp(1),Ui.BORDER);
         float cy=barH*.5f,bh=dp(34),top=cy-bh*.5f;
@@ -108,7 +222,7 @@ public class UiEditorView extends View {
     }
     private void drawComingSoon(Canvas c){
         String[][] info={{},
-            {"Theme","One style for the status bar, buttons, menus, dialogue and inventory.","Built-in fantasy themes (Parchment, Stone & Iron, Elven Wood, Arcane Crystal, Royal Gold…) and a style generator with Randomize and Mutate."},
+            {},
             {"Main Menu","Title text and style, background (level camera, image or gradient), menu buttons and menu music.","Plus your own splash logo after \"Powered by RPG Pocket Editor\"."},
             {"Screens","Level title cards, the death screen and the victory screen.","Text, colours and timing for each one."}};
         String[] t=info[tab];float cx=vw*.5f,cy=barH+(vh-barH)*.45f;
@@ -187,7 +301,8 @@ public class UiEditorView extends View {
     @Override public boolean onTouchEvent(MotionEvent e){
         int a=e.getActionMasked();float x=e.getX(),y=e.getY();
         if(a==MotionEvent.ACTION_DOWN){
-            downX=x;downY=y;moved=false;mode=0;downHit=-1;
+            downX=x;downY=y;lastY=y;moved=false;mode=0;downHit=-1;
+            if(tab==1&&y>=barH&&x>=side.left){downHit=ui.hitAt(x,y);mode=downHit==H_TEXTURE?7:6;if(mode==7)setTexture(x);return true;}
             if(y<barH||tab!=0){downHit=ui.hitAt(x,y);mode=5;return true;}
             if(panel.contains(x,y)){
                 downHit=ui.hitAt(x,y);
@@ -209,10 +324,13 @@ public class UiEditorView extends View {
                 L().place(sel,cx,cy,w,h,ui.dp);if(wasFloating)hint("Joystick switched to a fixed position");}
             else if(mode==2){panelX=x-grabX;panelY=y-grabY;}
             else if(mode==3||mode==4)setSlider(mode,x);
-            invalidate();return true;
+            else if(mode==6&&moved){sideScroll-=y-lastY;}
+            else if(mode==7)setTexture(x);
+            lastY=y;invalidate();return true;
         }
         if(a==MotionEvent.ACTION_UP){
-            if(mode==5&&!moved){int hid=ui.hitAt(x,y);if(hid==downHit)tap(hid);}
+            if((mode==5||mode==6)&&!moved){int hid=ui.hitAt(x,y);if(hid==downHit){if(mode==6)themeTap(hid);else tap(hid);}}
+            if(mode==7)changed();
             if(mode==1||mode==3||mode==4)changed();
             mode=0;invalidate();return true;
         }
