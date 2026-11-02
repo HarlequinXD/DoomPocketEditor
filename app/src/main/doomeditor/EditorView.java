@@ -219,8 +219,9 @@ public class EditorView extends View {
     /** Android back: close the launcher, leave Play, leave an editor for Home; false means leave the project. */
     boolean goBack(){
         if(launcherOpen){launcherOpen=false;invalidate();return true;}
+        if(mode==PLAY&&menu!=null&&menu.active()){if(!menu.back())changeMode(returnMode);invalidate();return true;}
         if(mode==PLAY&&bagOpen){closeBag();invalidate();return true;}
-        if(mode==PLAY){changeMode(returnMode);invalidate();return true;}
+        if(mode==PLAY){pauseToMenu();invalidate();return true;}
         if(mode!=HOME){changeMode(HOME);invalidate();return true;}
         return false;
     }
@@ -230,12 +231,14 @@ public class EditorView extends View {
         boolean sv=Perf.saver(getContext());
         host.choose(project.name,new String[]{"Check map ("+(errs.isEmpty()?"no problems":errs.size()+" warning"+(errs.size()==1?"":"s"))+")","Save now",
                 sv?"Battery saver: ON (tap to turn off)":"Battery saver: off (30 fps, still backdrops)",
-                Sprites.pixel?"Built-in sprites: Pixel art (tap for HD)":"Built-in sprites: HD (tap for pixel art)","Reset level…","Back to projects"},-1,k->{
+                Sprites.pixel?"Built-in sprites: Pixel art (tap for HD)":"Built-in sprites: HD (tap for pixel art)","Reset level…","Back to projects",
+                frontEnd()?"Play: splash + main menu ON (tap to start straight in the level)":"Play: starts straight in the level (tap for splash + main menu)"},-1,k->{
             if(k==0)showMapCheck();
             else if(k==1)save(true);
             else if(k==2){Perf.setSaver(getContext(),!sv);hint(!sv?"Battery saver on · 30 fps game and 3D, still previews":"Battery saver off · 60 fps");lastInteraction=System.currentTimeMillis();}
             else if(k==4)host.confirm("Reset the level?","This clears every sector and placed entity. Entity types, FSMs and sprites are kept.","Reset level",()->{resetLevel();invalidate();});
             else if(k==5){save(false);if(onExitToTitle!=null)onExitToTitle.run();}
+            else if(k==6){GameSettings.frontEnd=!GameSettings.frontEnd;GameSettings.save(getContext());hint(GameSettings.frontEnd?"Play opens with the splash screen and main menu":"Play starts straight in the level");}
             else if(k==3){boolean hd=Sprites.pixel;Perf.setHdSprites(getContext(),hd);java.util.Arrays.fill(spriteThumbs,null);hint(hd?"Built-in sprites: HD":"Built-in sprites: pixel art");}
             invalidate();});
     }
@@ -981,8 +984,26 @@ public class EditorView extends View {
     }
 
     // ---------------------------------------------------------------- Play
+    // ---------------------------------------------------------------- game front end (splash, main menu, options, pause)
+    private GameMenu menu;
+    private GameMenu menu(){
+        if(menu==null)menu=new GameMenu(getContext(),ui,project,renderer,sfx,new GameMenu.Listener(){
+            @Override public void newGame(){startPlay();hint("Left: move · right: look · Attack, Cast, Use and Potion on the right · Bag top right");}
+            @Override public void resume(){if(world==null)startPlay();else{world.paused=bagOpen;}}
+            @Override public void exitToEditor(){changeMode(returnMode);}
+        });
+        return menu;
+    }
+    private boolean frontEnd(){GameSettings.load(getContext());return GameSettings.frontEnd;}
+    /** In-game Back / close button: the pause menu (or straight back to the editor when the front end is off). */
+    private void pauseToMenu(){
+        if(!frontEnd()||world==null){changeMode(returnMode);return;}
+        world.paused=true;world.input.clear();for(int i=0;i<buttonPointer.length;i++)buttonPointer[i]=-1;joyPointer=lookPointer=-1;joyVisible=false;moveX=moveY=0;
+        menu().openPause();
+    }
     private void startPlay(){bagOpen=false;world=new World(project,sfx);sfx.start();for(int i=0;i<buttonPointer.length;i++)buttonPointer[i]=-1;joyPointer=lookPointer=-1;joyVisible=false;}
     private void drawPlay(Canvas c,float dt){
+        if(menu!=null&&menu.active()){menu.draw(c,w,h,dt);nextFrame();return;}
         if(world==null)startPlay();
         if(world.restartRequested){startPlay();hint("Level restarted");}
         Input in=world.input;
@@ -1202,7 +1223,7 @@ public class EditorView extends View {
         for(int i=0;i<4;i++){ui.text(c,rows[i],cx-dp(20),y+dp(46)+i*dp(28),16,Ui.TEXT_2,1,1);ui.text(c,vals[i],cx+dp(20),y+dp(46)+i*dp(28),16,Ui.TEXT,2,-1);}
         float by=y+dp(170);
         r.set(cx-dp(170),by,cx-dp(10),by+dp(40));ui.button(c,r,Icons.RESET,"Play again",Ui.PRIMARY);ui.hit(r,H_RETRY);
-        r.set(cx+dp(10),by,cx+dp(170),by+dp(40));ui.button(c,r,Icons.ARROW_LEFT,"Back to editor",Ui.NORMAL);ui.hit(r,H_BACK);
+        r.set(cx+dp(10),by,cx+dp(170),by+dp(40));ui.button(c,r,Icons.ARROW_LEFT,frontEnd()?"Main menu":"Back to editor",Ui.NORMAL);ui.hit(r,H_BACK);
     }
     private static String pct(int a,int b){return b==0?"—":Math.round(a*100f/b)+"%";}
 
@@ -1223,16 +1244,16 @@ public class EditorView extends View {
     private void flushSave(){removeCallbacks(saveTask);saveQueued=false;project.save(getContext());}
     private void resetLevel(){project.level=new Level();level=project.level;sectorEditor=new SectorEditor(level);pending.clear();selKind=0;walker=null;cancelStage();changed("Level reset");}
     private void changeMode(int next){
-        if(mode==PLAY&&next!=PLAY){sfx.stopMusic(0);sfx.stopSounds();sfx.stop();world=null;}
+        if(mode==PLAY&&next!=PLAY){sfx.stopMusic(0);sfx.stopSounds();sfx.stop();world=null;if(menu!=null)menu.state=GameMenu.OFF;}
         if(next==PLAY&&mode!=PLAY)returnMode=mode;
         if(next==HOME)save(false);
         launcherOpen=false;
         cancelStage();entStage=0;
         mode=next;pending.clear();joyVisible=false;joyPointer=lookPointer=upPointer=downPointer=-1;moveX=moveY=0;flyUp=flyDown=false;dpadPointer=-1;
         lastFrame=System.nanoTime();
-        if(next==PLAY)startPlay();
+        if(next==PLAY){if(frontEnd()){world=null;menu().begin();}else startPlay();}
         setKeepScreenOn(next==PLAY);   // the screen may sleep normally while editing
-        if(next!=HOME)hint(next==PLAY?"Left: move · right: look · Attack, Cast, Use and Potion on the right · Bag top right":next==POLY?"Pick a tool, move the cursor, tap Apply":next==THINGS?"Pick an entity type, then Apply to place it":"Left: move · right: look · double-tap a surface to texture it");
+        if(next!=HOME&&!(next==PLAY&&frontEnd()))hint(next==PLAY?"Left: move · right: look · Attack, Cast, Use and Potion on the right · Bag top right":next==POLY?"Pick a tool, move the cursor, tap Apply":next==THINGS?"Pick an entity type, then Apply to place it":"Left: move · right: look · double-tap a surface to texture it");
     }
 
     // ---------------------------------------------------------------- touch
@@ -1364,14 +1385,17 @@ public class EditorView extends View {
         return true;
     }
     private boolean playTouch(MotionEvent e,int a,int idx,float x,float y){
+        if(menu!=null&&menu.active()){
+            if(a==MotionEvent.ACTION_DOWN)menu.down(x,y);else if(a==MotionEvent.ACTION_MOVE)menu.move(x,y);else if(a==MotionEvent.ACTION_UP||a==MotionEvent.ACTION_CANCEL)menu.up();
+            invalidate();return true;}
         if(world==null)return true;
         int id=e.getPointerId(idx);
         if(a==MotionEvent.ACTION_DOWN||a==MotionEvent.ACTION_POINTER_DOWN){
             int hid=ui.hitAt(x,y);
-            if(world.levelComplete){if(hid==H_RETRY)startPlay();else if(hid==H_BACK)changeMode(returnMode);return true;}
+            if(world.levelComplete){if(hid==H_RETRY)startPlay();else if(hid==H_BACK){if(frontEnd()){world=null;menu().paused=false;menu().state=GameMenu.MAIN;}else changeMode(returnMode);}return true;}
             if(bagOpen){bagTap(hid);bagDragY=y;bagDragged=false;return true;}
             if(world.dialogue!=null){if(hid>=H_DLG&&hid<H_DLG+3)world.chooseDialogue(hid-H_DLG);return true;}
-            if(hid==H_EXITPLAY){changeMode(returnMode);return true;}
+            if(hid==H_EXITPLAY){pauseToMenu();return true;}
             if(hid==H_BAG){openBag();return true;}
             int b=hid==H_FIRE?Input.FIRE:hid==H_USE?Input.USE:hid==H_JUMP?Input.JUMP:hid==H_WEAPON?Input.WEAPON:hid==H_SPELL?Input.SPELL:hid==H_POTION?Input.POTION:-1;
             if(b>=0){buttonPointer[b]=id;world.input.setButton(b,true);return true;}
@@ -1383,7 +1407,7 @@ public class EditorView extends View {
             if(bagOpen){bagScroll=Math.max(0,bagScroll-(y-bagDragY));bagDragY=y;return true;}
             for(int i=0;i<e.getPointerCount();i++){int pid=e.getPointerId(i);float px=e.getX(i),py=e.getY(i);
                 if(pid==joyPointer)moveJoystick(px,py);
-                if(pid==lookPointer){world.input.lookX+=px-lookLastX;world.input.lookY+=py-lookLastY;lookLastX=px;lookLastY=py;}}
+                if(pid==lookPointer){float sens=GameSettings.lookSensitivity;world.input.lookX+=(px-lookLastX)*sens;world.input.lookY+=(py-lookLastY)*sens*(GameSettings.invertLook?-1:1);lookLastX=px;lookLastY=py;}}
             return true;
         }
         if(a==MotionEvent.ACTION_UP||a==MotionEvent.ACTION_POINTER_UP||a==MotionEvent.ACTION_CANCEL){

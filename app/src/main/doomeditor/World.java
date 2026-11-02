@@ -49,7 +49,7 @@ final class World {
     /** Floating combat text (damage numbers, MISS, CRITICAL, +XP...). */
     static final class Floater {float x,y,z,t;final String text;final int color;Floater(float x,float y,float z,String text,int color){this.x=x;this.y=y;this.z=z;this.text=text;this.color=color;}}
     final ArrayList<Floater> floaters=new ArrayList<>();
-    void floater(Actor a,String text,int color){if(a==null)return;floaters.add(new Floater(a.x+(rng.nextFloat()-.5f)*.25f,a.y+(rng.nextFloat()-.5f)*.25f,a.z+a.height+.1f,text,color));if(floaters.size()>40)floaters.remove(0);}
+    void floater(Actor a,String text,int color){if(a==null||!GameSettings.combatText)return;floaters.add(new Floater(a.x+(rng.nextFloat()-.5f)*.25f,a.y+(rng.nextFloat()-.5f)*.25f,a.z+a.height+.1f,text,color));if(floaters.size()>40)floaters.remove(0);}
     /** NPC conversation shown over the game (pauses it). Choices send events back to the speaker's FSM. */
     static final class Dialogue {String speaker,text;String[] choices,events;Actor who;}
     Dialogue dialogue;
@@ -407,6 +407,7 @@ final class World {
     /** Applies damage, shows the number, awards XP to the hero for kills and sends DAMAGED / DIED to the FSM. */
     void damage(Actor t,int amount,Actor src,boolean crit){
         if(t==null||!t.alive||t.invulnerable||amount<=0||t.removed)return;
+        if(t.isPlayer)amount=Math.max(1,Math.round(amount*GameSettings.damageTaken()));   // Options > Difficulty
         if(t.isPlayer){damageFlash=Math.min(1,damageFlash+.25f+amount*.02f);flashColor=0xffff0000;}
         floater(t,crit?amount+"!":String.valueOf(amount),t.isPlayer?0xffff5a4a:crit?0xffffd040:0xffffffff);
         t.health-=amount;
@@ -792,7 +793,7 @@ final class World {
     void message(String m,float secs){message=m;messageTime=Math.max(.5f,secs);}
     void centerPrint(String m,float secs){center=m;centerTime=Math.max(.5f,secs);}
     void flash(int color,float strength){flashColor=color==0?0xffff0000:color==1?0xffffd040:color==2?0xffffffff:0xff40ff40;if(color==0)damageFlash=Math.min(1,strength);else pickupFlash=Math.min(1,strength);}
-    void shake(float strength,float secs){shakeStrength=Math.max(shakeStrength*(shakeTime>0?1:0),strength);shakeTime=Math.max(shakeTime,secs);}
+    void shake(float strength,float secs){if(!GameSettings.cameraShake)return;shakeStrength=Math.max(shakeStrength*(shakeTime>0?1:0),strength);shakeTime=Math.max(shakeTime,secs);}
     void exitLevel(){if(!levelComplete){levelComplete=true;completeTime=0;sound(SoundFx.SWITCH,player);}}
     void requestRestart(){restartRequested=true;}
     void sound(int id,Actor at){sound(id,at,null);}

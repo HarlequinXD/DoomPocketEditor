@@ -50,7 +50,7 @@ final class SoundFx {
     /** Uses the project's replacements for built-in sounds and its volume settings. */
     synchronized void useProject(Project p){
         for(int i=0;i<COUNT;i++){SoundAsset a=p==null?null:p.sound(p.soundOverride(NAMES[i]));override[i]=a!=null?a.render():null;}
-        if(p!=null){sfxVolume=p.sfxVolume;musicVolume=p.musicVolume;}
+        if(p!=null){sfxVolume=p.sfxVolume*GameSettings.soundVolume;musicVolume=p.musicVolume*GameSettings.musicVolume;}   // project mix x player's Options
     }
     short[] clip(int id){if(id<0||id>=COUNT)return null;short[] o=override[id];return o!=null?o:builtin(id);}
     void play(int id,float volume){play(clip(id),volume,1f);}
