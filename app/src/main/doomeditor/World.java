@@ -101,7 +101,7 @@ final class World {
     // ------------------------------------------------------------------ blood: droplets fly, then stick to floors and walls
     static final class Drop {float x,y,z,vx,vy,vz,size;int color;}
     /** A splat lying on a surface: centre, surface normal (floor = 0,0,1), radius and a seed for its shape. */
-    static final class Splat {float x,y,z,nx,ny,nz,r;int seed,color;byte[] mask;}
+    static final class Splat {float x,y,z,nx,ny,nz,r,ang;int seed,color,type;byte[] mask;}
     final ArrayList<Drop> drops=new ArrayList<>();
     final ArrayList<Splat> splats=new ArrayList<>();
     static final int MAX_DROPS=280,MAX_SPLATS=450;
@@ -127,10 +127,12 @@ final class World {
             d.size=.02f+rng.nextFloat()*.035f;d.color=BLOOD[rng.nextInt(BLOOD.length)];drops.add(d);
         }
         // a little pool right under them
-        float fl=floorAt(t.x,t.y);addSplat(t.x+(rng.nextFloat()-.5f)*.2f,t.y+(rng.nextFloat()-.5f)*.2f,fl+.002f,0,0,1,death?.32f:.08f+rng.nextFloat()*.06f);
+        float fl=floorAt(t.x,t.y);addSplat(t.x+(rng.nextFloat()-.5f)*.2f,t.y+(rng.nextFloat()-.5f)*.2f,fl+.002f,0,0,1,death?.3f:.08f+rng.nextFloat()*.06f,death?23+rng.nextInt(2):rng.nextInt(SplatDesigns.COUNT),rng.nextFloat()*6.2832f);
     }
-    void addSplat(float x,float y,float z,float nx,float ny,float nz,float r){
-        Splat s=new Splat();s.x=x;s.y=y;s.z=z;s.nx=nx;s.ny=ny;s.nz=nz;s.r=r;s.seed=rng.nextInt(1<<20);s.color=BLOOD[rng.nextInt(BLOOD.length)];
+    void addSplat(float x,float y,float z,float nx,float ny,float nz,float r){addSplat(x,y,z,nx,ny,nz,r,rng.nextInt(SplatDesigns.COUNT),rng.nextFloat()*6.2832f);}
+    /** type is one of the SplatDesigns; angle turns it (floor: the direction the droplet was travelling). */
+    void addSplat(float x,float y,float z,float nx,float ny,float nz,float r,int type,float angle){
+        Splat s=new Splat();s.type=type;s.ang=angle;s.x=x;s.y=y;s.z=z;s.nx=nx;s.ny=ny;s.nz=nz;s.r=r;s.seed=rng.nextInt(1<<20);s.color=BLOOD[rng.nextInt(BLOOD.length)];
         splats.add(s);if(splats.size()>MAX_SPLATS)splats.remove(0);
     }
     private void tickBlood(float dt){
@@ -150,7 +152,7 @@ final class World {
                 addSplat(hx+qx*.006f,hy+qy*.006f,hz,qx,qy,0,d.size*(1.8f+rng.nextFloat()*1.6f));drops.remove(i);continue;}
             float ce=ceilAt(nx,ny);if(nz>ce-.03f){nz=ce-.03f;d.vz=-Math.abs(d.vz)*.2f;}
             float fl=floorAt(nx,ny);
-            if(nz<=fl){addSplat(nx,ny,fl+.002f,0,0,1,d.size*(1.6f+rng.nextFloat()*1.8f));drops.remove(i);continue;}
+            if(nz<=fl){addSplat(nx,ny,fl+.002f,0,0,1,d.size*(2.0f+rng.nextFloat()*2.1f),rng.nextInt(SplatDesigns.COUNT),(float)Math.atan2(d.vy,d.vx));drops.remove(i);continue;}
             d.x=nx;d.y=ny;d.z=nz;
         }
     }

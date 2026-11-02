@@ -267,7 +267,7 @@ final class Renderer {
     World fx;
     private final float[] cX=new float[4],cY=new float[4],cQ=new float[4];
     private final int[] lightRow=new int[32];
-    private static final int MS=24;private static final float MS_SCALE=MS/3.4f;
+    private static final int MS=32;private static final float SPAN=1.9f,MS_SCALE=MS/(2*SPAN);
     /** Blood splats on floors and walls: each pixel is ray-cast onto the splat's plane and drawn only where that surface is visible. */
     private void drawSplats(Level level){
         java.util.ArrayList<World.Splat> list=fx.splats;
@@ -277,7 +277,7 @@ final class Renderer {
     private void splat(Level level,World.Splat s){
         float nx=s.nx,ny=s.ny,nz=s.nz;
         if((camX-s.x)*nx+(camY-s.y)*ny+(eye-s.z)*nz<=0)return;           // seen from behind
-        float dx=s.x-camX,dy=s.y-camY,ccz=dx*cs+dy*sn,R=s.r*1.7f;
+        float dx=s.x-camX,dy=s.y-camY,ccz=dx*cs+dy*sn,R=s.r*SPAN;
         if(ccz<-R||ccz>40)return;
         float ux,uy,uz,vx2,vy2,vz2;
         if(nz>.5f){ux=1;uy=0;uz=0;vx2=0;vy2=1;vz2=0;}else{ux=-ny;uy=nx;uz=0;vx2=0;vy2=0;vz2=1;}
@@ -296,34 +296,34 @@ final class Renderer {
         if(x0>x1||y0>y1)return;
         int si=level.sectorAt(s.x+nx*.02f,s.y+ny*.02f);int L=si<0?24:light(level.sectors.get(si).light);int minL=Math.max(1,L/4);
         float pd=dx*nx+dy*ny+(s.z-eye)*nz,inv=1f/focal,ir=1f/s.r;
-        byte[] mask=s.mask;if(mask==null){mask=new byte[MS*MS];for(int v=0;v<MS;v++)for(int u=0;u<MS;u++)mask[v*MS+u]=(byte)splatShape((u+.5f)/MS_SCALE-1.7f,(v+.5f)/MS_SCALE-1.7f,s.seed);s.mask=mask;}
+        byte[] mask=s.mask;if(mask==null){mask=SplatDesigns.mask(s.type,s.ang,nz<.5f,s.seed,MS,SPAN);s.mask=mask;}
         int[] lt=lightRow;
         if(nz>.5f){   // floor splat: each screen row is one distance, so everything but the mask lookup is per row
             for(int y=y0;y<=y1;y++){float ry=(horizon-(y+.5f))*inv;if(ry>-1e-5f)continue;
                 float t=pd/ry;if(t<NEAR)continue;float iz=1f/t,tol=iz*.035f+1e-4f;
                 int li=(int)(L+3-t*fadeK);if(li<minL)li=minL;else if(li>31)li=31;int lm=lt[li];
                 float rx0=(x0+.5f-W*.5f)*inv,a=(cs-rx0*sn)*t-dx,b=(sn+rx0*cs)*t-dy,da=-sn*t*inv,db=cs*t*inv;
-                float mu=(a*ir+1.7f)*MS_SCALE,mv=(b*ir+1.7f)*MS_SCALE,dmu=da*ir*MS_SCALE,dmv=db*ir*MS_SCALE;
-                int c1=Textures.mul(s.color,lm),c2=Textures.mul(Textures.mul(s.color,200),lm),c3=Textures.mul(Textures.mul(s.color,330),lm);
+                float mu=(a*ir+SPAN)*MS_SCALE,mv=(b*ir+SPAN)*MS_SCALE,dmu=da*ir*MS_SCALE,dmv=db*ir*MS_SCALE;
+                int c1=Textures.mul(s.color,lm),c2=Textures.mul(Textures.mul(s.color,190),lm),c3=Textures.mul(Textures.mul(s.color,330),lm),c4=Textures.mul(Textures.mul(s.color,150),lm);
                 for(int x=x0,o=y*W+x0;x<=x1;x++,o++,mu+=dmu,mv+=dmv){
                     if(mu<0||mv<0||mu>=MS||mv>=MS)continue;
                     int shade=mask[(int)mv*MS+(int)mu];if(shade==0)continue;
                     float zz=zb[o];if(iz-zz>tol||zz-iz>tol)continue;
-                    pix[o]=shade==1?c1:shade==2?c2:c3;}
+                    pix[o]=shade==1?c1:shade==2?c2:shade==3?c3:c4;}
             }
             return;
         }
         if(Math.abs(nz)<.01f){   // wall splat: each screen column is one distance
             for(int x=x0;x<=x1;x++){float rx=(x+.5f-W*.5f)*inv;float Dx=cs-rx*sn,Dy=sn+rx*cs,den=Dx*nx+Dy*ny;if(den>-1e-5f)continue;
                 float t=pd/den;if(t<NEAR)continue;float iz=1f/t,tol=iz*.035f+1e-4f;
-                float a=(Dx*t-dx)*ux+(Dy*t-dy)*uy;float mu=(a*ir+1.7f)*MS_SCALE;if(mu<0||mu>=MS)continue;int imu=(int)mu;
+                float a=(Dx*t-dx)*ux+(Dy*t-dy)*uy;float mu=(a*ir+SPAN)*MS_SCALE;if(mu<0||mu>=MS)continue;int imu=(int)mu;
                 int li=(int)(L+3-t*fadeK);if(li<minL)li=minL;else if(li>31)li=31;int lm=lt[li];
-                int c1=Textures.mul(s.color,lm),c2=Textures.mul(Textures.mul(s.color,200),lm),c3=Textures.mul(Textures.mul(s.color,330),lm);
-                float ry0=(horizon-(y0+.5f))*inv,b=eye+ry0*t-s.z,db=-inv*t;float mv=(b*ir+1.7f)*MS_SCALE,dmv=db*ir*MS_SCALE;
+                int c1=Textures.mul(s.color,lm),c2=Textures.mul(Textures.mul(s.color,190),lm),c3=Textures.mul(Textures.mul(s.color,330),lm),c4=Textures.mul(Textures.mul(s.color,150),lm);
+                float ry0=(horizon-(y0+.5f))*inv,b=eye+ry0*t-s.z,db=-inv*t;float mv=(b*ir+SPAN)*MS_SCALE,dmv=db*ir*MS_SCALE;
                 for(int y=y0,o=y0*W+x;y<=y1;y++,o+=W,mv+=dmv){
                     if(mv<0||mv>=MS)continue;int shade=mask[(int)mv*MS+imu];if(shade==0)continue;
                     float zz=zb[o];if(iz-zz>tol||zz-iz>tol)continue;
-                    pix[o]=shade==1?c1:shade==2?c2:c3;}
+                    pix[o]=shade==1?c1:shade==2?c2:shade==3?c3:c4;}
             }
             return;
         }
@@ -334,23 +334,13 @@ final class Renderer {
                 int o=y*W+x;float iz=1f/t,zz=zb[o];if(Math.abs(iz-zz)>zz*.035f+1e-4f)continue;   // only on the surface that's actually there
                 float lx=Dx*t-dx,ly=Dy*t-dy,lz=eye+ry*t-s.z;
                 float a=lx*ux+ly*uy+lz*uz,b=lx*vx2+ly*vy2+lz*vz2;
-                int mu=(int)((a*ir+1.7f)*MS_SCALE),mv=(int)((b*ir+1.7f)*MS_SCALE);if(mu<0||mv<0||mu>=MS||mv>=MS)continue;
+                int mu=(int)((a*ir+SPAN)*MS_SCALE),mv=(int)((b*ir+SPAN)*MS_SCALE);if(mu<0||mv<0||mu>=MS||mv>=MS)continue;
                 int shade=mask[mv*MS+mu];if(shade==0)continue;
                 int li=(int)(L+3-t*fadeK);if(li<minL)li=minL;else if(li>31)li=31;
-                int c=shade==2?Textures.mul(s.color,200):shade==3?Textures.mul(s.color,330):s.color;
+                int c=shade==2?Textures.mul(s.color,190):shade==3?Textures.mul(s.color,330):shade==4?Textures.mul(s.color,150):s.color;
                 pix[o]=Textures.mul(c,lt[li]);
             }
         }
-    }
-    /** 0 = outside; 1 = blood; 2 = darker centre; 3 = wet highlight. Irregular blob plus a few satellite drops. */
-    private static int splatShape(float a,float b,int seed){
-        float d2=a*a+b*b;
-        if(d2<1.6f){float ang=(float)Math.atan2(b,a),f=seed*.0007f;
-            float rr=1+.16f*(float)Math.sin(ang*3+f*9)+.1f*(float)Math.sin(ang*5+f*17)+.07f*(float)Math.sin(ang*8+f*5);
-            if(d2<rr*rr*.81f){if(d2<.12f)return 2;float hx=a+.32f,hy=b+.3f;return hx*hx+hy*hy<.02f?3:1;}}
-        for(int k=0;k<3;k++){float sa=(seed>>(k*5)&31)*.2f+k*2.1f,dist=1.15f+.25f*k,r=.24f-.06f*k;
-            float ex=a-(float)Math.cos(sa)*dist,ey=b-(float)Math.sin(sa)*dist;if(ex*ex+ey*ey<r*r)return 1;}
-        return 0;
     }
     /** Flying droplets: little squares, depth-tested against everything already drawn. */
     private void drawDrops(Level level){
