@@ -26,7 +26,7 @@ public class SoundEditorView extends View {
 
     private static final int H_BACK=1,H_SAVE=2,H_NEW_SOUND=3,H_PLAY=4,H_STOP=5,H_AUTOPLAY=6,H_RESET_EDITS=7,H_RENAME=8,H_DUP=9,H_DELETE=10,H_EXPORT=11,
             H_REPLACE=12,H_WAVE=13,H_BUILTIN_COPY=14,H_BUILTIN_ASSIGN=15,H_NEW_SONG=16,H_MPLAY=17,H_INST=18,H_CLEAR=19,H_ADD_TRACK=20,H_TRACK_NAME=21,
-            H_TRACK_SOUND=22,H_TRACK_DEL=23,H_TRACK_PREVIEW=24,H_LEVEL_MUSIC=25,H_SONG_RENAME=26,H_SONG_DUP=27,H_SONG_DEL=28,H_SONG_EXPORT=29,H_ROLL=30,H_KEYS=31,H_IMPORT=32,
+            H_TRACK_SOUND=22,H_TRACK_DEL=23,H_TRACK_PREVIEW=24,H_LEVEL_MUSIC=25,H_SONG_RENAME=26,H_SONG_DUP=27,H_SONG_DEL=28,H_SONG_EXPORT=29,H_ROLL=30,H_KEYS=31,H_IMPORT=32,H_LIB=33,H_LIB_CAT=900,H_LIB_PLAY=3000,H_LIB_ADD=3100,
             H_TAB=100,H_SOUND=200,H_BUILTIN=400,H_PRESET=450,H_SONG=500,H_TRACK=600,H_MUTE=650,H_BRUSH=700,H_GAME=800,H_GAME_PLAY=850,H_SLIDER=1000;
 
     final Project project;
@@ -38,7 +38,7 @@ public class SoundEditorView extends View {
     private final Random rng=new Random();
     int tab=TAB_SOUNDS;
     SoundAsset sel;int selBuiltin=-1;
-    Song song;int track;boolean instOpen;
+    Song song;int track;boolean instOpen,libOpen,libForLevel;private int libCat=-1;
     private int brush=2;private boolean autoPlay=true;
     String playingSong;
     SoundAsset replaceTarget;
@@ -63,7 +63,7 @@ public class SoundEditorView extends View {
     private float dp(float v){return ui.dp(v);}
     private float leftW(){return Math.max(dp(170),Math.min(dp(240),w*.24f));}
     private void hint(String s){hint=s;hintUntil=System.currentTimeMillis()+2600;invalidate();}
-    boolean back(){if(instOpen){instOpen=false;invalidate();return true;}return false;}
+    boolean back(){if(libOpen){libOpen=false;mainScroll=0;invalidate();return true;}if(instOpen){instOpen=false;invalidate();return true;}return false;}
 
     // ================================================================== drawing
     @Override protected void onDraw(Canvas c){
@@ -247,6 +247,7 @@ public class SoundEditorView extends View {
         leftRect.set(L,T,L+lw,B);ui.panel(c,L-dp(2),T-dp(2),L+lw+dp(2),B+dp(2),dp(10));
         float y=beginScroll(c,leftRect,leftScroll)+dp(8),il=L+dp(8),ir=L+lw-dp(8);
         r.set(il,y,ir,y+dp(36));ui.button(c,r,Icons.PLUS,"New song",Ui.PRIMARY);hitIn(r,H_NEW_SONG,leftRect);y+=dp(44);
+        r.set(il,y,ir,y+dp(36));ui.button(c,r,Icons.LIST,"Music library ("+MusicLibrary.ALL.size()+")",libOpen?Ui.ACTIVE:Ui.NORMAL);hitIn(r,H_LIB,leftRect);y+=dp(44);
         caption(c,il,y+dp(4),"Songs ("+project.songs.size()+")");y+=dp(12);
         for(int i=0;i<project.songs.size();i++){Song s=project.songs.get(i);r.set(il,y,ir,y+dp(44));
             boolean lv=s.id.equals(project.levelMusic);
@@ -266,10 +267,12 @@ public class SoundEditorView extends View {
         leftContent=y+leftScroll-leftRect.top+dp(8);c.restore();leftScroll=clampScroll(leftScroll,leftContent,leftRect);
 
         float ml=L+lw+dp(14),mr=w-dp(12);
+        if(libOpen)return drawLibrary(c,ml,T,mr,B);
         if(song==null){float cy=(T+B)*.5f;ui.icon(c,Icons.MUSIC,(ml+mr)*.5f,cy-dp(50),40,Ui.TEXT_3);
             ui.text(c,"Make some music",(ml+mr)*.5f,cy,17,Ui.TEXT,1,0);
             ui.text(c,"Songs play as level music or from the Play Music FSM action.",(ml+mr)*.5f,cy+dp(22),12,Ui.TEXT_2,0,0);
-            r.set((ml+mr)*.5f-dp(90),cy+dp(40),(ml+mr)*.5f+dp(90),cy+dp(78));ui.button(c,r,Icons.PLUS,"New song",Ui.PRIMARY);ui.hit(r,H_NEW_SONG);return false;}
+            r.set((ml+mr)*.5f-dp(90),cy+dp(40),(ml+mr)*.5f+dp(90),cy+dp(78));ui.button(c,r,Icons.PLUS,"New song",Ui.PRIMARY);ui.hit(r,H_NEW_SONG);
+            r.set((ml+mr)*.5f-dp(90),cy+dp(86),(ml+mr)*.5f+dp(90),cy+dp(124));ui.button(c,r,Icons.LIST,"Music library",Ui.NORMAL);ui.hit(r,H_LIB);return false;}
         if(track>=song.tracks.size())track=0;
         Song.Track t=song.tracks.get(track);
         boolean playing=sfx.musicPlaying()&&song.id.equals(playingSong);
@@ -286,6 +289,44 @@ public class SoundEditorView extends View {
         if(instOpen){drawInstrument(c,t);return playing;}
         drawRoll(c,t,playing);
         return playing;
+    }
+    /** Browser for the built-in fantasy songs: preview them and add copies to the project. */
+    private boolean drawLibrary(Canvas c,float ml,float T,float mr,float B){
+        mainRect.set(ml,T,mr,B);
+        float y=beginScroll(c,mainRect,mainScroll);
+        ui.text(c,"Fantasy music library",ml,y+dp(20),17,Ui.TEXT,1,-1);
+        ui.text(c,ui.ellipsize(MusicLibrary.ALL.size()+" generated tracks. Preview one, then add a copy to your project to use it as level music, in Play Music actions, or to edit its notes.",11,0,mr-ml-dp(110)),ml,y+dp(38),11,Ui.TEXT_3,0,-1);
+        r.set(mr-dp(100),y+dp(4),mr,y+dp(38));ui.button(c,r,Icons.CANCEL,"Close",Ui.NORMAL);hitIn(r,H_LIB,mainRect);
+        y+=dp(50);
+        float px=ml;
+        for(int i=-1;i<MusicLibrary.CATEGORIES.length;i++){String label=i<0?"All ("+MusicLibrary.ALL.size()+")":MusicLibrary.CATEGORIES[i]+" ("+MusicLibrary.count(i)+")";
+            float bw=ui.measure(label,11.5f,1)+dp(24);if(px+bw>mr+1){px=ml;y+=dp(36);}
+            r.set(px,y,px+bw,y+dp(30));ui.button(c,r,-1,label,libCat==i?Ui.ACTIVE:Ui.NORMAL);hitIn(r,H_LIB_CAT+i+1,mainRect);px+=bw+dp(6);}
+        y+=dp(42);
+        int cols=mr-ml>dp(620)?2:1;float gap=dp(8),cw=(mr-ml-gap*(cols-1))/cols;int k=0;boolean anim=false;
+        for(int i=0;i<MusicLibrary.ALL.size();i++){MusicLibrary.Entry e=MusicLibrary.ALL.get(i);if(libCat>=0&&e.category!=libCat)continue;
+            float x=ml+(k%cols)*(cw+gap),yy=y+(k/cols)*dp(64);k++;
+            boolean playing=sfx.musicPlaying()&&("lib_"+i).equals(playingSong);if(playing)anim=true;
+            boolean added=false;for(Song s:project.songs)if(s.name.equals(e.name)){added=true;break;}
+            r.set(x,yy,x+cw,yy+dp(58));ui.round(c,r,dp(9),playing?0xff1f3a2e:Ui.SURFACE_2);ui.outline(c,r,dp(9),playing?Ui.GREEN:Ui.BORDER,dp(1));
+            RectF pb=new RectF(x+dp(8),yy+dp(11),x+dp(44),yy+dp(47));ui.button(c,pb,playing?Icons.STOP:Icons.PLAY,null,playing?Ui.SUCCESS:Ui.PRIMARY);hitIn(pb,H_LIB_PLAY+i,mainRect);
+            RectF ab=new RectF(x+cw-dp(84),yy+dp(13),x+cw-dp(8),yy+dp(45));ui.button(c,ab,added?Icons.CHECK:Icons.PLUS,added?"Added":"Add",added?Ui.NORMAL:Ui.ACTIVE);hitIn(ab,H_LIB_ADD+i,mainRect);
+            float tx=x+dp(54),tw=cw-dp(146);
+            ui.text(c,ui.ellipsize(e.name,13,1,tw),tx,yy+dp(25),13,Ui.TEXT,1,-1);
+            ui.text(c,ui.ellipsize(MusicLibrary.CATEGORIES[e.category]+" · "+e.info(),10,0,tw),tx,yy+dp(42),10,Ui.TEXT_3,0,-1);
+            if(playing&&sfx.musicStep>=0){Song s=MusicLibrary.song(i);float f=(sfx.musicStep+1)/(float)s.steps();ui.rect(c,x+dp(10),yy+dp(53),x+dp(10)+(cw-dp(20))*f,yy+dp(55),Ui.GREEN);}
+        }
+        y+=((k+cols-1)/cols)*dp(64)+dp(8);
+        mainContent=y+mainScroll-mainRect.top;c.restore();mainScroll=clampScroll(mainScroll,mainContent,mainRect);
+        return anim;
+    }
+    private void addLibrarySong(int i){
+        MusicLibrary.Entry e=MusicLibrary.ALL.get(i);
+        Runnable go=()->{Song s=MusicLibrary.copyFor(project,i);project.songs.add(s);
+            if(project.levelMusic.isEmpty()||libForLevel){libForLevel=false;project.levelMusic=s.id;hint("Added \""+e.name+"\" and set it as the level music");}else hint("Added \""+e.name+"\" to your songs");
+            if(song==null)selectSong(s);libOpen=true;invalidate();};
+        boolean added=false;for(Song s:project.songs)if(s.name.equals(e.name)){added=true;break;}
+        if(added&&host!=null)host.confirm("Add another copy?","\""+e.name+"\" is already in your songs. Add a second copy you can change separately?","Add copy",go);else go.run();
     }
     private float rowH(Song.Track t){return t.drums()?dp(28):dp(17);}
     private float stepW(){return dp(22);}
@@ -400,7 +441,7 @@ public class SoundEditorView extends View {
             if(downHit==H_WAVE&&sel!=null){zone=3;trimHandle=nearestHandle(x);dragTrim(x);invalidate();return true;}
             if(downHit==H_ROLL||downHit==H_KEYS)zone=4;
             else if(leftRect.contains(x,y)&&tab!=TAB_GAME)zone=1;
-            else if(mainRect.contains(x,y)&&(tab!=TAB_MUSIC||instOpen))zone=2;
+            else if(mainRect.contains(x,y)&&(tab!=TAB_MUSIC||instOpen||libOpen))zone=2;
             return true;
         }
         if(a==MotionEvent.ACTION_MOVE){
@@ -529,13 +570,20 @@ public class SoundEditorView extends View {
     private void selectSong(Song s){song=s;track=0;rollX=0;rollY=-1;instOpen=false;mainScroll=0;}
     private void previewTrack(int pitch){if(song==null)return;Song.Track t=song.tracks.get(track);sfx.note(Song.instFor(t,project),t.drums()?pitch:pitch,t.drums()?1:.35f);}
     private void tapMusic(int hid,float x,float y){
-        if(hid>=H_SONG&&hid<H_SONG+project.songs.size()){Song s=project.songs.get(hid-H_SONG);if(s!=song){if(sfx.musicPlaying())sfx.stopMusic(0);selectSong(s);}return;}
+        if(hid>=H_SONG&&hid<H_SONG+project.songs.size()){Song s=project.songs.get(hid-H_SONG);if(s!=song||libOpen){if(sfx.musicPlaying())sfx.stopMusic(0);playingSong=null;selectSong(s);libOpen=false;}return;}
         if(song!=null&&hid>=H_TRACK&&hid<H_TRACK+song.tracks.size()){int t=hid-H_TRACK;if(t!=track){track=t;rollY=-1;}else instOpen=!instOpen;mainScroll=0;return;}
         if(song!=null&&hid>=H_MUTE&&hid<H_MUTE+song.tracks.size()){Song.Track t=song.tracks.get(hid-H_MUTE);t.mute=!t.mute;songChanged();hint(t.name+(t.mute?" muted":" on"));return;}
         if(hid>=H_BRUSH&&hid<H_BRUSH+BRUSHES.length){brush=BRUSHES[hid-H_BRUSH];return;}
+        if(hid>=H_LIB_CAT&&hid<=H_LIB_CAT+MusicLibrary.CATEGORIES.length){libCat=hid-H_LIB_CAT-1;mainScroll=0;return;}
+        if(hid>=H_LIB_PLAY&&hid<H_LIB_PLAY+MusicLibrary.ALL.size()){int i=hid-H_LIB_PLAY;String id="lib_"+i;
+            if(sfx.musicPlaying()&&id.equals(playingSong)){sfx.stopMusic(0);playingSong=null;}
+            else{sfx.playMusic(MusicLibrary.song(i).compile(project),true,0);playingSong=id;}return;}
+        if(hid>=H_LIB_ADD&&hid<H_LIB_ADD+MusicLibrary.ALL.size()){addLibrarySong(hid-H_LIB_ADD);return;}
+        if(hid==H_LIB){libOpen=!libOpen;mainScroll=0;if(!libOpen&&playingSong!=null&&playingSong.startsWith("lib_")){sfx.stopMusic(0);playingSong=null;}return;}
         switch(hid){
             case H_NEW_SONG:if(host==null)return;
-                host.choose("New song",new String[]{"Starter riff (drums, bass, lead and pad)","Empty song"},0,k->{
+                host.choose("New song",new String[]{"Starter riff (drums, bass, lead and pad)","Empty song","Pick from the fantasy music library…"},0,k->{
+                    if(k==2){libOpen=true;mainScroll=0;invalidate();return;}
                     String name="Song "+(project.songs.size()+1);Song s=k==0?Song.starter(name):Song.blank(name);s.id=project.uniqueId("mus_"+name);project.songs.add(s);selectSong(s);
                     if(project.levelMusic.isEmpty()&&project.songs.size()==1){project.levelMusic=s.id;hint("Set as the level music (change it in Game Audio)");}
                     invalidate();});break;
@@ -580,12 +628,12 @@ public class SoundEditorView extends View {
         if(hid>=H_GAME_PLAY&&hid<H_GAME_PLAY+SoundFx.COUNT){int b=hid-H_GAME_PLAY;sfx.useProject(project);sfx.stopSounds();sfx.play(b,1);return;}
         if(hid>=H_GAME&&hid<H_GAME+SoundFx.COUNT){assignOverride(hid-H_GAME);return;}
         if(hid==H_LEVEL_MUSIC&&host!=null){
-            String[] items=new String[project.songs.size()+2];items[0]="No music";int ch=0;
+            String[] items=new String[project.songs.size()+2];items[0]="No music";int ch=0;   // + library entry at the end
             for(int i=0;i<project.songs.size();i++){items[i+1]=project.songs.get(i).name;if(project.songs.get(i).id.equals(project.levelMusic))ch=i+1;}
-            items[items.length-1]="+ Make a new song…";
+            items[items.length-1]="+ Pick from the fantasy music library…";
             host.choose("Level music",items,ch,k->{
                 if(k==0)project.levelMusic="";
-                else if(k==items.length-1){tab=TAB_MUSIC;String name="Level Theme";Song s=Song.starter(name);s.id=project.uniqueId("mus_level_theme");project.songs.add(s);selectSong(s);project.levelMusic=s.id;}
+                else if(k==items.length-1){tab=TAB_MUSIC;libOpen=true;libForLevel=true;mainScroll=0;hint("The track you add becomes the level music");}
                 else project.levelMusic=project.songs.get(k-1).id;
                 invalidate();});
         }
