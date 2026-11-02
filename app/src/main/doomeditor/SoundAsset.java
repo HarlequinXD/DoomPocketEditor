@@ -103,13 +103,13 @@ final class SoundAsset {
         int s0=(int)Math.floor(Math.min(edit[E_TRIM_START],edit[E_TRIM_END]-.001f)*n),s1=(int)Math.ceil(edit[E_TRIM_END]*n);
         s0=Math.max(0,Math.min(n-2,s0));s1=Math.max(s0+2,Math.min(n,s1));
         float rate=(float)Math.pow(2,edit[E_PITCH]/12f);
-        int len=Math.max(2,(int)((s1-s0)/rate));
+        int len=Math.max(2,Math.min(R*10,(int)((s1-s0)/rate)));
         int delay=(int)(edit[E_ECHO_DELAY]*R);float echo=edit[E_ECHO_MIX];
         int tail=echo>0?(int)(delay*Math.min(6,1+Math.log(.02)/Math.log(Math.max(.05,echo)))):0;
         int total=Math.min(R*10,len+tail);
         float[] f=new float[total];
         boolean rev=edit[E_REVERSE]>=.5f;
-        for(int i=0;i<len&&i<total;i++){
+        for(int i=0;i<len;i++){
             float p=s0+i*rate;int ip=(int)p;if(ip>=s1-1)ip=s1-2;float fr=Math.min(1,p-ip);
             float v=in[ip]+(in[ip+1]-in[ip])*fr;
             f[rev?len-1-i:i]=v;
