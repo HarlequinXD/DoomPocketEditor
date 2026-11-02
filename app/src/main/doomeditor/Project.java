@@ -52,7 +52,7 @@ final class Project {
     Sprites.Sprite spriteFor(EntityDef d,int builtin,int frame,float time,float deadTime){return spriteFor(d,builtin,frame,time,deadTime,0f);}
     Sprites.Sprite spriteFor(EntityDef d,int builtin,int frame,float time,float deadTime,float viewDelta){
         if(d!=null&&builtin==d.sprite){CustomSprite cs=sprite(d.customSprite);if(cs!=null){Sprites.Sprite s=cs.frameFor(frame,time,deadTime,CustomSprite.viewIndex(viewDelta,cs.angles));if(s!=null)return s;}}
-        return Sprites.get(builtin,frame,CustomSprite.viewIndex(viewDelta,Sprites.VIEWS));
+        return Sprites.get(builtin,builtinCycle(builtin,frame,time,deadTime),CustomSprite.viewIndex(viewDelta,Sprites.VIEWS));
     }
 
     /** Sprite for a live actor: the FSM-chosen animation clip if any, otherwise the automatic frame. */
@@ -69,13 +69,25 @@ final class Project {
             return Sprites.get(a.sprite,builtinFrame(a.animClip,a.animTime),view);
         }
         if(cs!=null){Sprites.Sprite s=cs.frameFor(autoFrame,worldTime,a.deadTime,view);if(s!=null)return s;}
-        return Sprites.get(a.sprite,autoFrame,view);
+        return Sprites.get(a.sprite,builtinCycle(a.sprite,autoFrame,worldTime,a.deadTime),view);
     }
     static int animIndex(CustomSprite.Clip c,Actor a){int n=c.frames.size();int i=(int)(a.animTime*c.fps);boolean loop=a.animLoop<0?c.loop:a.animLoop==1;return loop?i%n:Math.min(n-1,i);}
+    /**
+     * Built-in sprites animate exactly like a custom sprite copied from them (CustomSprite.fromBuiltin):
+     * Walk is a 4-step cycle stride, pass, other stride, pass at 6 fps, and Death shows the hit pose for
+     * 1/8 s before the body. (Flipping straight between the two strides looked jerky.)
+     */
+    static final int[] WALK_CYCLE={Sprites.F_WALK1,Sprites.F_IDLE,Sprites.F_WALK2,Sprites.F_IDLE};
+    static int builtinCycle(int id,int engineFrame,float time,float deadTime){
+        if(!Sprites.hasAngles(id))return engineFrame;   // torches etc. use frame numbers for their own flicker
+        if(engineFrame==Sprites.F_WALK1||engineFrame==Sprites.F_WALK2)return WALK_CYCLE[(int)(Math.max(0,time)*6)%4];
+        if(engineFrame==Sprites.F_DEAD)return deadTime<.125f?Sprites.F_PAIN:Sprites.F_DEAD;
+        return engineFrame;
+    }
     /** Built-in sprites only have a few poses; map clip names onto them. */
     static int builtinFrame(String clip,float t){
         String n=clip.toLowerCase(java.util.Locale.US);
-        if(n.contains("walk")||n.contains("run")||n.contains("move"))return ((int)(t*6)&1)==0?Sprites.F_WALK1:Sprites.F_WALK2;
+        if(n.contains("walk")||n.contains("run")||n.contains("move"))return WALK_CYCLE[(int)(Math.max(0,t)*6)%4];
         if(n.contains("attack")||n.contains("shoot")||n.contains("fire")||n.contains("melee"))return Sprites.F_ATTACK;
         if(n.contains("pain")||n.contains("hurt"))return Sprites.F_PAIN;
         if(n.contains("death")||n.contains("die")||n.contains("dead"))return Sprites.F_DEAD;
