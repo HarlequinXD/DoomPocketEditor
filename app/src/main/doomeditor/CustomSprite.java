@@ -78,15 +78,15 @@ final class CustomSprite {
         int views=Sprites.hasAngles(builtin)?8:1;
         // canvas big enough for every frame/view, each placed bottom-centre
         int cw=1,ch=1;
-        for(int[] fr:map)for(int f:fr)for(int v=0;v<views;v++){Sprites.Sprite sp=Sprites.get(builtin,f,v);int k=scale(sp);cw=Math.max(cw,(sp.w+k-1)/k);ch=Math.max(ch,(sp.h+k-1)/k);}
+        for(int[] fr:map)for(int f:fr)for(int v=0;v<views;v++){Sprites.Sprite sp=Sprites.getNow(builtin,f,v);int k=scale(sp);cw=Math.max(cw,(sp.w+k-1)/k);ch=Math.max(ch,(sp.h+k-1)/k);}
         cw=Math.min(128,cw+(cw&1));ch=Math.min(128,ch);
         CustomSprite s=new CustomSprite(id,name,cw,ch);
         for(int i=0;i<STANDARD_CLIPS.length;i++){Clip c=new Clip(STANDARD_CLIPS[i]);if(i==4)c.loop=false;if(i==1)c.fps=6;
-            for(int f:map[i])c.frames.add(place(Sprites.get(builtin,f,0),cw,ch));
+            for(int f:map[i])c.frames.add(place(Sprites.getNow(builtin,f,0),cw,ch));
             s.clips.add(c);}
         if(views>1){s.setAngles(8);
             for(int i=0;i<STANDARD_CLIPS.length;i++){Clip c=s.clips.get(i);
-                for(int v=1;v<8;v++){ArrayList<int[]> l=c.view(v);for(int k=0;k<map[i].length;k++)l.set(k,place(Sprites.get(builtin,map[i][k],v),cw,ch));}}}
+                for(int v=1;v<8;v++){ArrayList<int[]> l=c.view(v);for(int k=0;k<map[i].length;k++)l.set(k,place(Sprites.getNow(builtin,map[i][k],v),cw,ch));}}}
         s.touch();
         return s;
     }
@@ -97,8 +97,8 @@ final class CustomSprite {
         int ox=(cw-sw)/2,oy=ch-sh;
         for(int y=0;y<sh;y++)for(int x=0;x<sw;x++){
             int best=0,bestN=0,opaque=0;
-            for(int yy=0;yy<k;yy++)for(int xx=0;xx<k;xx++){int sx=x*k+xx,sy=y*k+yy;if(sx>=sp.w||sy>=sp.h)continue;int c=sp.px[sy*sp.w+sx];if((c>>>24)==0)continue;opaque++;
-                int n=0;for(int y2=0;y2<k;y2++)for(int x2=0;x2<k;x2++){int a=x*k+x2,b=y*k+y2;if(a<sp.w&&b<sp.h&&sp.px[b*sp.w+a]==c)n++;}
+            for(int yy=0;yy<k;yy++)for(int xx=0;xx<k;xx++){int sx=x*k+xx,sy=y*k+yy;if(sx>=sp.w||sy>=sp.h)continue;int c=sp.px[sy*sp.w+sx];if((c>>>24)<128)continue;c|=0xff000000;opaque++;
+                int n=0;for(int y2=0;y2<k;y2++)for(int x2=0;x2<k;x2++){int a=x*k+x2,b=y*k+y2;if(a<sp.w&&b<sp.h&&(sp.px[b*sp.w+a]|0xff000000)==c&&(sp.px[b*sp.w+a]>>>24)>=128)n++;}
                 if(n>bestN){bestN=n;best=c;}}
             if(opaque*2>=k*k){int dx=ox+x,dy=oy+y;if(dx>=0&&dy>=0&&dx<cw&&dy<ch)out[dy*cw+dx]=best;}}
         return out;

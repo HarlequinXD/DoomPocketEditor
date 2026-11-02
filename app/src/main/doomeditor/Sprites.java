@@ -19,13 +19,25 @@ final class Sprites {
     /** Pixel data plus its density: built-in model sprites use 64 pixels per unit, hand-drawn ones 32. */
     static final class Sprite {final int w,h;final int[] px;final boolean bright;float ppu=PPU;Sprite(int w,int h,boolean bright){this.w=w;this.h=h;px=new int[w*h];this.bright=bright;}}
     /** Model sprites are rendered at twice the hand-drawn density for crisper close-ups. */
-    static final float MODEL_PPU=64f;
+    static final float MODEL_PPU=80f;
     /** Number of view angles stored for every built-in sprite slot (characters really use all 8). */
     static final int VIEWS=8;
     private static Sprite[][][] cache;
     private static Sprite[][] effects;
     private static Sprite[] weapons,flashes;
     private static final Object lock=new Object();
+
+    /** Bump when the models or renderer change so stale disk-cached sprites are ignored. */
+    static final int MODEL_VERSION=3;
+    private static java.io.File diskDir;
+    /** Rendered sprites are saved here (compressed) so each one is only ever rendered once per install. */
+    static void setCacheDir(java.io.File dir){
+        try{java.io.File d=new java.io.File(dir,"sprites_v"+MODEL_VERSION);d.mkdirs();diskDir=d;
+            java.io.File[] old=dir.listFiles();if(old!=null)for(java.io.File o:old)if(o.isDirectory()&&o.getName().startsWith("sprites_v")&&!o.equals(d)){java.io.File[] fs=o.listFiles();if(fs!=null)for(java.io.File f:fs)f.delete();o.delete();}
+        }catch(Throwable ignored){}
+    }
+    private static final java.util.ArrayDeque<int[]> requests=new java.util.ArrayDeque<>();
+    private static Thread worker;
 
     static void init(){
         synchronized(lock){
@@ -36,27 +48,82 @@ final class Sprites {
             weapons=new Sprite[5];flashes=new Sprite[5];
             for(int i=0;i<5;i++){weapons[i]=weapon(i);flashes[i]=flash(i);}
         }
-        // Pre-build the 8-angle characters in the background so the first frames of play don't stall.
-        Thread t=new Thread(()->{
-            try{for(int f:new int[]{F_IDLE,F_WALK1,F_WALK2,F_ATTACK,F_PAIN,F_DEAD})for(int id:CHARACTERS)for(int v=0;v<VIEWS;v++)get(id,f,v);
-                for(int id=0;id<COUNT;id++)get(id,F_IDLE,0);}catch(Throwable ignored){}
-        },"SpriteWarmup");
-        t.setDaemon(true);t.setPriority(Thread.MIN_PRIORITY);t.start();
+        if(Boolean.getBoolean("sprites.nowarm"))return;   // test harness timing
+        // Background worker: serves on-screen requests first, then pre-builds everything else.
+        worker=new Thread(Sprites::workLoop,"SpriteWorker");
+        worker.setDaemon(true);worker.setPriority(Thread.MIN_PRIORITY+1);worker.start();
+    }
+    private static void workLoop(){
+        java.util.ArrayList<int[]> warm=new java.util.ArrayList<>();
+        for(int id:CHARACTERS)for(int v=0;v<VIEWS;v++)warm.add(new int[]{id,F_IDLE,v});
+        for(int id=0;id<COUNT;id++)if(!hasAngles(id))warm.add(new int[]{id,F_IDLE,0});
+        warm.add(new int[]{TORCH,1,0});
+        for(int f:new int[]{F_WALK1,F_WALK2,F_ATTACK,F_PAIN,F_DEAD})for(int id:CHARACTERS)for(int v=0;v<VIEWS;v++)warm.add(new int[]{id,f,v});
+        int wi=0;
+        while(true){
+            int[] job;
+            synchronized(requests){job=requests.poll();}
+            if(job==null){if(wi>=warm.size()){synchronized(requests){try{if(requests.isEmpty())requests.wait();}catch(InterruptedException e){return;}}continue;}job=warm.get(wi++);}
+            try{getNow(job[0],job[1],job[2]);}catch(Throwable ignored){}
+        }
+    }
+    private static void request(int id,int f,int view){
+        synchronized(requests){for(int[] r:requests)if(r[0]==id&&r[1]==f&&r[2]==view)return;requests.addFirst(new int[]{id,f,view});requests.notifyAll();}
     }
     /** Characters have 8 rotations (front, front-right, right, back-right, back, back-left, left, front-left). */
     static final int[] CHARACTERS={PLAYER,TROOPER,SERGEANT,IMP,DEMON};
     static boolean hasAngles(int id){for(int c:CHARACTERS)if(c==id)return true;return false;}
     static Sprite get(int id,int frame){return get(id,frame,0);}
-    /** Sprite {@code id} in animation {@code frame} seen from {@code view} (0 = front … 4 = back, see CustomSprite.viewIndex). */
+    private static int frameSlot(int id,int frame){return hasAngles(id)?frame:id==TORCH?(frame&1):0;}
+    /**
+     * Sprite {@code id} in animation {@code frame} seen from {@code view} (0 = front … 4 = back, see CustomSprite.viewIndex).
+     * Never stalls the game: if that angle isn't rendered yet, the closest ready one is shown while it renders in the background.
+     */
     static Sprite get(int id,int frame,int view){
         if(cache==null)init();
         id=Math.max(0,Math.min(COUNT-1,id));frame=Math.max(0,Math.min(FRAMES-1,frame));
-        boolean angled=hasAngles(id);view=angled?((view%VIEWS)+VIEWS)%VIEWS:0;
-        // static items share one image for every frame (torches flicker between two)
-        int f=angled?frame:id==TORCH?(frame&1):0;
-        synchronized(lock){Sprite[] a=cache[id][f];if(a!=null&&a[view]!=null)return a[view];}
-        Sprite s=build(id,f,view);
-        synchronized(lock){Sprite[] a=cache[id][f];if(a==null)a=cache[id][f]=new Sprite[VIEWS];if(a[view]==null)a[view]=s;return a[view];}
+        view=hasAngles(id)?((view%VIEWS)+VIEWS)%VIEWS:0;int f=frameSlot(id,frame);
+        Sprite s=cached(id,f,view);if(s!=null)return s;
+        s=loadDisk(id,f,view);if(s!=null)return put(id,f,view,s);
+        if(worker!=null){Sprite fb=fallback(id,f,view);if(fb!=null){request(id,f,view);return fb;}}
+        return getNow(id,frame,view);
+    }
+    /** Like {@link #get} but always returns exactly the requested angle, rendering it now if needed. */
+    static Sprite getNow(int id,int frame,int view){
+        if(cache==null)init();
+        id=Math.max(0,Math.min(COUNT-1,id));frame=Math.max(0,Math.min(FRAMES-1,frame));
+        view=hasAngles(id)?((view%VIEWS)+VIEWS)%VIEWS:0;int f=frameSlot(id,frame);
+        Sprite s=cached(id,f,view);if(s!=null)return s;
+        s=loadDisk(id,f,view);if(s==null){s=build(id,f,view);saveDisk(id,f,view,s);}
+        return put(id,f,view,s);
+    }
+    private static Sprite cached(int id,int f,int view){synchronized(lock){Sprite[] a=cache[id][f];return a==null?null:a[view];}}
+    private static Sprite put(int id,int f,int view,Sprite s){synchronized(lock){Sprite[] a=cache[id][f];if(a==null)a=cache[id][f]=new Sprite[VIEWS];if(a[view]==null)a[view]=s;return a[view];}}
+    /** Nearest ready angle of the same frame, else any ready frame of the same sprite. */
+    private static Sprite fallback(int id,int f,int view){
+        synchronized(lock){
+            Sprite[] a=cache[id][f];
+            if(a!=null)for(int d=1;d<=VIEWS/2;d++){Sprite s=a[(view+d)%VIEWS];if(s!=null)return s;s=a[(view-d+VIEWS)%VIEWS];if(s!=null)return s;}
+            for(int g=0;g<FRAMES;g++){Sprite[] b=cache[id][g];if(b==null)continue;Sprite s=b[view];if(s!=null)return s;for(Sprite x:b)if(x!=null)return x;}
+        }
+        return null;
+    }
+    private static java.io.File diskFile(int id,int f,int view){return diskDir==null?null:new java.io.File(diskDir,id+"_"+f+"_"+view+".spr");}
+    private static Sprite loadDisk(int id,int f,int view){
+        java.io.File file=diskFile(id,f,view);if(file==null||!file.exists())return null;
+        try(java.io.DataInputStream in=new java.io.DataInputStream(new java.io.BufferedInputStream(new java.util.zip.InflaterInputStream(new java.io.FileInputStream(file))))){
+            int w=in.readInt(),h=in.readInt();float ppu=in.readFloat();boolean bright=in.readBoolean();
+            if(w<=0||h<=0||w>1024||h>1024)return null;
+            Sprite s=new Sprite(w,h,bright);s.ppu=ppu;for(int i=0;i<s.px.length;i++)s.px[i]=in.readInt();return s;
+        }catch(Throwable t){file.delete();return null;}
+    }
+    private static void saveDisk(int id,int f,int view,Sprite s){
+        java.io.File file=diskFile(id,f,view);if(file==null)return;
+        java.io.File tmp=new java.io.File(file.getPath()+".tmp");
+        try(java.io.DataOutputStream out=new java.io.DataOutputStream(new java.io.BufferedOutputStream(new java.util.zip.DeflaterOutputStream(new java.io.FileOutputStream(tmp))))){
+            out.writeInt(s.w);out.writeInt(s.h);out.writeFloat(s.ppu);out.writeBoolean(s.bright);for(int c:s.px)out.writeInt(c);
+        }catch(Throwable t){tmp.delete();return;}
+        tmp.renameTo(file);
     }
     private static Sprite build(int id,int frame,int view){
         SpriteModels.Model m;float elev;boolean bright=id==KEY_BLUE||id==KEY_YELLOW||id==KEY_RED||id==TORCH||id==LAMP;
@@ -81,7 +148,7 @@ final class Sprites {
     static Sprite weaponSprite(int w){init();return weapons[Math.max(0,Math.min(4,w))];}
     static Sprite flashSprite(int w){init();return flashes[Math.max(0,Math.min(4,w))];}
     static android.graphics.Bitmap preview(int id){
-        Sprite s=get(id,F_IDLE);android.graphics.Bitmap b=android.graphics.Bitmap.createBitmap(s.w,s.h,android.graphics.Bitmap.Config.ARGB_8888);b.setPixels(s.px,0,s.w,0,0,s.w,s.h);return b;
+        Sprite s=getNow(id,F_IDLE,0);android.graphics.Bitmap b=android.graphics.Bitmap.createBitmap(s.w,s.h,android.graphics.Bitmap.Config.ARGB_8888);b.setPixels(s.px,0,s.w,0,0,s.w,s.h);return b;
     }
 
     // ------------------------------------------------------------------ drawing helpers

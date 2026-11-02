@@ -250,8 +250,14 @@ final class Renderer {
             for(int y=ya;y<=yb;y++){
                 int o=y*W+x;if(iz<=zb[o])continue;
                 int v=(int)((y+.5f-top)*dv);if(v<0||v>=s.h)continue;
-                int c=s.px[v*s.w+u];if((c>>>24)==0)continue;
-                pix[o]=mulv>=256?c:Textures.mul(c,mulv);zb[o]=iz;if(d.pickId>=0)ids[o]=d.pickId;
+                int c=s.px[v*s.w+u];int al=c>>>24;if(al==0)continue;
+                int lit=mulv>=256?c:Textures.mul(c,mulv);
+                if(al<250){ // anti-aliased sprite edge: blend over what's behind it
+                    int b=pix[o],ia=255-al;
+                    pix[o]=0xff000000|((((lit>>16)&255)*al+((b>>16)&255)*ia)/255<<16)|((((lit>>8)&255)*al+((b>>8)&255)*ia)/255<<8)|(((lit&255)*al+(b&255)*ia)/255);
+                    if(al<128)continue;
+                }else pix[o]=lit|0xff000000;
+                zb[o]=iz;if(d.pickId>=0)ids[o]=d.pickId;
             }
         }
     }
