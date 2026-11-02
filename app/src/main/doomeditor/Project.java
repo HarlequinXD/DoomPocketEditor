@@ -94,6 +94,11 @@ final class Project {
         o.put("level",level.toJson());
         JSONArray a=new JSONArray();for(EntityDef d:defs)a.put(d.toJson());o.put("entities",a);
         JSONArray s=new JSONArray();for(CustomSprite cs:sprites)s.put(cs.toJson());o.put("sprites",s);
+        // Sound & Music editor data. Keep these when changing the save format, or sounds and songs vanish on reload.
+        JSONArray sn=new JSONArray();for(SoundAsset sa:sounds)sn.put(sa.toJson());o.put("sounds",sn);
+        JSONArray mu=new JSONArray();for(Song m2:songs)mu.put(m2.toJson());o.put("songs",mu);
+        JSONObject au=new JSONObject();JSONObject ov=new JSONObject();for(java.util.Map.Entry<String,String> e:soundOverrides.entrySet())ov.put(e.getKey(),e.getValue());
+        au.put("overrides",ov);au.put("levelMusic",levelMusic);au.put("musicVolume",(double)musicVolume);au.put("sfxVolume",(double)sfxVolume);o.put("audio",au);
         return o;
     }
     static Project fromJson(JSONObject o)throws Exception{

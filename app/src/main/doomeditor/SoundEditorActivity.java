@@ -26,7 +26,7 @@ public class SoundEditorActivity extends Activity implements SoundEditorView.Hos
         setContentView(view);
     }
     @Override protected void onResume() { super.onResume(); getWindow().getDecorView().setSystemUiVisibility(5894 | 1024 | 512); view.onResume(); }
-    @Override protected void onPause() { super.onPause(); view.onPause(); project.save(this); }
+    @Override protected void onPause() { super.onPause(); view.onPause(); project.saveNow(this); }   // written straight away so closing the app can't lose it
     @Override public void saved() { project.save(this); Toast.makeText(this, "Sounds and music saved to project", Toast.LENGTH_SHORT).show(); }
     @Override public void exit() { project.save(this); finish(); }
     @Override public void onBackPressed() { if (view.back()) return; exit(); }
