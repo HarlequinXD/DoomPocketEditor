@@ -76,7 +76,7 @@ public class TitleView extends View {
     private void drawBrand(Canvas c){
         float x=dp(44),y=h*.2f;
         float ls=dp(54);ui.round(c,x,y,x+ls,y+ls,dp(13),Ui.ACCENT);ui.icon(c,Icons.LOGO,x+ls*.5f,y+ls*.5f,32,0xffffffff);
-        ui.text(c,"DOOM POCKET",x,y+ls+dp(40),30,Ui.TEXT,2,-1);
+        ui.text(c,"RPG POCKET",x,y+ls+dp(40),30,Ui.TEXT,2,-1);
         ui.text(c,"E D I T O R",x+dp(2),y+ls+dp(62),13,0xff8fbcff,1,-1);
         ui.text(c,"Build, script and play fantasy RPG adventures on your phone.",x,y+ls+dp(92),12.5f,Ui.TEXT_2);
         float by=y+ls+dp(116),bw=Math.min(dp(260),w*.34f);

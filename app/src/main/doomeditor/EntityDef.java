@@ -11,6 +11,8 @@ final class EntityDef {
     String id,name;
     /** Optional user-drawn sprite id; overrides the built-in sprite when set. */
     String customSprite="";
+    /** Built-in sprite actually shown: the default hero sprite follows the chosen class. */
+    int lookSprite(){return kind==PLAYER&&sprite==Sprites.HERO&&(customSprite==null||customSprite.isEmpty())?Sprites.heroFor(heroClass):sprite;}
     int kind=DECORATION,sprite=Sprites.COLUMN,health=100;
     float radius=.4f,height=1.4f,speed=3f;
     boolean solid=true,shootable=false,countKill=false,countItem=false;

@@ -441,8 +441,6 @@ final class SpriteModels {
         m.rbox(leanPt(b,v(-.1f,0,b.waistZ+.02f+ps.bob)),ld,.02f,.11f,.22f,.015f,tabard);
         m.in(G_GEAR,0);
         m.ellDir(leanPt(b,v(0,0,b.waistZ-.06f+ps.bob)),ld,.1f,.14f,.025f,belt);m.rbox(leanPt(b,v(.1f,0,b.waistZ-.06f+ps.bob)),ld,.008f,.025f,.02f,.005f,buckle);
-        if(!ps.dead){float sway=frame==Sprites.F_WALK1||frame==Sprites.F_WALK2?.08f:.03f;
-            m.in(G_BODY,.02f);m.rbox(leanPt(b,v(-.15f-sway,0,b.waistZ+.02f+ps.bob)),norm(v(.15f,0,1)),.4f,.17f,.014f,.012f,cloak).ax[0][0]+=0;}
         buildFace(m,b,eye,false);
         float[] h=b.head,f=b.headF;m.in(G_GEAR,0);m.ellDir(add(add(h,f,-.015f),v(0,0,.03f)),f,.1f,.089f,.09f,hair);
         if(ps.dead){buildArm(m,b,ps,1,null,ps.rArmSwing,b.hands,false,0);buildArm(m,b,ps,-1,null,ps.lArmSwing,b.hands,false,0);corpse(m);
@@ -455,6 +453,129 @@ final class SpriteModels {
         float[] lh=leanPt(b,v(.22f,-.2f,.98f+ps.bob));
         buildArm(m,b,ps,1,rh,0,b.hands,false,0);buildArm(m,b,ps,-1,lh,0,b.hands,false,0);
         roundShield(m,add(lh,v(.05f,-.03f,.02f)),norm(v(1,-.25f,0)),.2f,wood,steel);
+        return m;
+    }
+    /** Hero look for a class: 0 Fighter, 1 Ranger, 2 Rogue, 3 Wizard, 4 Cleric. */
+    static Model hero(int frame,int cls){
+        switch(cls){case 1:return ranger(frame);case 2:return rogue(frame);case 3:return wizard(frame);case 4:return cleric(frame);default:return hero(frame);}
+    }
+    private static void bow(Model m,float[] hand,float[] up,float[] fwd,int wood,int string){
+        m.in(G_GEAR,0);float[] top=add(add(hand,up,.48f),fwd,-.1f),bot=add(add(hand,up,-.48f),fwd,-.1f),mt=add(add(hand,up,.24f),fwd,.0f),mb=add(add(hand,up,-.24f),fwd,.0f);
+        m.cone(hand,mt,.017f,.014f,wood);m.cone(mt,top,.014f,.007f,wood);m.cone(hand,mb,.017f,.014f,wood);m.cone(mb,bot,.014f,.007f,wood);
+        m.cyl(add(hand,fwd,-.03f),add(hand,fwd,.03f),.02f,wood);
+        float[] pull=add(hand,fwd,-.16f);m.cyl(top,pull,.003f,string);m.cyl(pull,bot,.003f,string);
+    }
+    private static void hood(Model m,Body b,int cloth,int shadow,boolean deep){
+        float[] h=b.head,f=b.headF;m.in(G_BODY,.03f);
+        m.ellDir(add(h,f,-.02f),f,.118f,.105f,.125f,cloth);
+        m.cone(add(add(h,f,-.06f),v(0,0,.02f)),add(add(h,f,-.16f),v(0,0,-.1f)),.07f,.03f,cloth);
+        if(deep){m.in(G_GEAR,0);m.ellDir(add(h,f,.065f),f,.03f,.07f,.08f,shadow);}
+    }
+    /** Ranger: green hooded cloak over leather, quiver on the back, longbow. */
+    static Model ranger(int frame){
+        Model m=new Model();Pose ps=pose(frame);Body b=new Body();
+        b.skin=m.skin(0xffc89878,.55f);b.legs=m.leather(0xff4a3a26);b.torso=m.leather(0xff6a4a2a);b.boots=m.leather(0xff2e2016);b.hands=m.leather(0xff3a2a1c);
+        int cloak=m.cloth(0xff2e4a26),belt=m.leather(0xff3a2616),wood=m.wood(0xff7a5230),string=m.cloth(0xffd8d0b8),quiver=m.leather(0xff5a3a1e),fletch=m.cloth(0xffe0d8c8),eye=m.plastic(0xff2a2420,.6f);
+        buildTorso(m,b,ps);
+        buildLeg(m,b,ps,-1,ps.lThigh,ps.lKnee,b.boots,true);buildLeg(m,b,ps,1,ps.rThigh,ps.rKnee,b.boots,true);
+        float[] ld=leanDir(b);
+        m.in(G_GEAR,0);m.ellDir(leanPt(b,v(0,0,b.waistZ-.06f+ps.bob)),ld,.1f,.14f,.025f,belt);
+        m.cone(leanPt(b,v(.06f,-.12f,b.shoulderZ+ps.bob)),leanPt(b,v(.08f,.12f,b.waistZ-.04f+ps.bob)),.014f,.014f,belt);
+        // quiver with arrows on the back
+        float[] q0=leanPt(b,v(-.13f,.06f,b.waistZ+.02f+ps.bob)),q1=leanPt(b,v(-.16f,-.06f,b.shoulderZ+.12f+ps.bob));
+        m.cone(q0,q1,.045f,.05f,quiver);for(int k=-1;k<=1;k++){float[] a=add(q1,v(0,k*.02f,0));m.cone(a,add(a,v(-.01f,-.02f,.1f)),.01f,.004f,fletch);}
+        buildFace(m,b,eye,false);hood(m,b,cloak,0,false);
+        if(ps.dead){buildArm(m,b,ps,1,null,ps.rArmSwing,b.hands,false,0);buildArm(m,b,ps,-1,null,ps.lArmSwing,b.hands,false,0);corpse(m);
+            bow(m,v(.2f,.45f,.03f),X,Y,wood,string);return m;}
+        // bow held out on the left; the right hand draws when attacking
+        float[] lh=ps.attack?leanPt(b,v(.48f,-.05f,1.18f)):leanPt(b,v(.2f,-.22f,.9f+ps.bob));
+        float[] rh=ps.attack?leanPt(b,v(.12f,.04f,1.2f)):leanPt(b,v(.1f,.22f,.85f+ps.bob));
+        buildArm(m,b,ps,-1,lh,0,b.hands,false,0);buildArm(m,b,ps,1,rh,0,b.hands,false,0);
+        if(ps.attack)bow(m,lh,Z,X,wood,string);else bow(m,lh,norm(v(.25f,0,1)),norm(v(1,0,-.25f)),wood,string);
+        if(ps.attack){m.in(G_GEAR,0);m.cyl(add(lh,X,.08f),rh,.005f,wood);}
+        return m;
+    }
+    /** Rogue: dark leathers, hood and mask, a dagger in each hand. */
+    static Model rogue(int frame){
+        Model m=new Model();Pose ps=pose(frame);Body b=new Body();
+        b.skin=m.skin(0xffc89878,.55f);b.legs=m.leather(0xff2a2626);b.torso=m.leather(0xff3a3434);b.boots=m.leather(0xff1a1616);b.hands=m.leather(0xff1e1a1a);
+        int hoodC=m.cloth(0xff26262c),mask=m.cloth(0xff141418),belt=m.leather(0xff4a2e1a),buckle=m.metal(0xffa0a0a8),steel=m.metal(0xffc8ccd4),grip=m.leather(0xff2a1a12),eye=m.plastic(0xff2a2420,.6f),sash=m.cloth(0xff6a1a22);
+        b.chestW=.155f;
+        buildTorso(m,b,ps);
+        buildLeg(m,b,ps,-1,ps.lThigh,ps.lKnee,b.boots,true);buildLeg(m,b,ps,1,ps.rThigh,ps.rKnee,b.boots,true);
+        float[] ld=leanDir(b);
+        m.in(G_GEAR,0);m.ellDir(leanPt(b,v(0,0,b.waistZ-.04f+ps.bob)),ld,.1f,.14f,.03f,sash);
+        for(int k=0;k<2;k++)m.cone(leanPt(b,v(.07f,-.13f+k*.05f,b.shoulderZ-.02f+ps.bob)),leanPt(b,v(.09f,.13f+k*.05f,b.waistZ+.04f+ps.bob)),.012f,.012f,belt);
+        for(int k=0;k<3;k++)m.rbox(leanPt(b,v(.1f,-.06f+k*.06f,b.chestZ-.02f-k*.05f+ps.bob)),ld,.008f,.012f,.02f,.004f,buckle);
+        buildFace(m,b,eye,false);
+        float[] h=b.head,f=b.headF;m.in(G_GEAR,0);m.ellDir(add(add(h,f,.05f),v(0,0,-.05f)),f,.06f,.075f,.045f,mask);
+        hood(m,b,hoodC,0,false);
+        if(ps.dead){buildArm(m,b,ps,1,null,ps.rArmSwing,b.hands,false,0);buildArm(m,b,ps,-1,null,ps.lArmSwing,b.hands,false,0);corpse(m);
+            sword(m,v(.2f,.4f,.02f),norm(v(1,.3f,0)),.22f,steel,grip,steel,false);return m;}
+        float[] rh=ps.attack?leanPt(b,v(.45f,.06f,1.0f)):leanPt(b,v(.22f,.2f,.85f+ps.bob));
+        float[] lh=ps.attack?leanPt(b,v(.25f,-.2f,.95f)):leanPt(b,v(.22f,-.2f,.85f+ps.bob));
+        buildArm(m,b,ps,1,rh,0,b.hands,false,0);buildArm(m,b,ps,-1,lh,0,b.hands,false,0);
+        sword(m,rh,ps.attack?norm(v(.9f,-.2f,-.1f)):norm(v(.6f,.1f,.75f)),.22f,steel,grip,steel,false);
+        sword(m,lh,ps.attack?norm(v(.4f,-.2f,.9f)):norm(v(.6f,-.1f,-.75f)),.22f,steel,grip,steel,false);
+        return m;
+    }
+    /** Wizard: long blue robe, pointed hat, white beard, staff with a glowing orb. */
+    static Model wizard(int frame){
+        Model m=new Model();Pose ps=pose(frame);Body b=new Body();
+        int robe=m.cloth(0xff2a3a8a),trim=m.cloth(0xffd0b040),beard=m.cloth(0xffe0dcd4),wood=m.wood(0xff5a3a20),orb=m.glow(ps.attack?0xff80e0ff:0xff60b0ff),eye=m.plastic(0xff2a2420,.6f),rope=m.cloth(0xffb09040);
+        b.skin=m.skin(0xffd0a080,.55f);b.torso=robe;b.legs=robe;b.hands=b.skin;b.boots=robe;
+        buildTorso(m,b,ps);
+        float[] ld=leanDir(b);
+        float sway=frame==Sprites.F_WALK1?.04f:frame==Sprites.F_WALK2?-.04f:0;
+        m.in(G_BODY,.05f);m.cone(leanPt(b,v(0,0,1.0f+ps.bob)),v(sway*.6f,0,.42f),.15f,.23f,robe);
+        m.cyl(v(sway,0,.02f),v(sway*.6f,0,.46f),.24f,robe);
+        m.in(G_GEAR,0);m.torus(v(sway,0,.06f),Z,.24f,.018f,trim);m.ellDir(leanPt(b,v(0,0,b.waistZ+ps.bob)),ld,.11f,.16f,.02f,rope);
+        m.rbox(leanPt(b,v(.12f,0,b.chestZ-.25f+ps.bob)),ld,.01f,.03f,.3f,.008f,trim);
+        buildFace(m,b,eye,false);
+        float[] h=b.head,f=b.headF;
+        m.in(G_BODY,.02f);m.ellDir(add(add(h,f,.06f),v(0,0,-.1f)),f,.05f,.065f,.07f,beard);m.cone(add(add(h,f,.07f),v(0,0,-.12f)),add(add(h,f,.08f),v(0,0,-.3f)),.05f,.008f,beard);
+        m.in(G_GEAR,0);m.ellDir(add(h,v(0,0,.06f)),Z,.012f,.19f,.19f,robe);m.cone(add(h,v(0,0,.06f)),add(h,v(-.08f,0,.34f)),.11f,.008f,robe);
+        m.torus(add(h,v(0,0,.075f)),Z,.105f,.012f,trim);
+        float[] rh=ps.attack?leanPt(b,v(.38f,.12f,1.12f)):leanPt(b,v(.18f,.22f,.9f+ps.bob));
+        if(ps.dead){buildArm(m,b,ps,1,null,ps.rArmSwing,b.hands,false,0);buildArm(m,b,ps,-1,null,ps.lArmSwing,b.hands,false,0);corpse(m);
+            m.in(G_GEAR,0);m.cyl(v(.1f,.4f,.03f),v(.9f,.5f,.03f),.018f,wood);return m;}
+        float[] lh=ps.attack?leanPt(b,v(.32f,-.12f,1.12f)):null;
+        buildArm(m,b,ps,1,rh,0,b.hands,false,0);buildArm(m,b,ps,-1,lh,ps.lArmSwing,b.hands,false,0);
+        for(int s2=-1;s2<=1;s2+=2){float[] sh=leanPt(b,v(0,s2*b.shoulderW,b.shoulderZ+ps.bob));float[] hand=s2>0?rh:lh;if(hand==null)hand=add(sh,limbDir(ps.lArmSwing,s2*.12f),.48f);
+            float[] el=ik(sh,hand,b.upper,b.fore,v(-.7f,s2*.5f,-.3f));m.in(G_BODY,.03f);m.cone(el,add(lerp(el,hand,.75f),v(0,0,-.02f)),.05f,.075f,robe);}
+        float[] sd=ps.attack?norm(v(.35f,0,1)):norm(v(.05f,0,1));
+        m.in(G_GEAR,0);m.cyl(add(rh,sd,-.85f),add(rh,sd,.5f),.018f,wood);float[] top=add(rh,sd,.56f);
+        m.torus(add(rh,sd,.5f),sd,.045f,.012f,wood);m.in(G_FX,0);m.ell(top,.045f,.045f,.045f,orb);
+        if(ps.attack){m.ell(top,.09f,.09f,.09f,m.glow(0xff3070ff));}
+        return m;
+    }
+    /** Cleric: plate armour under a white and gold surcoat, mace and a shield with a holy sun. */
+    static Model cleric(int frame){
+        Model m=new Model();Pose ps=pose(frame);Body b=new Body();
+        b.skin=m.skin(0xffc89878,.55f);b.legs=m.metal(0xff8a9098);b.torso=m.metal(0xffa0a8b0);b.boots=m.metal(0xff6a7078);b.hands=m.metal(0xff8a9098);
+        int coat=m.cloth(0xffe8e4d8),gold=m.metal(0xffd0a840),steel=m.metal(0xffb8c0c8),wood=m.wood(0xff6a4424),hair=m.cloth(0xff6a4a2a),eye=m.plastic(0xff2a2420,.6f),face=m.cloth(0xffe8e4d8);
+        buildTorso(m,b,ps);
+        buildLeg(m,b,ps,-1,ps.lThigh,ps.lKnee,b.boots,true);buildLeg(m,b,ps,1,ps.rThigh,ps.rKnee,b.boots,true);
+        float[] ld=leanDir(b);
+        m.in(G_BODY,.015f);
+        m.rbox(leanPt(b,v(.105f,0,b.waistZ-.02f+ps.bob)),ld,.02f,.12f,.27f,.015f,coat);m.rbox(leanPt(b,v(-.105f,0,b.waistZ-.02f+ps.bob)),ld,.02f,.12f,.27f,.015f,coat);
+        m.in(G_GEAR,0);
+        m.rbox(leanPt(b,v(.13f,0,b.chestZ+ps.bob)),ld,.006f,.02f,.09f,.004f,gold);m.rbox(leanPt(b,v(.13f,0,b.chestZ+.03f+ps.bob)),ld,.006f,.065f,.018f,.004f,gold);
+        m.ellDir(leanPt(b,v(0,0,b.waistZ-.06f+ps.bob)),ld,.1f,.14f,.025f,gold);
+        for(int s2=-1;s2<=1;s2+=2){float[] pp=leanPt(b,v(0,s2*(b.shoulderW+.01f),b.shoulderZ+.02f+ps.bob));m.ellDir(pp,ld,.08f,.075f,.05f,steel);}
+        buildFace(m,b,eye,false);
+        float[] h=b.head,f=b.headF;m.in(G_GEAR,0);m.ellDir(add(add(h,f,-.015f),v(0,0,.03f)),f,.1f,.089f,.09f,hair);
+        if(ps.dead){buildArm(m,b,ps,1,null,ps.rArmSwing,b.hands,false,0);buildArm(m,b,ps,-1,null,ps.lArmSwing,b.hands,false,0);corpse(m);
+            mace(m,v(.2f,.45f,.03f),norm(v(1,.2f,0)),wood,steel);return m;}
+        float[] rh=ps.attack?leanPt(b,v(.4f,.1f,1.1f)):leanPt(b,v(.2f,.2f,.88f+ps.bob));
+        float[] md=ps.attack?norm(v(.7f,-.4f,-.3f)):norm(v(.4f,.05f,.9f));
+        mace(m,rh,md,wood,steel);
+        float[] lh=leanPt(b,v(.22f,-.2f,.98f+ps.bob));
+        buildArm(m,b,ps,1,rh,0,b.hands,false,0);buildArm(m,b,ps,-1,lh,0,b.hands,false,0);
+        float[] sn=norm(v(1,-.25f,0));float[] sc=add(lh,v(.05f,-.03f,.02f));
+        m.in(G_GEAR,0);m.cyl(add(sc,sn,-.015f),add(sc,sn,.015f),.2f,face);m.torus(sc,sn,.2f,.014f,gold);
+        float[][] fr=frame(sn);m.ell(add(sc,sn,.02f),.05f,.05f,.05f,gold);
+        for(int k=0;k<8;k++){double a=k*Math.PI/4;float[] o=add(mul(fr[1],(float)Math.cos(a)),mul(fr[2],(float)Math.sin(a)));m.cone(add(add(sc,sn,.02f),o,.05f),add(add(sc,sn,.02f),o,.15f),.016f,.003f,gold);}
         return m;
     }
     /** Animated skeleton warrior: bones, ribcage, glowing eye sockets, rusty sword. */

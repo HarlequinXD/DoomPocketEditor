@@ -268,7 +268,7 @@ final class Actions {
         def("move_towards","Move Towards","Movement",Icons.ARROW_UP,"Walks straight towards the target or player; sends an event on arrival.",c->{
             Actor t=c.who("to");if(t==null)return DONE;if(c.w.dist(c.self,t)<=c.f("arriveDistance")){c.self.stop();c.send("arriveEvent");return DONE;}
             c.self.angle=c.w.angleTo(c.self,t);c.w.walk(c.self,c.self.angle,c.f("speed"));return RUNNING;},"to:c(Target|Player)=Target","speed:f=3","arriveDistance:f=1","arriveEvent:e=");
-        def("chase_target","Chase Target","Movement",Icons.SKULL,"Doom-style chase: moves towards the target and steers around walls.",c->{
+        def("chase_target","Chase Target","Movement",Icons.SKULL,"Classic chase: moves towards the target and steers around walls.",c->{
             if(c.self.target==null||!c.self.target.alive){c.send("noTargetEvent");return RUNNING;}c.w.chase(c.self,c.f("speed"),c.dt);return RUNNING;},"speed:f=2.5","noTargetEvent:e=");
         def("wander","Wander","Movement",Icons.MOVE,"Wanders around, changing direction now and then.",c->{
             if(c.enter)c.m[0]=0;c.m[0]-=c.dt;if(c.m[0]<=0||c.self.blocked){c.m[0]=c.f("turnInterval")*(0.5f+c.w.rng.nextFloat());c.self.angle=(float)(c.w.rng.nextInt(8)*Math.PI/4);}
@@ -343,7 +343,7 @@ final class Actions {
         def("third_person_camera","Third Person Camera","Camera",Icons.CAMERA,"Switches the player's view to a third-person camera. Orbit: swipe to circle the camera, the player runs where you push. Shoulder: over-the-shoulder aiming. Chase: the camera swings behind the player.",c->{
             c.w.thirdPersonCamera(c.choice("style",CAM_STYLES),c.f("distance"),c.f("height"),c.f("shoulder"),c.f("smoothing"));return DONE;},
             "style:c("+CAM_STYLES+")=Orbit","distance:f=3.8","height:f=0.8","shoulder:f=0.35","smoothing:f=8");
-        def("first_person_camera","First Person Camera","Camera",Icons.CROSSHAIR,"Switches back to the classic Doom first-person view with the weapon on screen.",c->{c.w.firstPersonCamera();return DONE;});
+        def("first_person_camera","First Person Camera","Camera",Icons.CROSSHAIR,"Switches back to the first-person view with the weapon on screen.",c->{c.w.firstPersonCamera();return DONE;});
         def("toggle_camera_view","Toggle Camera View","Camera",Icons.CAMERA,"Flips between first and third person (bind it to a button event).",c->{
             if(c.w.thirdPerson())c.w.firstPersonCamera();else c.w.thirdPersonCamera(c.choice("style",CAM_STYLES),c.f("distance"),-99,-99,-1);return DONE;},
             "style:c("+CAM_STYLES+")=Orbit","distance:f=3.2");
@@ -377,7 +377,7 @@ final class Actions {
             c.send(c.w.thirdPerson()?"thirdEvent":"firstEvent");return DONE;},"thirdEvent:e=","firstEvent:e=");
 
         // ------------------------------------------------------------------ Feedback
-        def("show_message","Show Message","Feedback",Icons.INFO,"Shows a message at the top of the screen, like Doom pickups.",c->{c.w.message(c.s("text"),c.f("seconds"));return DONE;},"text:t=Hello","seconds:f=3");
+        def("show_message","Show Message","Feedback",Icons.INFO,"Shows a message at the top of the screen, like item pickups.",c->{c.w.message(c.s("text"),c.f("seconds"));return DONE;},"text:t=Hello","seconds:f=3");
         def("center_print","Center Message","Feedback",Icons.INFO,"Shows large text in the middle of the screen.",c->{c.w.centerPrint(c.s("text"),c.f("seconds"));return DONE;},"text:t=","seconds:f=2");
         def("screen_flash","Screen Flash","Feedback",Icons.SUN,"Tints the screen briefly (red for pain, gold for pickups).",c->{c.w.flash(c.choice("color","Red|Gold|White|Green"),c.f("strength"));return DONE;},"color:c(Red|Gold|White|Green)=Gold","strength:f=0.4");
         def("camera_shake","Camera Shake","Feedback",Icons.MOVE,"Shakes the player's view.",c->{c.w.shake(c.f("strength"),c.f("seconds"));return DONE;},"strength:f=0.3","seconds:f=0.5");

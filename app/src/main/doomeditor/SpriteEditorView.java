@@ -330,7 +330,7 @@ public class SpriteEditorView extends View {
     }
     private void chooseAngles(){
         if(host==null||sprite==null)return;
-        String[] items={"1 angle — always faces the camera","4 angles — front, right, back, left","8 angles — Doom-style rotations"};
+        String[] items={"1 angle — always faces the camera","4 angles — front, right, back, left","8 angles — classic rotations"};
         host.choose("Sprite angles",items,sprite.angles==8?2:sprite.angles==4?1:0,k->{
             int n=CustomSprite.ANGLE_OPTIONS[k];if(n==sprite.angles)return;
             Runnable go=()->{cancelOp();sprite.setAngles(n);view=Math.min(view,n-1);undo.clear();redo.clear();save();invalidate();};

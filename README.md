@@ -1,4 +1,4 @@
-# Doom Pocket Editor – launch crash fix
+# RPG Pocket Editor
 
 Upload everything in this ZIP to the repository root, preserving paths, then run GitHub Actions.
 

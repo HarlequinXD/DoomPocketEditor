@@ -6,13 +6,14 @@ final class Sprites {
     // Built-in sprite ids. The numbers are stable (projects store them); the art is fantasy.
     static final int PLAYER=0,TROOPER=1,IMP=2,DEMON=3,MEDKIT=4,STIMPACK=5,CLIP=6,SHELLS=7,ROCKETBOX=8,ARMOR=9,SHOTGUN_PICKUP=10,
             CHAINGUN_PICKUP=11,LAUNCHER_PICKUP=12,KEY_BLUE=13,KEY_YELLOW=14,KEY_RED=15,BARREL=16,TORCH=17,COLUMN=18,SWITCH=19,SWITCH_ON=20,LAMP=21,SERGEANT=22,
-            SHIELD_PICKUP=23,SCROLL=24,NPC=25,CHEST=26,CHEST_OPEN=27,GOLD=28;
+            SHIELD_PICKUP=23,SCROLL=24,NPC=25,CHEST=26,CHEST_OPEN=27,GOLD=28,
+            HERO_RANGER=29,HERO_ROGUE=30,HERO_WIZARD=31,HERO_CLERIC=32;
     // Fantasy names for the same ids
     static final int HERO=PLAYER,SKELETON=TROOPER,GOBLIN=IMP,ORC=DEMON,CULTIST=SERGEANT,VILLAGER=NPC,
             POTION_HEALING=MEDKIT,DRAUGHT=STIMPACK,DAGGER=CLIP,POTION_ARCANA=SHELLS,TREASURE=ROCKETBOX,ARMOUR=ARMOR,SWORD=SHOTGUN_PICKUP,BOW=CHAINGUN_PICKUP,STAFF=LAUNCHER_PICKUP,
             KEY_BRONZE=KEY_BLUE,KEY_SILVER=KEY_YELLOW,KEY_GOLD=KEY_RED,PILLAR=COLUMN,LEVER=SWITCH,LEVER_ON=SWITCH_ON,BRAZIER=LAMP;
-    static final String[] NAMES={"Hero","Skeleton","Goblin","Orc","Healing Potion","Healing Draught","Dagger","Arcana Potion","Treasure","Armour","Sword","Bow","Staff",
-            "Bronze Key","Silver Key","Gold Key","Barrel","Torch","Pillar","Lever","Lever (pulled)","Brazier","Cultist","Shield","Scroll","Villager","Chest","Chest (open)","Gold"};
+    static final String[] NAMES={"Hero · Fighter","Skeleton","Goblin","Orc","Healing Potion","Healing Draught","Dagger","Arcana Potion","Treasure","Armour","Sword","Bow","Staff",
+            "Bronze Key","Silver Key","Gold Key","Barrel","Torch","Pillar","Lever","Lever (pulled)","Brazier","Cultist","Shield","Scroll","Villager","Chest","Chest (open)","Gold","Hero · Ranger","Hero · Rogue","Hero · Wizard","Hero · Cleric"};
     static final String NAMES_JOINED=join(NAMES);
     static String join(String[] a){StringBuilder b=new StringBuilder();for(int i=0;i<a.length;i++){if(i>0)b.append('|');b.append(a[i]);}return b.toString();}
     static final int COUNT=NAMES.length;
@@ -34,7 +35,7 @@ final class Sprites {
     private static final Object lock=new Object();
 
     /** Bump when the models or renderer change so stale disk-cached sprites are ignored. */
-    static final int MODEL_VERSION=4;
+    static final int MODEL_VERSION=5;
     private static java.io.File diskDir;
     /** Rendered sprites are saved here (compressed) so each one is only ever rendered once per install. */
     static void setCacheDir(java.io.File dir){
@@ -77,7 +78,10 @@ final class Sprites {
         synchronized(requests){for(int[] r:requests)if(r[0]==id&&r[1]==f&&r[2]==view)return;requests.addFirst(new int[]{id,f,view});requests.notifyAll();}
     }
     /** Characters have 8 rotations (front, front-right, right, back-right, back, back-left, left, front-left). */
-    static final int[] CHARACTERS={PLAYER,TROOPER,SERGEANT,IMP,DEMON,NPC};
+    static final int[] CHARACTERS={PLAYER,TROOPER,SERGEANT,IMP,DEMON,NPC,HERO_RANGER,HERO_ROGUE,HERO_WIZARD,HERO_CLERIC};
+    /** Built-in hero look for a class (Fighter, Ranger, Rogue, Wizard, Cleric). */
+    static int heroFor(String cls){if(cls==null)return HERO;switch(cls){case "Ranger":return HERO_RANGER;case "Rogue":return HERO_ROGUE;case "Wizard":return HERO_WIZARD;case "Cleric":return HERO_CLERIC;default:return HERO;}}
+    static boolean isHero(int id){return id==HERO||(id>=HERO_RANGER&&id<=HERO_CLERIC);}
     static boolean hasAngles(int id){for(int c:CHARACTERS)if(c==id)return true;return false;}
     static Sprite get(int id,int frame){return get(id,frame,0);}
     private static int frameSlot(int id,int frame){return hasAngles(id)?frame:id==TORCH?(frame&1):0;}
@@ -140,6 +144,7 @@ final class Sprites {
             case GOBLIN:m=SpriteModels.goblin(frame);elev=.15f;break;
             case ORC:m=SpriteModels.orc(frame);elev=.15f;break;
             case VILLAGER:m=SpriteModels.villager(frame);elev=.15f;break;
+            case HERO_RANGER:case HERO_ROGUE:case HERO_WIZARD:case HERO_CLERIC:m=SpriteModels.hero(frame,id-HERO_RANGER+1);elev=.15f;break;
             default:{m=SpriteModels.item(id,frame);
                 boolean tall=id==TORCH||id==COLUMN||id==LAMP||id==SWITCH||id==SWITCH_ON||id==BARREL;
                 elev=tall?.18f:.42f;   // pickups lie on the floor, so look down on them a little more

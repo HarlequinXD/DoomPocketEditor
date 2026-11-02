@@ -81,7 +81,7 @@ final class World {
             if(s.special==Level.SP_SECRET)totalSecrets++;}
         EntityDef pd=p.playerDef();
         player=makeActor(pd,level.playerX,level.playerY,level.facing);player.isPlayer=true;
-        hero=Hero.create(pd);player.health=hero.maxHp;weapon=hero.weaponOrFists().fp;
+        hero=Hero.create(pd);player.sprite=pd.lookSprite();player.health=hero.maxHp;weapon=hero.weaponOrFists().fp;
         player.z=floorAt(player.x,player.y);viewZ=player.z+EYE;
         actors.add(player);
         if(live){player.fsm=null;return;}

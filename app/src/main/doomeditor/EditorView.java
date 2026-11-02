@@ -29,7 +29,7 @@ public class EditorView extends View {
     private static final int H_ED=3000,H_SWITCH=3010,H_MORE=3011,H_LAUNCH=3020,H_LAUNCH_HOME=3027,H_LAUNCH_CLOSE=3028,H_TILE=3040,H_HOMEPLAY=3050,H_HOME3D=3051,H_HOMEFIX=3052;
     private boolean launcherOpen;
     // Touch target ids registered while drawing.
-    private static final int H_MODE=100,H_FSM=110,H_SAVE=111,H_RESET=112,H_PAGE=120,H_TOOL=200,H_APPLY=520,H_MAT=400,
+    private static final int H_MODE=100,H_FSM=110,H_SAVE=111,H_RESET=112,H_PAGE=120,H_TOOL=200,H_APPLY=520,H_MAT=4000,
             H_RAISE=500,H_LOWER=501,H_LIGHTUP=502,H_LIGHTDN=503,H_FLY=504,H_UP=505,H_DOWN=506,H_EDITFSM3D=507,H_START3D=508,
             H_FIRE=510,H_USE=511,H_JUMP=512,H_WEAPON=513,H_EXITPLAY=514,H_SPELL=515,H_POTION=516,H_BAG=517,H_DLG=3200,H_INV_ITEM=3300,H_INV_SPELL=3600,H_INV_CLOSE=3700,H_INV_TAB=3710,H_RETRY=530,H_BACK=531,
             H_NEWDEF=590,H_LOGO=593,H_SPRITES=594,H_EDITSPRITE=813,H_ZOOMIN=591,H_ZOOMOUT=592,H_DEF=2000,H_PROP=700,H_ETOOL=800,H_EDITFSM=810,H_DUPDEF=811,H_DELDEF=812;
@@ -508,7 +508,7 @@ public class EditorView extends View {
     private Bitmap defThumb(EntityDef d){
         CustomSprite cs=project.sprite(d.customSprite);
         if(cs!=null){String key=cs.id+"#"+cs.version+"#"+cs.w+"x"+cs.h;Bitmap b=customThumbs.get(key);if(b==null){b=cs.thumbnail();customThumbs.put(key,b);}return b;}
-        return spriteThumb(d.sprite);
+        return spriteThumb(d.lookSprite());
     }
     private Bitmap spriteThumb(int id){int i=Math.max(0,Math.min(Sprites.COUNT-1,id));if(spriteThumbs[i]==null)spriteThumbs[i]=Sprites.preview(i);return spriteThumbs[i];}
     private Bitmap texThumb(int id){int i=Math.max(0,Math.min(Textures.COUNT-1,id));if(texThumbs[i]==null)texThumbs[i]=Textures.preview(i);return texThumbs[i];}
