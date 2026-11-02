@@ -11,6 +11,7 @@ public class DoomApp extends Application {
 
     @Override public void onCreate() {
         super.onCreate();
+        Sprites.pixel=!Perf.hdSprites(this);
         Sprites.setCacheDir(getCacheDir());   // rendered sprites are kept between launches
         final Thread.UncaughtExceptionHandler previous = Thread.getDefaultUncaughtExceptionHandler();
         Thread.setDefaultUncaughtExceptionHandler((thread, error) -> {

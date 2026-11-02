@@ -22,6 +22,9 @@ final class Perf {
     static void setSaver(Context c,boolean on){saver=on;try{c.getSharedPreferences("app",0).edit().putBoolean("saver",on).apply();}catch(Throwable ignored){}}
 
     /** Frame interval in ms for continuously animating game/3D screens. */
+    /** Built-in sprite style: pixel art (default) or smooth HD. */
+    static boolean hdSprites(Context c){try{return c.getSharedPreferences("app",0).getBoolean("hdSprites",false);}catch(Throwable t){return false;}}
+    static void setHdSprites(Context c,boolean hd){try{c.getSharedPreferences("app",0).edit().putBoolean("hdSprites",hd).apply();}catch(Throwable ignored){}Sprites.setPixelStyle(!hd);}
     static long gameFrameMs(Context c){return saver(c)?33:16;}
 
 }

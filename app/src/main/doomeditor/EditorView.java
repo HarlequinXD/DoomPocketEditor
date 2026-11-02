@@ -229,12 +229,14 @@ public class EditorView extends View {
         ArrayList<String> errs=MapValidator.check(level);
         boolean sv=Perf.saver(getContext());
         host.choose(project.name,new String[]{"Check map ("+(errs.isEmpty()?"no problems":errs.size()+" warning"+(errs.size()==1?"":"s"))+")","Save now",
-                sv?"Battery saver: ON (tap to turn off)":"Battery saver: off (30 fps, still backdrops)","Reset level…","Back to projects"},-1,k->{
+                sv?"Battery saver: ON (tap to turn off)":"Battery saver: off (30 fps, still backdrops)",
+                Sprites.pixel?"Built-in sprites: Pixel art (tap for HD)":"Built-in sprites: HD (tap for pixel art)","Reset level…","Back to projects"},-1,k->{
             if(k==0)showMapCheck();
             else if(k==1)save(true);
             else if(k==2){Perf.setSaver(getContext(),!sv);hint(!sv?"Battery saver on · 30 fps game and 3D, still previews":"Battery saver off · 60 fps");lastInteraction=System.currentTimeMillis();}
-            else if(k==3)host.confirm("Reset the level?","This clears every sector and placed entity. Entity types, FSMs and sprites are kept.","Reset level",()->{resetLevel();invalidate();});
-            else if(k==4){save(false);if(onExitToTitle!=null)onExitToTitle.run();}
+            else if(k==4)host.confirm("Reset the level?","This clears every sector and placed entity. Entity types, FSMs and sprites are kept.","Reset level",()->{resetLevel();invalidate();});
+            else if(k==5){save(false);if(onExitToTitle!=null)onExitToTitle.run();}
+            else if(k==3){boolean hd=Sprites.pixel;Perf.setHdSprites(getContext(),hd);java.util.Arrays.fill(spriteThumbs,null);hint(hd?"Built-in sprites: HD":"Built-in sprites: pixel art");}
             invalidate();});
     }
     private void showMapCheck(){

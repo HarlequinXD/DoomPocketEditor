@@ -36,12 +36,43 @@ final class Sprites {
 
     /** Bump when the models or renderer change so stale disk-cached sprites are ignored. */
     static final int MODEL_VERSION=5;
-    private static java.io.File diskDir;
+    private static java.io.File diskRoot,diskDir;
+    /** Pixel-art style (default): built-in sprites are rendered in HD, then reduced 3x keeping each block's main colour,
+     *  exactly like copying a built-in sprite into the sprite editor. Off = the smooth HD render. */
+    static volatile boolean pixel=true;
+    static final int PIXEL_K=3;
     /** Rendered sprites are saved here (compressed) so each one is only ever rendered once per install. */
     static void setCacheDir(java.io.File dir){
-        try{java.io.File d=new java.io.File(dir,"sprites_v"+MODEL_VERSION);d.mkdirs();diskDir=d;
-            java.io.File[] old=dir.listFiles();if(old!=null)for(java.io.File o:old)if(o.isDirectory()&&o.getName().startsWith("sprites_v")&&!o.equals(d)){java.io.File[] fs=o.listFiles();if(fs!=null)for(java.io.File f:fs)f.delete();o.delete();}
+        diskRoot=dir;
+        try{String keep="sprites_v"+MODEL_VERSION;
+            java.io.File[] old=dir.listFiles();if(old!=null)for(java.io.File o:old)if(o.isDirectory()&&o.getName().startsWith("sprites_v")&&!o.getName().startsWith(keep+"_")){java.io.File[] fs=o.listFiles();if(fs!=null)for(java.io.File f:fs)f.delete();o.delete();}
         }catch(Throwable ignored){}
+        useDiskDir();
+    }
+    private static void useDiskDir(){
+        if(diskRoot==null)return;
+        try{java.io.File d=new java.io.File(diskRoot,"sprites_v"+MODEL_VERSION+(pixel?"_px":"_hd"));d.mkdirs();diskDir=d;}catch(Throwable ignored){}
+    }
+    /** Switches between pixel-art and HD built-in sprites; everything already drawn is dropped and redrawn on demand. */
+    static void setPixelStyle(boolean on){
+        if(pixel==on)return;
+        pixel=on;useDiskDir();
+        synchronized(requests){requests.clear();}
+        synchronized(lock){if(cache!=null)cache=new Sprite[COUNT][FRAMES][];}
+        synchronized(fp){for(Sprite[] a:fp)java.util.Arrays.fill(a,null);}
+    }
+    /** Block-reduces a sprite by k, keeping the most common opaque colour of each k x k block (hard edges, no blending). */
+    static Sprite pixelate(Sprite sp,int k){
+        int sw=(sp.w+k-1)/k,sh=(sp.h+k-1)/k;Sprite out=new Sprite(sw,sh,sp.bright);out.ppu=sp.ppu/k;
+        // align blocks to the bottom edge so feet stay on the floor
+        int oy=sh*k-sp.h,ox=(sw*k-sp.w)/2;int[] cols=new int[k*k],cnt=new int[k*k];
+        for(int y=0;y<sh;y++)for(int x=0;x<sw;x++){
+            int n=0,opaque=0;
+            for(int yy=0;yy<k;yy++)for(int xx=0;xx<k;xx++){int sx=x*k+xx-ox,sy=y*k+yy-oy;if(sx<0||sy<0||sx>=sp.w||sy>=sp.h)continue;int c=sp.px[sy*sp.w+sx];if((c>>>24)<128)continue;c|=0xff000000;opaque++;
+                int j=0;while(j<n&&cols[j]!=c)j++;if(j==n){cols[n]=c;cnt[n]=0;n++;}cnt[j]++;}
+            if(opaque*2>=k*k){int best=0;for(int j=1;j<n;j++)if(cnt[j]>cnt[best])best=j;out.px[y*sw+x]=cols[best];}
+        }
+        return out;
     }
     private static final java.util.ArrayDeque<int[]> requests=new java.util.ArrayDeque<>();
     private static Thread worker;
@@ -135,7 +166,8 @@ final class Sprites {
         }catch(Throwable t){tmp.delete();return;}
         tmp.renameTo(file);
     }
-    private static Sprite build(int id,int frame,int view){
+    private static Sprite build(int id,int frame,int view){Sprite s=buildHd(id,frame,view);return pixel?pixelate(s,PIXEL_K):s;}
+    private static Sprite buildHd(int id,int frame,int view){
         SpriteModels.Model m;float elev;boolean bright=id==TORCH||id==LAMP;
         switch(id){
             case HERO:m=SpriteModels.hero(frame);elev=.15f;break;
@@ -162,7 +194,7 @@ final class Sprites {
     static Sprite fpSprite(int w,boolean attacking){
         w=Math.max(0,Math.min(7,w));int k=attacking?1:0;
         synchronized(fp){if(fp[w][k]!=null)return fp[w][k];}
-        Sprite s=SpriteModels.render(SpriteModels.firstPerson(w,attacking),(float)Math.PI,.06f,96f,false,500+w*2+k);
+        Sprite s=SpriteModels.render(SpriteModels.firstPerson(w,attacking),(float)Math.PI,.06f,96f,false,500+w*2+k);if(pixel)s=pixelate(s,PIXEL_K);
         synchronized(fp){if(fp[w][k]==null)fp[w][k]=s;return fp[w][k];}
     }
     static Sprite weaponSprite(int w){init();return weapons[Math.max(0,Math.min(4,w))];}
