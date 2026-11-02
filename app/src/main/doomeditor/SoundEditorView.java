@@ -27,7 +27,7 @@ public class SoundEditorView extends View {
     private static final int H_BACK=1,H_SAVE=2,H_NEW_SOUND=3,H_PLAY=4,H_STOP=5,H_AUTOPLAY=6,H_RESET_EDITS=7,H_RENAME=8,H_DUP=9,H_DELETE=10,H_EXPORT=11,
             H_REPLACE=12,H_WAVE=13,H_BUILTIN_COPY=14,H_BUILTIN_ASSIGN=15,H_NEW_SONG=16,H_MPLAY=17,H_INST=18,H_CLEAR=19,H_ADD_TRACK=20,H_TRACK_NAME=21,
             H_TRACK_SOUND=22,H_TRACK_DEL=23,H_TRACK_PREVIEW=24,H_LEVEL_MUSIC=25,H_SONG_RENAME=26,H_SONG_DUP=27,H_SONG_DEL=28,H_SONG_EXPORT=29,H_ROLL=30,H_KEYS=31,H_IMPORT=32,H_LIB=33,H_LIB_CAT=900,H_LIB_PLAY=3000,H_LIB_ADD=3100,
-            H_TAB=100,H_SOUND=200,H_BUILTIN=400,H_PRESET=450,H_SONG=500,H_TRACK=600,H_MUTE=650,H_BRUSH=700,H_GAME=800,H_GAME_PLAY=850,H_SLIDER=1000;
+            H_TAB=100,H_SOUND=200,H_BUILTIN=400,H_PRESET=450,H_SONG=500,H_TRACK=600,H_MUTE=650,H_BRUSH=700,H_GAME=800,H_GAME_PLAY=850,H_SLIDER=10000;
 
     final Project project;
     private final Host host;
@@ -303,15 +303,16 @@ public class SoundEditorView extends View {
             float bw=ui.measure(label,11.5f,1)+dp(24);if(px+bw>mr+1){px=ml;y+=dp(36);}
             r.set(px,y,px+bw,y+dp(30));ui.button(c,r,-1,label,libCat==i?Ui.ACTIVE:Ui.NORMAL);hitIn(r,H_LIB_CAT+i+1,mainRect);px+=bw+dp(6);}
         y+=dp(42);
-        int cols=mr-ml>dp(620)?2:1;float gap=dp(8),cw=(mr-ml-gap*(cols-1))/cols;int k=0;boolean anim=false;
+        int cols=mr-ml>dp(780)?2:1;float gap=dp(8),cw=(mr-ml-gap*(cols-1))/cols;int k=0;boolean anim=false;
         for(int i=0;i<MusicLibrary.ALL.size();i++){MusicLibrary.Entry e=MusicLibrary.ALL.get(i);if(libCat>=0&&e.category!=libCat)continue;
             float x=ml+(k%cols)*(cw+gap),yy=y+(k/cols)*dp(64);k++;
             boolean playing=sfx.musicPlaying()&&("lib_"+i).equals(playingSong);if(playing)anim=true;
             boolean added=false;for(Song s:project.songs)if(s.name.equals(e.name)){added=true;break;}
             r.set(x,yy,x+cw,yy+dp(58));ui.round(c,r,dp(9),playing?0xff1f3a2e:Ui.SURFACE_2);ui.outline(c,r,dp(9),playing?Ui.GREEN:Ui.BORDER,dp(1));
-            RectF pb=new RectF(x+dp(8),yy+dp(11),x+dp(44),yy+dp(47));ui.button(c,pb,playing?Icons.STOP:Icons.PLAY,null,playing?Ui.SUCCESS:Ui.PRIMARY);hitIn(pb,H_LIB_PLAY+i,mainRect);
             RectF ab=new RectF(x+cw-dp(84),yy+dp(13),x+cw-dp(8),yy+dp(45));ui.button(c,ab,added?Icons.CHECK:Icons.PLUS,added?"Added":"Add",added?Ui.NORMAL:Ui.ACTIVE);hitIn(ab,H_LIB_ADD+i,mainRect);
-            float tx=x+dp(54),tw=cw-dp(146);
+            RectF pb=new RectF(ab.left-dp(84),yy+dp(13),ab.left-dp(6),yy+dp(45));ui.button(c,pb,playing?Icons.STOP:Icons.PLAY,playing?"Stop":"Play",playing?Ui.SUCCESS:Ui.PRIMARY);hitIn(pb,H_LIB_PLAY+i,mainRect);
+            ui.round(c,x+dp(10),yy+dp(15),x+dp(38),yy+dp(43),dp(7),playing?Ui.GREEN:0xff9b6dff);ui.icon(c,Icons.MUSIC,x+dp(24),yy+dp(29),15,0xffffffff);
+            float tx=x+dp(48),tw=cw-dp(228);
             ui.text(c,ui.ellipsize(e.name,13,1,tw),tx,yy+dp(25),13,Ui.TEXT,1,-1);
             ui.text(c,ui.ellipsize(MusicLibrary.CATEGORIES[e.category]+" · "+e.info(),10,0,tw),tx,yy+dp(42),10,Ui.TEXT_3,0,-1);
             if(playing&&sfx.musicStep>=0){Song s=MusicLibrary.song(i);float f=(sfx.musicStep+1)/(float)s.steps();ui.rect(c,x+dp(10),yy+dp(53),x+dp(10)+(cw-dp(20))*f,yy+dp(55),Ui.GREEN);}
