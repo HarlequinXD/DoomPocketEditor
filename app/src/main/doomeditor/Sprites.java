@@ -16,29 +16,67 @@ final class Sprites {
     /** Pixels per world unit for sprites. */
     static final float PPU=32f;
 
-    static final class Sprite {final int w,h;final int[] px;final boolean bright;Sprite(int w,int h,boolean bright){this.w=w;this.h=h;px=new int[w*h];this.bright=bright;}}
-    private static Sprite[][] sprites,backs;
-    private static boolean buildingBack;
+    /** Pixel data plus its density: built-in model sprites use 64 pixels per unit, hand-drawn ones 32. */
+    static final class Sprite {final int w,h;final int[] px;final boolean bright;float ppu=PPU;Sprite(int w,int h,boolean bright){this.w=w;this.h=h;px=new int[w*h];this.bright=bright;}}
+    /** Model sprites are rendered at twice the hand-drawn density for crisper close-ups. */
+    static final float MODEL_PPU=64f;
+    /** Number of view angles stored for every built-in sprite slot (characters really use all 8). */
+    static final int VIEWS=8;
+    private static Sprite[][][] cache;
     private static Sprite[][] effects;
     private static Sprite[] weapons,flashes;
+    private static final Object lock=new Object();
 
-    static synchronized void init(){
-        if(sprites!=null)return;
-        sprites=new Sprite[COUNT][FRAMES];
-        for(int s=0;s<COUNT;s++)for(int f=0;f<FRAMES;f++)sprites[s][f]=make(s,f);
-        // Rear views for the humanoids, used when the camera is behind them (third person).
-        backs=new Sprite[COUNT][];buildingBack=true;
-        for(int s:new int[]{PLAYER,TROOPER,SERGEANT,IMP,DEMON}){backs[s]=new Sprite[FRAMES];for(int f=0;f<FRAMES;f++)backs[s][f]=make(s,f);}
-        buildingBack=false;
-        effects=new Sprite[7][3];
-        for(int e=0;e<7;e++)for(int f=0;f<3;f++)effects[e][f]=effect(e,f);
-        weapons=new Sprite[5];flashes=new Sprite[5];
-        for(int i=0;i<5;i++){weapons[i]=weapon(i);flashes[i]=flash(i);}
+    static void init(){
+        synchronized(lock){
+            if(cache!=null)return;
+            cache=new Sprite[COUNT][FRAMES][];
+            effects=new Sprite[7][3];
+            for(int e=0;e<7;e++)for(int f=0;f<3;f++)effects[e][f]=effect(e,f);
+            weapons=new Sprite[5];flashes=new Sprite[5];
+            for(int i=0;i<5;i++){weapons[i]=weapon(i);flashes[i]=flash(i);}
+        }
+        // Pre-build the 8-angle characters in the background so the first frames of play don't stall.
+        Thread t=new Thread(()->{
+            try{for(int f:new int[]{F_IDLE,F_WALK1,F_WALK2,F_ATTACK,F_PAIN,F_DEAD})for(int id:CHARACTERS)for(int v=0;v<VIEWS;v++)get(id,f,v);
+                for(int id=0;id<COUNT;id++)get(id,F_IDLE,0);}catch(Throwable ignored){}
+        },"SpriteWarmup");
+        t.setDaemon(true);t.setPriority(Thread.MIN_PRIORITY);t.start();
     }
-    static Sprite get(int id,int frame){init();return sprites[Math.max(0,Math.min(COUNT-1,id))][Math.max(0,Math.min(FRAMES-1,frame))];}
-    /** Rear view of a sprite if it has one (humanoids), otherwise the normal view. */
-    static Sprite getBack(int id,int frame){init();int i=Math.max(0,Math.min(COUNT-1,id));Sprite[] b=backs[i];return b==null?get(id,frame):b[Math.max(0,Math.min(FRAMES-1,frame))];}
-    static boolean hasBack(int id){init();return id>=0&&id<COUNT&&backs[id]!=null;}
+    /** Characters have 8 rotations (front, front-right, right, back-right, back, back-left, left, front-left). */
+    static final int[] CHARACTERS={PLAYER,TROOPER,SERGEANT,IMP,DEMON};
+    static boolean hasAngles(int id){for(int c:CHARACTERS)if(c==id)return true;return false;}
+    static Sprite get(int id,int frame){return get(id,frame,0);}
+    /** Sprite {@code id} in animation {@code frame} seen from {@code view} (0 = front … 4 = back, see CustomSprite.viewIndex). */
+    static Sprite get(int id,int frame,int view){
+        if(cache==null)init();
+        id=Math.max(0,Math.min(COUNT-1,id));frame=Math.max(0,Math.min(FRAMES-1,frame));
+        boolean angled=hasAngles(id);view=angled?((view%VIEWS)+VIEWS)%VIEWS:0;
+        // static items share one image for every frame (torches flicker between two)
+        int f=angled?frame:id==TORCH?(frame&1):0;
+        synchronized(lock){Sprite[] a=cache[id][f];if(a!=null&&a[view]!=null)return a[view];}
+        Sprite s=build(id,f,view);
+        synchronized(lock){Sprite[] a=cache[id][f];if(a==null)a=cache[id][f]=new Sprite[VIEWS];if(a[view]==null)a[view]=s;return a[view];}
+    }
+    private static Sprite build(int id,int frame,int view){
+        SpriteModels.Model m;float elev;boolean bright=id==KEY_BLUE||id==KEY_YELLOW||id==KEY_RED||id==TORCH||id==LAMP;
+        switch(id){
+            case PLAYER:m=SpriteModels.soldier(0,frame);elev=.15f;break;
+            case TROOPER:m=SpriteModels.soldier(1,frame);elev=.15f;break;
+            case SERGEANT:m=SpriteModels.soldier(2,frame);elev=.15f;break;
+            case IMP:m=SpriteModels.imp(frame);elev=.15f;break;
+            case DEMON:m=SpriteModels.demon(frame);elev=.15f;break;
+            default:{m=SpriteModels.item(id,frame);
+                boolean tall=id==TORCH||id==COLUMN||id==LAMP||id==SWITCH||id==SWITCH_ON||id==BARREL||id==KEY_BLUE||id==KEY_YELLOW||id==KEY_RED;
+                elev=tall?.18f:.42f;   // pickups lie on the floor, so look down on them a little more
+                // turn items a little so they read in 3D (front-three-quarter)
+                return SpriteModels.render(m,tall?.0f:.55f,elev,MODEL_PPU,bright,id*7+frame);}
+        }
+        return SpriteModels.render(m,(float)(view*Math.PI/4),elev,MODEL_PPU,bright,id*7+frame);
+    }
+    /** Rear view (kept for older callers). */
+    static Sprite getBack(int id,int frame){return get(id,frame,4);}
+    static boolean hasBack(int id){return hasAngles(id);}
     static Sprite effect(int id,int frame,boolean dummy){init();return effects[Math.max(0,Math.min(6,id))][Math.max(0,Math.min(2,frame))];}
     static Sprite weaponSprite(int w){init();return weapons[Math.max(0,Math.min(4,w))];}
     static Sprite flashSprite(int w){init();return flashes[Math.max(0,Math.min(4,w))];}
@@ -72,84 +110,6 @@ final class Sprites {
         }
     }
 
-    // ------------------------------------------------------------------ characters
-    private static Sprite humanoid(int body,int skin,int legs,int eye,int frame,int style){
-        int W=34,H=54;Sprite s=new Sprite(W,H,false);
-        if(frame==F_DEAD){
-            oval(s,17,50,15,3.5f,0xff6a0a0a);
-            rect(s,5,44,28,49,legs);rect(s,9,42,24,47,body);oval(s,27,45,4,3.5f,skin);rect(s,3,45,8,48,legs);
-            px(s,27,44,0xff300000);finish(s,7);return s;
-        }
-        int lo=frame==F_WALK1?-2:frame==F_WALK2?2:0;
-        // legs
-        rect(s,11+lo,34,15+lo,51,legs);rect(s,19-lo,34,23-lo,51,legs);
-        rect(s,10+lo,50,15+lo,52,0xff2a2420);rect(s,19-lo,50,24-lo,52,0xff2a2420);
-        // torso
-        rect(s,10,18,24,35,body);rect(s,10,32,24,33,shade(body,.6f));
-        if(style==3){rect(s,8,20,26,33,body);}
-        // arms
-        if(frame==F_ATTACK){
-            rect(s,7,20,10,26,body);rect(s,24,20,27,26,body);rect(s,10,23,24,26,body);
-            if((style==1||style==4||style==0)&&!buildingBack){rect(s,13,22,21,24,0xff3a3a3a);}
-            if(style==2){oval(s,17,20,4,4,0xffffb030);oval(s,17,20,2,2,0xffffff90);}
-        }else{
-            int sw=frame==F_WALK1?1:frame==F_WALK2?-1:0;
-            rect(s,6,19+sw,9,32+sw,body);rect(s,25,19-sw,28,32-sw,body);
-            rect(s,6,31+sw,9,33+sw,skin);rect(s,25,31-sw,28,33-sw,skin);
-            if(style==1||style==4||style==0)rect(s,24,26,31,28,0xff3a3a3a);
-        }
-        boolean back=buildingBack;
-        if(back){
-            // rear: spine shading, backpack for the marine, no face
-            rect(s,16,19,18,32,shade(body,.75f));
-            if(style==0){rect(s,11,19,23,30,0xff4a4636);rect(s,11,19,23,20,0xff5e5844);rect(s,12,27,22,28,0xff3a3628);rect(s,13,22,21,23,0xff3a3628);}
-            if(style==1||style==4){rect(s,12,20,22,22,0xff3a3a3a);}
-            if(style==3){for(int y=20;y<=32;y+=3)rect(s,15,y,19,y+1,shade(body,.6f));}
-        }
-        // head
-        oval(s,17,11,style==3?7:5.5f,style==3?7:6.5f,back?shade(skin,.82f):skin);
-        if(!back){
-            if(style==3){rect(s,12,13,22,16,0xff3a0a0a);for(int x=12;x<=22;x+=2)px(s,x,13,0xfff0f0e0);}
-            px(s,15,10,eye);px(s,19,10,eye);px(s,14,10,eye);px(s,20,10,eye);}
-        if(style==2){line(s,10,18,6,13,0xffe8e0c0);line(s,24,18,28,13,0xffe8e0c0);px(s,13,5,0xffe8e0c0);px(s,21,5,0xffe8e0c0);}
-        if(style==0){if(back){oval(s,17,9,6,5.5f,shade(body,.8f));rect(s,12,12,22,14,shade(body,.65f));}else{rect(s,11,4,23,8,shade(body,.8f));rect(s,13,8,21,9,0xff2a3a2a);}}
-        if(style==4){rect(s,12,4,22,back?9:6,0xff302820);}
-        finish(s,style*13+frame);
-        if(frame==F_PAIN)for(int i=0;i<s.px.length;i++)if((s.px[i]>>>24)!=0){int c=s.px[i];s.px[i]=Textures.rgb(((c>>16)&255)*.6f+100,((c>>8)&255)*.5f+20,(c&255)*.5f+20);}
-        return s;
-    }
-    private static Sprite make(int id,int f){
-        switch(id){
-            case PLAYER:return humanoid(0xff3f7f3a,0xffc8a07a,0xff2f5f2b,0xff202020,f,0);
-            case TROOPER:return humanoid(0xff5d6b3a,0xffa8b090,0xff4a5230,0xffe03020,f,1);
-            case SERGEANT:return humanoid(0xff4a4a4a,0xffa8b090,0xff3a3a3a,0xffe03020,f,4);
-            case IMP:return humanoid(0xff7a4a2a,0xff8a5a34,0xff6a3e22,0xffff4010,f,2);
-            case DEMON:return humanoid(0xffd47a8a,0xffd88a98,0xffb86070,0xff401010,f,3);
-        }
-        Sprite s;
-        switch(id){
-            case MEDKIT:s=new Sprite(22,16,false);rect(s,1,3,20,15,0xffe8e8e8);rect(s,7,1,14,3,0xff9a9a9a);rect(s,9,5,12,13,0xffd02020);rect(s,6,8,15,10,0xffd02020);break;
-            case STIMPACK:s=new Sprite(12,14,false);rect(s,1,2,10,13,0xffe0e0e0);rect(s,5,4,6,11,0xffd02020);rect(s,3,7,8,8,0xffd02020);break;
-            case CLIP:s=new Sprite(8,14,false);rect(s,1,3,6,13,0xff505458);rect(s,2,0,5,3,0xffc8a040);break;
-            case SHELLS:s=new Sprite(16,10,false);for(int i=0;i<4;i++){rect(s,1+i*4,2,3+i*4,9,0xffc02818);rect(s,1+i*4,7,3+i*4,9,0xffd0b050);}break;
-            case ROCKETBOX:s=new Sprite(20,14,false);rect(s,1,4,18,13,0xff4a5a30);for(int i=0;i<4;i++){rect(s,3+i*4,0,4+i*4,4,0xff909090);px(s,3+i*4,0,0xffc03020);}break;
-            case ARMOR:s=new Sprite(22,20,false);rect(s,3,2,18,18,0xff30a040);rect(s,0,2,4,8,0xff30a040);rect(s,17,2,21,8,0xff30a040);rect(s,8,0,13,3,0xff000000);s.px[0]=0;rect(s,9,6,12,14,0xff208030);break;
-            case SHOTGUN_PICKUP:s=new Sprite(34,10,false);rect(s,1,3,24,5,0xff606468);rect(s,18,5,32,8,0xff7a4a22);rect(s,10,5,16,7,0xff5a3a1a);break;
-            case CHAINGUN_PICKUP:s=new Sprite(34,14,false);for(int i=0;i<3;i++)rect(s,1,2+i*3,22,3+i*3,0xff68707a);rect(s,18,3,32,11,0xff50545a);rect(s,24,10,28,13,0xff3a3a3a);break;
-            case LAUNCHER_PICKUP:s=new Sprite(36,12,false);rect(s,1,2,30,9,0xff4a6a3a);oval(s,3,5.5f,3,4,0xff2a2a2a);rect(s,20,9,24,11,0xff3a3a3a);break;
-            case KEY_BLUE:case KEY_YELLOW:case KEY_RED:{int c=id==KEY_BLUE?0xff3060e0:id==KEY_YELLOW?0xffe0c020:0xffd02020;s=new Sprite(10,14,true);rect(s,1,1,8,12,c);rect(s,3,3,6,5,0xffffffff);rect(s,2,9,7,10,shade(c,.6f));break;}
-            case BARREL:s=new Sprite(20,30,false);rect(s,2,4,17,29,0xff4a6040);rect(s,1,8,18,9,0xff3a4a30);rect(s,1,22,18,23,0xff3a4a30);oval(s,10,4,8,3,0xff60e040);oval(s,10,4,5,1.6f,0xffa0ff70);break;
-            case TORCH:{s=new Sprite(10,42,true);rect(s,4,12,5,41,0xff5a4a3a);rect(s,2,39,7,41,0xff3a3a3a);int fl=(f&1)==0?0:1;
-                oval(s,4.5f,8-fl,3.5f,6+fl,0xffff8020);oval(s,4.5f,9,2,3.5f,0xffffe060);break;}
-            case COLUMN:s=new Sprite(18,52,false);rect(s,3,4,14,47,0xff9aa0a0);rect(s,1,0,16,4,0xff808888);rect(s,1,47,16,51,0xff808888);for(int x=5;x<14;x+=3)rect(s,x,6,x,45,0xffb8c0c0);break;
-            case SWITCH:case SWITCH_ON:s=new Sprite(18,30,false);rect(s,1,1,16,29,0xff5a5e66);rect(s,4,6,13,22,0xff30343a);
-                if(id==SWITCH){rect(s,7,8,10,14,0xffc03020);rect(s,8,14,9,20,0xff909090);}else{rect(s,7,15,10,21,0xff30c040);rect(s,8,9,9,15,0xff909090);}break;
-            case LAMP:s=new Sprite(12,44,true);rect(s,5,12,6,43,0xff606060);rect(s,2,41,9,43,0xff404040);oval(s,5.5f,6,5,6,0xffeef0ff);oval(s,5.5f,6,3,4,0xffffffff);break;
-            default:s=new Sprite(8,8,false);rect(s,0,0,7,7,0xffff00ff);
-        }
-        finish(s,id);
-        return s;
-    }
     private static Sprite effect(int e,int f){
         Sprite s;
         switch(e){

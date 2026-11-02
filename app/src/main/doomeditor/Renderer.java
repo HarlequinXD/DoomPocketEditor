@@ -236,8 +236,8 @@ final class Renderer {
         Sprites.Sprite s=d.spr;if(s==null)return;
         float dx=d.x-camX,dy=d.y-camY,cx=-dx*sn+dy*cs,cz=dx*cs+dy*sn;
         if(cz<NEAR*2)return;
-        float scale=focal/cz,ww=s.w/Sprites.PPU*scale,hh=s.h/Sprites.PPU*scale;
-        float x0=W*.5f+cx*scale-ww*.5f,top=horizon-(d.z+s.h/Sprites.PPU-eye)*scale;
+        float scale=focal/cz,ww=s.w/s.ppu*scale,hh=s.h/s.ppu*scale;
+        float x0=W*.5f+cx*scale-ww*.5f,top=horizon-(d.z+s.h/s.ppu-eye)*scale;
         int xa=Math.max(0,(int)Math.ceil(x0-.5f)),xb=Math.min(W-1,(int)Math.floor(x0+ww-.5f));
         int ya=Math.max(0,(int)Math.ceil(top-.5f)),yb=Math.min(H-1,(int)Math.floor(top+hh-.5f));
         if(xa>xb||ya>yb)return;

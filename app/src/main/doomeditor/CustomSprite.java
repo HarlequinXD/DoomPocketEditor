@@ -69,20 +69,39 @@ final class CustomSprite {
         for(String c:STANDARD_CLIPS){Clip clip=new Clip(c);clip.frames.add(new int[w*h]);if(c.equals("Death"))clip.loop=false;if(c.equals("Walk"))clip.fps=6;s.clips.add(clip);}
         return s;
     }
-    /** Copies a built-in sprite's frames into standard clips as an editable starting point. */
+    /**
+     * Copies a built-in sprite into standard clips as an editable starting point. Characters come with all
+     * 8 view angles. Built-in art is rendered at 64 px per unit, so it is scaled down 2x to the editor's 32.
+     */
     static CustomSprite fromBuiltin(String id,String name,int builtin){
-        Sprites.Sprite base=Sprites.get(builtin,Sprites.F_IDLE);
-        CustomSprite s=new CustomSprite(id,name,base.w,base.h);
         int[][] map={{Sprites.F_IDLE},{Sprites.F_WALK1,Sprites.F_IDLE,Sprites.F_WALK2,Sprites.F_IDLE},{Sprites.F_ATTACK},{Sprites.F_PAIN},{Sprites.F_PAIN,Sprites.F_DEAD}};
+        int views=Sprites.hasAngles(builtin)?8:1;
+        // canvas big enough for every frame/view, each placed bottom-centre
+        int cw=1,ch=1;
+        for(int[] fr:map)for(int f:fr)for(int v=0;v<views;v++){Sprites.Sprite sp=Sprites.get(builtin,f,v);int k=scale(sp);cw=Math.max(cw,(sp.w+k-1)/k);ch=Math.max(ch,(sp.h+k-1)/k);}
+        cw=Math.min(128,cw+(cw&1));ch=Math.min(128,ch);
+        CustomSprite s=new CustomSprite(id,name,cw,ch);
         for(int i=0;i<STANDARD_CLIPS.length;i++){Clip c=new Clip(STANDARD_CLIPS[i]);if(i==4)c.loop=false;if(i==1)c.fps=6;
-            for(int f:map[i]){Sprites.Sprite sp=Sprites.get(builtin,f);int[] px=new int[s.w*s.h];
-                for(int y=0;y<Math.min(s.h,sp.h);y++)for(int x=0;x<Math.min(s.w,sp.w);x++)px[y*s.w+x]=sp.px[y*sp.w+x];c.frames.add(px);}
+            for(int f:map[i])c.frames.add(place(Sprites.get(builtin,f,0),cw,ch));
             s.clips.add(c);}
-        if(Sprites.hasBack(builtin)){s.setAngles(4);
-            for(int i=0;i<STANDARD_CLIPS.length;i++){Clip c=s.clips.get(i);ArrayList<int[]> back=c.view(2);
-                for(int k=0;k<map[i].length;k++){if(map[i][k]==Sprites.F_DEAD)continue;Sprites.Sprite sp=Sprites.getBack(builtin,map[i][k]);int[] px=back.get(k);
-                    for(int y=0;y<Math.min(s.h,sp.h);y++)for(int x=0;x<Math.min(s.w,sp.w);x++)px[y*s.w+x]=sp.px[y*sp.w+x];}}}
+        if(views>1){s.setAngles(8);
+            for(int i=0;i<STANDARD_CLIPS.length;i++){Clip c=s.clips.get(i);
+                for(int v=1;v<8;v++){ArrayList<int[]> l=c.view(v);for(int k=0;k<map[i].length;k++)l.set(k,place(Sprites.get(builtin,map[i][k],v),cw,ch));}}}
+        s.touch();
         return s;
+    }
+    private static int scale(Sprites.Sprite sp){return Math.max(1,Math.round(sp.ppu/Sprites.PPU));}
+    /** Downscales (keeping the most common opaque colour of each block) and pastes bottom-centre. */
+    private static int[] place(Sprites.Sprite sp,int cw,int ch){
+        int k=scale(sp),sw=(sp.w+k-1)/k,sh=(sp.h+k-1)/k;int[] out=new int[cw*ch];
+        int ox=(cw-sw)/2,oy=ch-sh;
+        for(int y=0;y<sh;y++)for(int x=0;x<sw;x++){
+            int best=0,bestN=0,opaque=0;
+            for(int yy=0;yy<k;yy++)for(int xx=0;xx<k;xx++){int sx=x*k+xx,sy=y*k+yy;if(sx>=sp.w||sy>=sp.h)continue;int c=sp.px[sy*sp.w+sx];if((c>>>24)==0)continue;opaque++;
+                int n=0;for(int y2=0;y2<k;y2++)for(int x2=0;x2<k;x2++){int a=x*k+x2,b=y*k+y2;if(a<sp.w&&b<sp.h&&sp.px[b*sp.w+a]==c)n++;}
+                if(n>bestN){bestN=n;best=c;}}
+            if(opaque*2>=k*k){int dx=ox+x,dy=oy+y;if(dx>=0&&dy>=0&&dx<cw&&dy<ch)out[dy*cw+dx]=best;}}
+        return out;
     }
     Clip clip(String name){for(Clip c:clips)if(c.name.equalsIgnoreCase(name))return c;return null;}
     void touch(){version++;cache.clear();mirrorCache.clear();blank.clear();}
