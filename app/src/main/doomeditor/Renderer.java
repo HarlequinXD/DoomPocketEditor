@@ -139,7 +139,9 @@ final class Renderer {
                 if(f.ceiling!=k.ceiling&&!bothSky)wall(l,len,Math.min(f.ceiling,k.ceiling),Math.max(f.ceiling,k.ceiling),material(level,l,1,f.wallMaterial),L,id(ID_WALL,(li<<1)|1));
             }
         }
+        if(fx!=null&&!fx.splats.isEmpty())drawSplats(level);
         if(sprites!=null)for(SpriteDraw s:sprites)sprite(level,s);
+        if(fx!=null&&!fx.drops.isEmpty())drawDrops(level);
         if(highlight>=0)tintHighlight();
     }
     private int material(Level level,Level.LineDef l,int part,int fallback){
@@ -259,6 +261,107 @@ final class Renderer {
                 }else pix[o]=lit|0xff000000;
                 zb[o]=iz;if(d.pickId>=0)ids[o]=d.pickId;
             }
+        }
+    }
+    /** World whose blood droplets and splats are drawn this frame (null in the editor views). */
+    World fx;
+    private final float[] cX=new float[4],cY=new float[4],cQ=new float[4];
+    private final int[] lightRow=new int[32];
+    private static final int MS=24;private static final float MS_SCALE=MS/3.4f;
+    /** Blood splats on floors and walls: each pixel is ray-cast onto the splat's plane and drawn only where that surface is visible. */
+    private void drawSplats(Level level){
+        java.util.ArrayList<World.Splat> list=fx.splats;
+        for(int li=0;li<32;li++)lightRow[li]=Textures.lightMul(li);
+        for(int i=0,n=list.size();i<n;i++)splat(level,list.get(i));
+    }
+    private void splat(Level level,World.Splat s){
+        float nx=s.nx,ny=s.ny,nz=s.nz;
+        if((camX-s.x)*nx+(camY-s.y)*ny+(eye-s.z)*nz<=0)return;           // seen from behind
+        float dx=s.x-camX,dy=s.y-camY,ccz=dx*cs+dy*sn,R=s.r*1.7f;
+        if(ccz<-R||ccz>40)return;
+        float ux,uy,uz,vx2,vy2,vz2;
+        if(nz>.5f){ux=1;uy=0;uz=0;vx2=0;vy2=1;vz2=0;}else{ux=-ny;uy=nx;uz=0;vx2=0;vy2=0;vz2=1;}
+        // splat quad in camera space, clipped to the near plane, gives a tight screen box
+        int m=0;float[] qx=cX,qz=cY;float[] qy=cQ;
+        for(int k=0;k<4;k++){float a=(k==0||k==3)?-R:R,b=k<2?-R:R;
+            float px=s.x+ux*a+vx2*b-camX,py=s.y+uy*a+vy2*b-camY;qy[k]=s.z+uz*a+vz2*b;qx[k]=-px*sn+py*cs;qz[k]=px*cs+py*sn;}
+        float minX=1e9f,maxX=-1e9f,minY=1e9f,maxY=-1e9f;
+        for(int k=0;k<4;k++){int j=(k+1)&3;
+            if(qz[k]>=NEAR){float X=W*.5f+qx[k]*focal/qz[k],Y=horizon-(qy[k]-eye)*focal/qz[k];minX=Math.min(minX,X);maxX=Math.max(maxX,X);minY=Math.min(minY,Y);maxY=Math.max(maxY,Y);m++;}
+            if((qz[k]>=NEAR)!=(qz[j]>=NEAR)){float t=(NEAR-qz[k])/(qz[j]-qz[k]),ix=qx[k]+(qx[j]-qx[k])*t,iy=qy[k]+(qy[j]-qy[k])*t;
+                float X=W*.5f+ix*focal/NEAR,Y=horizon-(iy-eye)*focal/NEAR;minX=Math.min(minX,X);maxX=Math.max(maxX,X);minY=Math.min(minY,Y);maxY=Math.max(maxY,Y);m++;}}
+        if(m==0)return;
+        if(maxX-minX<.6f&&maxY-minY<.6f)return;
+        int x0=Math.max(0,(int)minX),x1=Math.min(W-1,(int)Math.ceil(maxX)),y0=Math.max(0,(int)minY),y1=Math.min(H-1,(int)Math.ceil(maxY));
+        if(x0>x1||y0>y1)return;
+        int si=level.sectorAt(s.x+nx*.02f,s.y+ny*.02f);int L=si<0?24:light(level.sectors.get(si).light);int minL=Math.max(1,L/4);
+        float pd=dx*nx+dy*ny+(s.z-eye)*nz,inv=1f/focal,ir=1f/s.r;
+        byte[] mask=s.mask;if(mask==null){mask=new byte[MS*MS];for(int v=0;v<MS;v++)for(int u=0;u<MS;u++)mask[v*MS+u]=(byte)splatShape((u+.5f)/MS_SCALE-1.7f,(v+.5f)/MS_SCALE-1.7f,s.seed);s.mask=mask;}
+        int[] lt=lightRow;
+        if(nz>.5f){   // floor splat: each screen row is one distance, so everything but the mask lookup is per row
+            for(int y=y0;y<=y1;y++){float ry=(horizon-(y+.5f))*inv;if(ry>-1e-5f)continue;
+                float t=pd/ry;if(t<NEAR)continue;float iz=1f/t,tol=iz*.035f+1e-4f;
+                int li=(int)(L+3-t*fadeK);if(li<minL)li=minL;else if(li>31)li=31;int lm=lt[li];
+                float rx0=(x0+.5f-W*.5f)*inv,a=(cs-rx0*sn)*t-dx,b=(sn+rx0*cs)*t-dy,da=-sn*t*inv,db=cs*t*inv;
+                float mu=(a*ir+1.7f)*MS_SCALE,mv=(b*ir+1.7f)*MS_SCALE,dmu=da*ir*MS_SCALE,dmv=db*ir*MS_SCALE;
+                int c1=Textures.mul(s.color,lm),c2=Textures.mul(Textures.mul(s.color,200),lm),c3=Textures.mul(Textures.mul(s.color,330),lm);
+                for(int x=x0,o=y*W+x0;x<=x1;x++,o++,mu+=dmu,mv+=dmv){
+                    if(mu<0||mv<0||mu>=MS||mv>=MS)continue;
+                    int shade=mask[(int)mv*MS+(int)mu];if(shade==0)continue;
+                    float zz=zb[o];if(iz-zz>tol||zz-iz>tol)continue;
+                    pix[o]=shade==1?c1:shade==2?c2:c3;}
+            }
+            return;
+        }
+        if(Math.abs(nz)<.01f){   // wall splat: each screen column is one distance
+            for(int x=x0;x<=x1;x++){float rx=(x+.5f-W*.5f)*inv;float Dx=cs-rx*sn,Dy=sn+rx*cs,den=Dx*nx+Dy*ny;if(den>-1e-5f)continue;
+                float t=pd/den;if(t<NEAR)continue;float iz=1f/t,tol=iz*.035f+1e-4f;
+                float a=(Dx*t-dx)*ux+(Dy*t-dy)*uy;float mu=(a*ir+1.7f)*MS_SCALE;if(mu<0||mu>=MS)continue;int imu=(int)mu;
+                int li=(int)(L+3-t*fadeK);if(li<minL)li=minL;else if(li>31)li=31;int lm=lt[li];
+                int c1=Textures.mul(s.color,lm),c2=Textures.mul(Textures.mul(s.color,200),lm),c3=Textures.mul(Textures.mul(s.color,330),lm);
+                float ry0=(horizon-(y0+.5f))*inv,b=eye+ry0*t-s.z,db=-inv*t;float mv=(b*ir+1.7f)*MS_SCALE,dmv=db*ir*MS_SCALE;
+                for(int y=y0,o=y0*W+x;y<=y1;y++,o+=W,mv+=dmv){
+                    if(mv<0||mv>=MS)continue;int shade=mask[(int)mv*MS+imu];if(shade==0)continue;
+                    float zz=zb[o];if(iz-zz>tol||zz-iz>tol)continue;
+                    pix[o]=shade==1?c1:shade==2?c2:c3;}
+            }
+            return;
+        }
+        for(int y=y0;y<=y1;y++){float ry=(horizon-(y+.5f))*inv;
+            for(int x=x0;x<=x1;x++){float rx=(x+.5f-W*.5f)*inv;
+                float Dx=cs-rx*sn,Dy=sn+rx*cs,den=Dx*nx+Dy*ny+ry*nz;if(den>-1e-5f)continue;
+                float t=pd/den;if(t<NEAR)continue;
+                int o=y*W+x;float iz=1f/t,zz=zb[o];if(Math.abs(iz-zz)>zz*.035f+1e-4f)continue;   // only on the surface that's actually there
+                float lx=Dx*t-dx,ly=Dy*t-dy,lz=eye+ry*t-s.z;
+                float a=lx*ux+ly*uy+lz*uz,b=lx*vx2+ly*vy2+lz*vz2;
+                int mu=(int)((a*ir+1.7f)*MS_SCALE),mv=(int)((b*ir+1.7f)*MS_SCALE);if(mu<0||mv<0||mu>=MS||mv>=MS)continue;
+                int shade=mask[mv*MS+mu];if(shade==0)continue;
+                int li=(int)(L+3-t*fadeK);if(li<minL)li=minL;else if(li>31)li=31;
+                int c=shade==2?Textures.mul(s.color,200):shade==3?Textures.mul(s.color,330):s.color;
+                pix[o]=Textures.mul(c,lt[li]);
+            }
+        }
+    }
+    /** 0 = outside; 1 = blood; 2 = darker centre; 3 = wet highlight. Irregular blob plus a few satellite drops. */
+    private static int splatShape(float a,float b,int seed){
+        float d2=a*a+b*b;
+        if(d2<1.6f){float ang=(float)Math.atan2(b,a),f=seed*.0007f;
+            float rr=1+.16f*(float)Math.sin(ang*3+f*9)+.1f*(float)Math.sin(ang*5+f*17)+.07f*(float)Math.sin(ang*8+f*5);
+            if(d2<rr*rr*.81f){if(d2<.12f)return 2;float hx=a+.32f,hy=b+.3f;return hx*hx+hy*hy<.02f?3:1;}}
+        for(int k=0;k<3;k++){float sa=(seed>>(k*5)&31)*.2f+k*2.1f,dist=1.15f+.25f*k,r=.24f-.06f*k;
+            float ex=a-(float)Math.cos(sa)*dist,ey=b-(float)Math.sin(sa)*dist;if(ex*ex+ey*ey<r*r)return 1;}
+        return 0;
+    }
+    /** Flying droplets: little squares, depth-tested against everything already drawn. */
+    private void drawDrops(Level level){
+        java.util.ArrayList<World.Drop> list=fx.drops;
+        for(int i=0,n=list.size();i<n;i++){World.Drop d=list.get(i);
+            float dx=d.x-camX,dy=d.y-camY,cx=-dx*sn+dy*cs,cz=dx*cs+dy*sn;if(cz<NEAR*2)continue;
+            float sc=focal/cz,X=W*.5f+cx*sc,Y=horizon-(d.z-eye)*sc;int sz=Math.max(1,Math.round(d.size*sc));
+            int xa=Math.max(0,(int)(X-sz*.5f)),xb=Math.min(W-1,xa+sz-1),ya=Math.max(0,(int)(Y-sz*.5f)),yb=Math.min(H-1,ya+sz-1);if(xa>xb||ya>yb)continue;
+            int si=level.sectorAt(d.x,d.y);int L=si<0?24:light(level.sectors.get(si).light);int li=Math.max(Math.max(1,L/4),Math.min(31,(int)(L+3-cz*fadeK)));
+            int c=Textures.mul(d.color,Textures.lightMul(li)),hl=Textures.mul(c,330);float iz=1f/cz;
+            for(int y=ya;y<=yb;y++)for(int x=xa;x<=xb;x++){int o=y*W+x;if(iz>zb[o])pix[o]=(sz>1&&x==xa&&y==ya)?hl:c;}
         }
     }
     /** Projects a world point into the destination rectangle used by present(); false if it is behind the camera. */

@@ -98,6 +98,62 @@ final class World {
         return a;
     }
 
+    // ------------------------------------------------------------------ blood: droplets fly, then stick to floors and walls
+    static final class Drop {float x,y,z,vx,vy,vz,size;int color;}
+    /** A splat lying on a surface: centre, surface normal (floor = 0,0,1), radius and a seed for its shape. */
+    static final class Splat {float x,y,z,nx,ny,nz,r;int seed,color;byte[] mask;}
+    final ArrayList<Drop> drops=new ArrayList<>();
+    final ArrayList<Splat> splats=new ArrayList<>();
+    static final int MAX_DROPS=280,MAX_SPLATS=450;
+    boolean blood=true;
+    private static final int[] BLOOD={0xff8a0a0c,0xff7a0608,0xff9c1012,0xff6a0406};
+    /** Sprays blood from a creature that was hit, away from whoever hit it. */
+    void bleed(Actor t,Actor src,int amount,boolean crit,boolean death){
+        if(!blood||t==null||t.def==null)return;int k=t.def.kind;
+        if(k!=EntityDef.PLAYER&&k!=EntityDef.MONSTER&&k!=EntityDef.NPC)return;
+        spray(t,src,amount,crit,death);
+    }
+    /** Blood spray from any entity (used by hits and by the Spray Blood action). */
+    void spray(Actor t,Actor src,int amount,boolean crit,boolean death){
+        if(t==null)return;
+        float ax,ay;
+        if(src!=null&&src!=t&&(src.x!=t.x||src.y!=t.y)){ax=t.x-src.x;ay=t.y-src.y;}else{ax=(float)Math.cos(t.angle+Math.PI);ay=(float)Math.sin(t.angle+Math.PI);}
+        float base=(float)Math.atan2(ay,ax),hz=t.z+t.height*.6f;
+        int n=Math.min(40,6+amount*2+(crit?10:0)+(death?14:0));
+        for(int i=0;i<n&&drops.size()<MAX_DROPS;i++){
+            Drop d=new Drop();float a=base+(rng.nextFloat()-.5f)*(death?3.2f:1.7f),sp=.9f+rng.nextFloat()*(crit||death?3.4f:2.6f);
+            d.x=t.x+(float)Math.cos(a)*t.radius*.4f;d.y=t.y+(float)Math.sin(a)*t.radius*.4f;d.z=hz+(rng.nextFloat()-.5f)*.25f;
+            d.vx=(float)Math.cos(a)*sp;d.vy=(float)Math.sin(a)*sp;d.vz=.4f+rng.nextFloat()*2.4f;
+            d.size=.02f+rng.nextFloat()*.035f;d.color=BLOOD[rng.nextInt(BLOOD.length)];drops.add(d);
+        }
+        // a little pool right under them
+        float fl=floorAt(t.x,t.y);addSplat(t.x+(rng.nextFloat()-.5f)*.2f,t.y+(rng.nextFloat()-.5f)*.2f,fl+.002f,0,0,1,death?.32f:.08f+rng.nextFloat()*.06f);
+    }
+    void addSplat(float x,float y,float z,float nx,float ny,float nz,float r){
+        Splat s=new Splat();s.x=x;s.y=y;s.z=z;s.nx=nx;s.ny=ny;s.nz=nz;s.r=r;s.seed=rng.nextInt(1<<20);s.color=BLOOD[rng.nextInt(BLOOD.length)];
+        splats.add(s);if(splats.size()>MAX_SPLATS)splats.remove(0);
+    }
+    private void tickBlood(float dt){
+        for(int i=drops.size()-1;i>=0;i--){Drop d=drops.get(i);
+            float nx=d.x+d.vx*dt,ny=d.y+d.vy*dt;d.vz-=9.8f*dt;float nz=d.z+d.vz*dt;
+            // first wall the droplet's path crosses (solid, or a step / lintel at the droplet's height)
+            Level.LineDef hit=null;float best=2;
+            for(int li=0,cnt=lines.size();li<cnt;li++){Level.LineDef l=lines.get(li);Level.Vertex p=level.vertices.get(l.from),q=level.vertices.get(l.to);
+                float tt=segHit(d.x,d.y,nx,ny,p.x,p.y,q.x,q.y);if(tt<0||tt>=best)continue;
+                if(l.back>=0){Level.Sector f=level.sectors.get(l.front),b=level.sectors.get(l.back);float z=d.z+(nz-d.z)*tt;
+                    if(z>=Math.max(f.floor,b.floor)&&z<=Math.min(f.ceiling,b.ceiling))continue;}
+                best=tt;hit=l;}
+            if(hit!=null){Level.Vertex p=level.vertices.get(hit.from),q=level.vertices.get(hit.to);
+                float hx=d.x+(nx-d.x)*best,hy=d.y+(ny-d.y)*best,hz=d.z+(nz-d.z)*best;
+                float wx=q.x-p.x,wy=q.y-p.y,wl=(float)Math.hypot(wx,wy);if(wl<1e-5f){drops.remove(i);continue;}
+                float qx=-wy/wl,qy=wx/wl;if(qx*(d.x-hx)+qy*(d.y-hy)<0){qx=-qx;qy=-qy;}
+                addSplat(hx+qx*.006f,hy+qy*.006f,hz,qx,qy,0,d.size*(1.8f+rng.nextFloat()*1.6f));drops.remove(i);continue;}
+            float ce=ceilAt(nx,ny);if(nz>ce-.03f){nz=ce-.03f;d.vz=-Math.abs(d.vz)*.2f;}
+            float fl=floorAt(nx,ny);
+            if(nz<=fl){addSplat(nx,ny,fl+.002f,0,0,1,d.size*(1.6f+rng.nextFloat()*1.8f));drops.remove(i);continue;}
+            d.x=nx;d.y=ny;d.z=nz;
+        }
+    }
     // ------------------------------------------------------------------ frame
     void tick(float dt){
         dt=Math.min(dt,.05f);
@@ -105,6 +161,7 @@ final class World {
         if(levelComplete){completeTime+=dt;input.endFrame();return;}
         for(int i=floaters.size()-1;i>=0;i--){Floater f=floaters.get(i);f.t+=dt;f.z+=dt*.45f;if(f.t>1.1f)floaters.remove(i);}
         if(paused||dialogue!=null){input.endFrame();return;}
+        tickBlood(dt);
         if(hero!=null){if(hero.wardTime>0)hero.wardTime-=dt;weapon=hero.weaponOrFists().fp;}
         for(int i=0;i<actors.size();i++){Actor a=actors.get(i);if(a.removed)continue;
             a.wishActive=false;
@@ -351,6 +408,7 @@ final class World {
         if(t.isPlayer){damageFlash=Math.min(1,damageFlash+.25f+amount*.02f);flashColor=0xffff0000;}
         floater(t,crit?amount+"!":String.valueOf(amount),t.isPlayer?0xffff5a4a:crit?0xffffd040:0xffffffff);
         t.health-=amount;
+        bleed(t,src,amount,crit,t.health<=0);
         if(src!=null&&src!=t&&!t.isPlayer&&src.alive)t.target=src;
         if(t.health<=0){
             t.health=0;t.alive=false;t.shootable=false;t.solid=false;t.vx*=.3f;t.vy*=.3f;t.animClip=null;

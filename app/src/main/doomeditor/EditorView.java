@@ -344,7 +344,7 @@ public class EditorView extends View {
         for(int i=0;i<level.things.size();i++){Level.Thing th=level.things.get(i);EntityDef d=project.def(th.def);if(d==null||d.kind==EntityDef.PLAYER)continue;
             homeSprites.add(sd(pool++).set(th.x,th.y,floorAtLevel(th.x,th.y),project.spriteFor(d,d.sprite,Sprites.F_IDLE,t,0,World.angleDiff((float)Math.atan2(level.playerY-th.y,level.playerX-th.x),th.angle)),-1,false));}
         renderer.highlight=-1;
-        renderer.render(c,level,level.playerX,level.playerY,Math.min(sec.ceiling-.1f,sec.floor+World.EYE),ang,0,rr,homeSprites);
+        renderer.fx=null;renderer.render(c,level,level.playerX,level.playerY,Math.min(sec.ceiling-.1f,sec.floor+World.EYE),ang,0,rr,homeSprites);
         // soft vignette at the bottom for the label
         if(homeShade==null||homeShadeTop!=rr.bottom){homeShadeTop=rr.bottom;homeShade=new android.graphics.LinearGradient(0,rr.bottom-dp(60),0,rr.bottom,0x00000000,0xb0000000,android.graphics.Shader.TileMode.CLAMP);}
         p.setShader(homeShade);p.setColor(0xffffffff);
@@ -882,7 +882,7 @@ public class EditorView extends View {
         spriteList.clear();int pool=0;
         for(int i=0;i<level.things.size();i++){Level.Thing t=level.things.get(i);EntityDef d=project.def(t.def);if(d==null)continue;
             spriteList.add(sd(pool++).set(t.x,t.y,floorAtLevel(t.x,t.y),project.spriteFor(d,d.sprite,Sprites.F_IDLE,walker.time,0,World.angleDiff((float)Math.atan2(cam.y-t.y,cam.x-t.x),t.angle)),Renderer.id(Renderer.ID_SPRITE,i),false));}
-        renderer.render(c,level,cam.x,cam.y,walker.viewZ,cam.angle,cam.pitch,view3d,spriteList);
+        renderer.fx=null;renderer.render(c,level,cam.x,cam.y,walker.viewZ,cam.angle,cam.pitch,view3d,spriteList);
         // crosshair
         float cx=view3d.centerX(),cy=view3d.centerY();p.setColor(0xccffffff);c.drawCircle(cx,cy,dp(2),p);
         drawTextureBrowser(c,left);
@@ -995,7 +995,7 @@ public class EditorView extends View {
         for(World.Effect e:world.effects){int f=Math.min(2,(int)(e.t/e.life*3));spriteList.add(sd(pool++).set(e.x,e.y,e.z-.2f,Sprites.effect(e.type,f,true),-1,e.type!=Sprites.FX_BLOOD));}
         view3d.set(0,0,w,h);
         renderer.highlight=-1;
-        renderer.renderScene(world.level,cx,cy,world.camZ(),world.camAngle(),world.camPitch(),w,h,spriteList);
+        renderer.fx=world;renderer.renderScene(world.level,cx,cy,world.camZ(),world.camAngle(),world.camPitch(),w,h,spriteList);
         if(pl.alive&&!tp){float b=world.bob();int si=world.sectorIndex(pl);renderer.weapon(world.weapon,(float)Math.cos(world.bobPhase*Math.PI*.5f)*Math.min(1,(float)Math.hypot(pl.vx,pl.vy)/6f),b*8,world.weaponRaise,world.weaponFlash>0,si<0?160:world.level.sectors.get(si).light);}
         if(world.damageFlash>0)renderer.tint(0xffff2020,world.damageFlash*.6f);
         if(world.pickupFlash>0)renderer.tint(world.flashColor,world.pickupFlash*.35f);
