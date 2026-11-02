@@ -1098,76 +1098,77 @@ public class EditorView extends View {
         ui.textMid(c,d.speaker,L+dp(30),T,13,0xffffffff,2,-1);
         float y=T+dp(36);for(String ln:lines){ui.text(c,ln,L+dp(22),y,14,th.text,1,-1);y+=dp(21);}
         y+=dp(6);
-        for(int i=0;i<d.choices.length;i++){r.set(L+dp(18),y,R-dp(18),y+ah);ui.round(c,r,dp(10),0xff262a31);ui.outline(c,r,dp(10),0x30ffffff,dp(1));
-            ui.textMid(c,(i+1)+".",r.left+dp(16),r.centerY(),13,th.lightPanel()?0xffd8a830:th.accent,2,-1);ui.textMid(c,ui.ellipsize(d.choices[i],13.5f,1,r.width()-dp(56)),r.left+dp(36),r.centerY(),13.5f,Ui.TEXT,1,-1);
+        for(int i=0;i<d.choices.length;i++){r.set(L+dp(18),y,R-dp(18),y+ah);th.card(c,p,ui,r,false,ui.dp);
+            ui.textMid(c,(i+1)+".",r.left+dp(16),r.centerY(),13,th.accentOnPanel(),2,-1);ui.textMid(c,ui.ellipsize(d.choices[i],13.5f,1,r.width()-dp(56)),r.left+dp(36),r.centerY(),13.5f,th.text,1,-1);
             ui.hit(r,H_DLG+i);y+=ah+gap;}
     }
     /** Character sheet, inventory, spells and quest journal (the game is paused). */
     private void drawBag(Canvas c){
         Hero hero=world.hero;if(hero==null){closeBag();return;}
-        ui.rect(c,0,0,w,h,0xff0c0d10);
+        UiTheme th=project.theme;float D=ui.dp;
+        th.backdrop(c,p,w,h,D);
         float pad=dp(16),L=pad,R=w-pad,T=pad,B=h-dp(52)-pad;
         // header: tabs + close
         String[] tabs={"Inventory","Spells","Journal"};float tx=L;
-        ui.text(c,hero.cls.name+" · level "+hero.level,L,T+dp(18),17,Ui.TEXT,2,-1);
+        ui.text(c,hero.cls.name+" · level "+hero.level,L,T+dp(18),17,th.text,2,-1);
         float hx=L+ui.measure(hero.cls.name+" · level "+hero.level,17,2)+dp(24);
-        for(int i=0;i<tabs.length;i++){float tw2=ui.measure(tabs[i],12.5f,1)+dp(30);r.set(hx,T,hx+tw2,T+dp(32));ui.button(c,r,-1,tabs[i],bagTab==i?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_INV_TAB+i);hx+=tw2+dp(6);}
-        r.set(R-dp(40),T,R,T+dp(32));ui.button(c,r,Icons.CANCEL,null,Ui.GHOST);ui.hit(r,H_INV_CLOSE);
+        for(int i=0;i<tabs.length;i++){float tw2=ui.measure(tabs[i],12.5f,1)+dp(30);r.set(hx,T,hx+tw2,T+dp(32));th.rectButton(c,p,ui,r,-1,tabs[i],bagTab==i?UiTheme.BTN_ACTIVE:UiTheme.BTN_NORMAL,D);ui.hit(r,H_INV_TAB+i);hx+=tw2+dp(6);}
+        r.set(R-dp(40),T,R,T+dp(32));th.rectButton(c,p,ui,r,Icons.CANCEL,null,UiTheme.BTN_NORMAL,D);ui.hit(r,H_INV_CLOSE);
         float top=T+dp(46);
         // left column: character sheet
         float cw=Math.min(dp(250),w*.3f);
-        ui.round(c,L,top,L+cw,B,dp(12),0xff181b20);
+        th.panel(c,p,L,top,L+cw,B,D,.97f,false);
         float y=top+dp(22),x=L+dp(14);
-        ui.text(c,"CHARACTER",x,y,9.5f,Ui.TEXT_3,2,-1);y+=dp(18);
-        bar(c,x,y,L+cw-dp(14),y+dp(14),world.player.health/(float)Math.max(1,hero.maxHp),0xffb8282a,world.player.health+" / "+hero.maxHp+" HP");y+=dp(19);
-        if(hero.maxSp>0){bar(c,x,y,L+cw-dp(14),y+dp(14),hero.sp/(float)Math.max(1,hero.maxSp),0xff3a5ad0,hero.sp+" / "+hero.maxSp+" SP");y+=dp(19);}
-        bar(c,x,y,L+cw-dp(14),y+dp(10),hero.xpFraction(),0xffd8a830,null);y+=dp(22);
-        ui.text(c,hero.xp+" / "+Rpg.xpForNext(hero.level)+" XP",x,y,10.5f,Ui.TEXT_2,1,-1);y+=dp(20);
+        ui.text(c,"CHARACTER",x,y,9.5f,th.textFaint(),2,-1);y+=dp(18);
+        th.bar(c,p,ui,c,x,y,L+cw-dp(14),y+dp(14),world.player.health/(float)Math.max(1,hero.maxHp),0xffb8282a,world.player.health+" / "+hero.maxHp+" HP",D,1);y+=dp(19);
+        if(hero.maxSp>0){th.bar(c,p,ui,c,x,y,L+cw-dp(14),y+dp(14),hero.sp/(float)Math.max(1,hero.maxSp),0xff3a5ad0,hero.sp+" / "+hero.maxSp+" SP",D,1);y+=dp(19);}
+        th.bar(c,p,ui,c,x,y,L+cw-dp(14),y+dp(10),hero.xpFraction(),0xffd8a830,null,D,1);y+=dp(22);
+        ui.text(c,hero.xp+" / "+Rpg.xpForNext(hero.level)+" XP",x,y,10.5f,th.textDim(),1,-1);y+=dp(20);
         Rpg.Item wpn=hero.weaponOrFists();
         String[][] rows={{"Armour class",String.valueOf(hero.ac())},{"Attack",Rpg.signed(hero.attackBonus(wpn))+" · "+wpn.damage+Rpg.signed(hero.damageBonus(wpn))},{"Proficiency",Rpg.signed(hero.prof())},{"Gold",String.valueOf(hero.gold)}};
-        for(String[] rw:rows){ui.text(c,rw[0],x,y,11.5f,Ui.TEXT_2,1,-1);ui.text(c,rw[1],L+cw-dp(14),y,11.5f,Ui.TEXT,2,1);y+=dp(18);}
+        for(String[] rw:rows){ui.text(c,rw[0],x,y,11.5f,th.textDim(),1,-1);ui.text(c,rw[1],L+cw-dp(14),y,11.5f,th.text,2,1);y+=dp(18);}
         y+=dp(6);float aw=(cw-dp(28))/3f;
-        for(int i=0;i<6;i++){float ax=x+(i%3)*aw,ay=y+(i/3)*dp(44);r.set(ax+dp(2),ay,ax+aw-dp(2),ay+dp(40));ui.round(c,r,dp(8),0xff22262c);
-            ui.textMid(c,Rpg.ABILITIES[i],r.centerX(),ay+dp(10),8.5f,Ui.TEXT_3,2,0);ui.textMid(c,Rpg.signed(hero.mod(i)),r.centerX(),ay+dp(24),14,Ui.TEXT,2,0);ui.textMid(c,String.valueOf(hero.scores[i]),r.centerX(),ay+dp(35),8.5f,Ui.TEXT_3,1,0);}
+        for(int i=0;i<6;i++){float ax=x+(i%3)*aw,ay=y+(i/3)*dp(44);r.set(ax+dp(2),ay,ax+aw-dp(2),ay+dp(40));th.card(c,p,ui,r,false,D);
+            ui.textMid(c,Rpg.ABILITIES[i],r.centerX(),ay+dp(10),8.5f,th.textFaint(),2,0);ui.textMid(c,Rpg.signed(hero.mod(i)),r.centerX(),ay+dp(24),14,th.text,2,0);ui.textMid(c,String.valueOf(hero.scores[i]),r.centerX(),ay+dp(35),8.5f,th.textFaint(),1,0);}
         // right: tab content
         float l2=L+cw+dp(12),r2=R;
-        ui.round(c,l2,top,r2,B,dp(12),0xff181b20);
+        th.panel(c,p,l2,top,r2,B,D,.97f,false);
         int save=c.save();c.clipRect(l2,top,r2,B);
         float rowH=dp(52),yy=top+dp(10)-bagScroll;
         if(bagTab==0){
-            if(hero.inventory.isEmpty())ui.text(c,"Your pack is empty.",l2+dp(16),top+dp(30),13,Ui.TEXT_3,1,-1);
+            if(hero.inventory.isEmpty())ui.text(c,"Your pack is empty.",l2+dp(16),top+dp(30),13,th.textFaint(),1,-1);
             for(int i=0;i<hero.inventory.size();i++){Hero.Stack st=hero.inventory.get(i);Rpg.Item it=st.item;
                 r.set(l2+dp(10),yy,r2-dp(10),yy+rowH-dp(6));boolean eq=hero.isEquipped(it)&&(i==firstIndex(hero,it));
-                ui.round(c,r,dp(10),eq?0xff26324a:0xff22262c);if(eq)ui.outline(c,r,dp(10),Ui.ACCENT,dp(1.5f));
+                th.card(c,p,ui,r,eq,D);
                 if(it.sprite>=0){Bitmap tb=thumbFor(it.sprite);float th=rowH-dp(16),tw=Math.min(th*1.4f,th*tb.getWidth()/(float)Math.max(1,tb.getHeight()));
                     RectF d=new RectF(r.left+dp(8)+(th*1.4f-tw)*.5f,r.top+dp(5),r.left+dp(8)+(th*1.4f-tw)*.5f+tw,r.top+dp(5)+th);c.drawBitmap(tb,null,d,null);}
                 float ix=r.left+dp(8)+(rowH-dp(16))*1.4f+dp(10);
-                ui.text(c,it.name+(st.count>1?"  ×"+st.count:""),ix,r.top+dp(19),13,Ui.TEXT,2,-1);
-                ui.text(c,ui.ellipsize(Rpg.ITEM_KINDS[it.kind]+" · "+it.stats(),10.5f,1,r.right-ix-dp(90)),ix,r.top+dp(36),10.5f,Ui.TEXT_3,1,-1);
+                ui.text(c,it.name+(st.count>1?"  ×"+st.count:""),ix,r.top+dp(19),13,th.text,2,-1);
+                ui.text(c,ui.ellipsize(Rpg.ITEM_KINDS[it.kind]+" · "+it.stats(),10.5f,1,r.right-ix-dp(90)),ix,r.top+dp(36),10.5f,th.textFaint(),1,-1);
                 String act=it.kind==Rpg.I_POTION?"Drink":it.kind==Rpg.I_SCROLL?"Read":it.kind<=Rpg.I_SHIELD?(eq?"Equipped":"Equip"):"";
-                if(!act.isEmpty()){float bw2=ui.measure(act,11.5f,1)+dp(24);RectF b2=new RectF(r.right-dp(8)-bw2,r.centerY()-dp(14),r.right-dp(8),r.centerY()+dp(14));ui.button(c,b2,-1,act,eq?Ui.ACTIVE:Ui.NORMAL);}
+                if(!act.isEmpty()){float bw2=ui.measure(act,11.5f,1)+dp(24);RectF b2=new RectF(r.right-dp(8)-bw2,r.centerY()-dp(14),r.right-dp(8),r.centerY()+dp(14));th.rectButton(c,p,ui,b2,-1,act,eq?UiTheme.BTN_ACTIVE:UiTheme.BTN_PRIMARY,D);}
                 if(r.bottom>top&&r.top<B)ui.hit(Math.max(l2,r.left),Math.max(top,r.top),r.right,Math.min(B,r.bottom),H_INV_ITEM+i);
                 yy+=rowH;}
         }else if(bagTab==1){
-            if(hero.spells.isEmpty())ui.text(c,hero.cls.name+"s don't cast spells.",l2+dp(16),top+dp(30),13,Ui.TEXT_3,1,-1);
+            if(hero.spells.isEmpty())ui.text(c,hero.cls.name+"s don't cast spells.",l2+dp(16),top+dp(30),13,th.textFaint(),1,-1);
             for(int i=0;i<hero.spells.size();i++){Rpg.Spell sp=hero.spells.get(i);boolean sel=i==hero.selectedSpell;
-                r.set(l2+dp(10),yy,r2-dp(10),yy+rowH-dp(6));ui.round(c,r,dp(10),sel?0xff2e2448:0xff22262c);if(sel)ui.outline(c,r,dp(10),0xff9a7aff,dp(1.5f));
-                ui.icon(c,Icons.SPARKLE,r.left+dp(22),r.centerY(),18,sel?0xffc8b0ff:Ui.TEXT_2);
-                ui.text(c,sp.name+"  ·  "+(sp.level==0?"cantrip":"level "+sp.level+" · "+Rpg.spellCost(sp.level)+" SP"),r.left+dp(42),r.top+dp(19),13,Ui.TEXT,2,-1);
-                ui.text(c,ui.ellipsize(sp.desc+" ("+sp.dice+" "+Rpg.DAMAGE_TYPES[sp.damageType].toLowerCase()+")",10.5f,1,r.width()-dp(56)),r.left+dp(42),r.top+dp(36),10.5f,Ui.TEXT_3,1,-1);
+                r.set(l2+dp(10),yy,r2-dp(10),yy+rowH-dp(6));th.card(c,p,ui,r,sel,D);
+                ui.icon(c,Icons.SPARKLE,r.left+dp(22),r.centerY(),18,sel?th.accentOnPanel():th.textDim());
+                ui.text(c,sp.name+"  ·  "+(sp.level==0?"cantrip":"level "+sp.level+" · "+Rpg.spellCost(sp.level)+" SP"),r.left+dp(42),r.top+dp(19),13,th.text,2,-1);
+                ui.text(c,ui.ellipsize(sp.desc+" ("+sp.dice+" "+Rpg.DAMAGE_TYPES[sp.damageType].toLowerCase()+")",10.5f,1,r.width()-dp(56)),r.left+dp(42),r.top+dp(36),10.5f,th.textFaint(),1,-1);
                 ui.hit(r,H_INV_SPELL+i);yy+=rowH;}
-            if(!hero.spells.isEmpty())ui.text(c,"Tap a spell to ready it for the CAST button. Save DC "+hero.saveDC()+" · spell attack "+Rpg.signed(hero.spellAttack()),l2+dp(14),yy+dp(16),10.5f,Ui.TEXT_3,1,-1);
+            if(!hero.spells.isEmpty())ui.text(c,"Tap a spell to ready it for the CAST button. Save DC "+hero.saveDC()+" · spell attack "+Rpg.signed(hero.spellAttack()),l2+dp(14),yy+dp(16),10.5f,th.textFaint(),1,-1);
         }else{
-            if(world.quests.isEmpty())ui.text(c,"No quests yet. Talk to people you meet.",l2+dp(16),top+dp(30),13,Ui.TEXT_3,1,-1);
+            if(world.quests.isEmpty())ui.text(c,"No quests yet. Talk to people you meet.",l2+dp(16),top+dp(30),13,th.textFaint(),1,-1);
             for(World.Quest q:world.quests.values()){if(q.state==World.Q_INACTIVE)continue;
-                r.set(l2+dp(10),yy,r2-dp(10),yy+rowH-dp(6));ui.round(c,r,dp(10),0xff22262c);
-                int col=q.state==World.Q_DONE?Ui.GREEN:q.state==World.Q_FAILED?Ui.RED:0xffd8a830;
+                r.set(l2+dp(10),yy,r2-dp(10),yy+rowH-dp(6));th.card(c,p,ui,r,false,D);
+                int col=q.state==World.Q_DONE?Ui.GREEN:q.state==World.Q_FAILED?Ui.RED:th.accentOnPanel();
                 ui.icon(c,q.state==World.Q_DONE?Icons.CHECK:q.state==World.Q_FAILED?Icons.CANCEL:Icons.SCROLL,r.left+dp(22),r.centerY(),16,col);
-                ui.text(c,q.title+(q.state==World.Q_DONE?"  (complete)":q.state==World.Q_FAILED?"  (failed)":""),r.left+dp(42),r.top+dp(19),13,Ui.TEXT,2,-1);
-                ui.text(c,ui.ellipsize(q.text,10.5f,1,r.width()-dp(56)),r.left+dp(42),r.top+dp(36),10.5f,Ui.TEXT_3,1,-1);yy+=rowH;}
+                ui.text(c,q.title+(q.state==World.Q_DONE?"  (complete)":q.state==World.Q_FAILED?"  (failed)":""),r.left+dp(42),r.top+dp(19),13,th.text,2,-1);
+                ui.text(c,ui.ellipsize(q.text,10.5f,1,r.width()-dp(56)),r.left+dp(42),r.top+dp(36),10.5f,th.textFaint(),1,-1);yy+=rowH;}
         }
         c.restoreToCount(save);
-        if(System.currentTimeMillis()<bagNoteUntil){float nw=ui.measure(bagNote,12.5f,1)+dp(40);ui.pill(c,w*.5f-nw*.5f,B-dp(48),w*.5f+nw*.5f,B-dp(14),0xf2262c34);ui.textMid(c,bagNote,w*.5f,B-dp(31),12.5f,Ui.TEXT,1,0);postInvalidateDelayed(200);}
+        if(System.currentTimeMillis()<bagNoteUntil){float nw=ui.measure(bagNote,12.5f,1)+dp(40);ui.pill(c,w*.5f-nw*.5f,B-dp(48),w*.5f+nw*.5f,B-dp(14),0xf2262c34);ui.textMid(c,bagNote,w*.5f,B-dp(31),12.5f,0xffe8ecf1,1,0);postInvalidateDelayed(200);}
     }
     private static int firstIndex(Hero h,Rpg.Item it){for(int i=0;i<h.inventory.size();i++)if(h.inventory.get(i).item==it)return i;return -1;}
     private boolean bagTap(int hid){
@@ -1180,15 +1181,17 @@ public class EditorView extends View {
         return true;
     }
     private void drawComplete(Canvas c){
-        ui.rect(c,0,0,w,h,0xcc0a0b0d);
+        UiTheme th=project.theme;float D=ui.dp;
+        ui.rect(c,0,0,w,h,0x99000000);
+        float pw=Math.min(w-dp(40),dp(460)),pl=(w-pw)*.5f;th.panel(c,p,pl,h*.24f-dp(46),pl+pw,h*.24f+dp(226),D,.97f,false);
         float cx=w*.5f,y=h*.24f;
-        ui.text(c,"QUEST STAGE COMPLETE",cx,y,26,Ui.AMBER,2,0);if(world.hero!=null)ui.text(c,"Level "+world.hero.level+" "+world.hero.cls.name.toLowerCase()+" · "+world.hero.xp+" XP · "+world.hero.gold+" gold",cx,y+dp(22),12,Ui.TEXT_2,1,0);
+        ui.text(c,"QUEST STAGE COMPLETE",cx,y,26,th.accentOnPanel(),2,0);if(world.hero!=null)ui.text(c,"Level "+world.hero.level+" "+world.hero.cls.name.toLowerCase()+" · "+world.hero.xp+" XP · "+world.hero.gold+" gold",cx,y+dp(22),12,th.textDim(),1,0);
         String[] rows={"Foes slain","Treasure","Secrets","Time"};
         String[] vals={pct(world.kills,world.totalKills),pct(world.items,world.totalItems),pct(world.secrets,world.totalSecrets),String.format(java.util.Locale.US,"%d:%02d",(int)(world.time-world.completeTime)/60,(int)(world.time-world.completeTime)%60)};
-        for(int i=0;i<4;i++){ui.text(c,rows[i],cx-dp(20),y+dp(46)+i*dp(28),16,Ui.TEXT_2,1,1);ui.text(c,vals[i],cx+dp(20),y+dp(46)+i*dp(28),16,Ui.TEXT,2,-1);}
+        for(int i=0;i<4;i++){ui.text(c,rows[i],cx-dp(20),y+dp(46)+i*dp(28),16,th.textDim(),1,1);ui.text(c,vals[i],cx+dp(20),y+dp(46)+i*dp(28),16,th.text,2,-1);}
         float by=y+dp(170);
-        r.set(cx-dp(170),by,cx-dp(10),by+dp(40));ui.button(c,r,Icons.RESET,"Play again",Ui.PRIMARY);ui.hit(r,H_RETRY);
-        r.set(cx+dp(10),by,cx+dp(170),by+dp(40));ui.button(c,r,Icons.ARROW_LEFT,frontEnd()?"Main menu":"Back to editor",Ui.NORMAL);ui.hit(r,H_BACK);
+        r.set(cx-dp(170),by,cx-dp(10),by+dp(40));th.rectButton(c,p,ui,r,Icons.RESET,"Play again",UiTheme.BTN_PRIMARY,D);ui.hit(r,H_RETRY);
+        r.set(cx+dp(10),by,cx+dp(170),by+dp(40));th.rectButton(c,p,ui,r,Icons.ARROW_LEFT,frontEnd()?"Main menu":"Back to editor",UiTheme.BTN_NORMAL,D);ui.hit(r,H_BACK);
     }
     private static String pct(int a,int b){return b==0?"—":Math.round(a*100f/b)+"%";}
 

@@ -137,14 +137,14 @@ final class GameMenu {
         float pw=Math.min(w-dp(40),dp(560)),ph=Math.min(h-dp(32),dp(360)),L=(w-pw)*.5f,T=(h-ph)*.5f,R=L+pw,B=T+ph;
         ui.round(c,L,T+dp(4),R,B+dp(4),dp(16),0x90000000);th().panel(c,p,L,T,R,B,ui.dp,.97f,false);
         ui.text(c,"Options",L+dp(22),T+dp(36),20,acc(),2,-1);
-        r.set(R-dp(110),T+dp(14),R-dp(16),T+dp(48));ui.button(c,r,Icons.ARROW_LEFT,"Back",Ui.NORMAL);ui.hit(r,H_BACK);
+        r.set(R-dp(110),T+dp(14),R-dp(16),T+dp(48));th().rectButton(c,p,ui,r,Icons.ARROW_LEFT,"Back",UiTheme.BTN_NORMAL,ui.dp);ui.hit(r,H_BACK);
         String[] tabs={"Game","Audio"};float tx=L+dp(22);
-        for(int i=0;i<2;i++){r.set(tx,T+dp(58),tx+dp(110),T+dp(90));ui.button(c,r,i==0?Icons.PERSON:Icons.SPEAKER,tabs[i],optTab==i?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_TAB+i);tx+=dp(118);}
+        for(int i=0;i<2;i++){r.set(tx,T+dp(58),tx+dp(110),T+dp(90));th().rectButton(c,p,ui,r,i==0?Icons.PERSON:Icons.SPEAKER,tabs[i],optTab==i?UiTheme.BTN_ACTIVE:UiTheme.BTN_NORMAL,ui.dp);ui.hit(r,H_TAB+i);tx+=dp(118);}
         float y=T+dp(104),l=L+dp(22),rr=R-dp(22);
         if(optTab==0){
             ui.textMid(c,"Difficulty",l,y+dp(17),13,th().text,1,-1);
             float sw=(rr-l-dp(140))/3f;
-            for(int i=0;i<3;i++){r.set(l+dp(140)+i*sw,y,l+dp(140)+(i+1)*sw-dp(6),y+dp(34));ui.button(c,r,-1,GameSettings.DIFFICULTIES[i],GameSettings.difficulty==i?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_DIFF+i);}
+            for(int i=0;i<3;i++){r.set(l+dp(140)+i*sw,y,l+dp(140)+(i+1)*sw-dp(6),y+dp(34));th().rectButton(c,p,ui,r,-1,GameSettings.DIFFICULTIES[i],GameSettings.difficulty==i?UiTheme.BTN_ACTIVE:UiTheme.BTN_NORMAL,ui.dp);ui.hit(r,H_DIFF+i);}
             y+=dp(44);
             y=slider(c,l,rr,y,ROW_LOOK,"Look sensitivity",GameSettings.lookSensitivity,.25f,3f,String.format(java.util.Locale.US,"%.2fx",GameSettings.lookSensitivity));
             y=toggle(c,l,rr,y,ROW_INVERT,"Invert look up/down",GameSettings.invertLook);
@@ -166,7 +166,7 @@ final class GameMenu {
     }
     private float toggle(Canvas c,float l,float rr,float y,int row,String label,boolean on){
         r.set(l,y,rr,y+dp(38));ui.textMid(c,label,l,y+dp(19),13,th().text,1,-1);
-        float tx=rr-dp(44),ty=y+dp(11);ui.round(c,tx,ty,tx+dp(40),ty+dp(20),dp(10),on?UiTheme.shade(acc(),.6f):UiTheme.alpha(0xff000000,.35f));p.setColor(on?acc():th().textFaint());c.drawCircle(on?tx+dp(30):tx+dp(10),ty+dp(10),dp(8),p);
+        th().toggle(c,p,ui,rr-dp(44),y+dp(11),on,ui.dp);
         track[row].setEmpty();ui.hit(r,H_ROW+row);
         return y+dp(42);
     }

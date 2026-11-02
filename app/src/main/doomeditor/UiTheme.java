@@ -229,6 +229,43 @@ final class UiTheme {
         if(label!=null)ui.textMid(c,label,(bl+r)*.5f,(t+b)*.5f,10,alpha(0xffffffff,a),2,0);
     }
 
+    // ------------------------------------------------------------------ screens, cards and buttons
+    static final int BTN_NORMAL=0,BTN_ACTIVE=1,BTN_PRIMARY=2,BTN_GHOST=3;
+    /** Accent that reads on this theme's panels (dark accents are lifted on dark panels, light ones darkened on light panels). */
+    int accentOnPanel(){return lightPanel()?(luma(accent)>.55f?shade(accent,.5f):accent):(luma(accent)<.35f?0xffe8c070:accent);}
+    /** Full-screen background (character sheet, results): the material, dimmed so cards stand out. */
+    void backdrop(Canvas c,Paint p,float w,float h,float dp){
+        panel(c,p,0,0,w,h,dp,1,true);
+        p.setStyle(Paint.Style.FILL);p.setShader(null);p.setColor(lightPanel()?0x26000000:0x70000000);c.drawRect(0,0,w,h,p);
+    }
+    /** A row or tile inside a panel; {@code selected} adds an accent frame. */
+    void card(Canvas c,Paint p,Ui ui,RectF r,boolean selected,float dp){
+        int base=lightPanel()?shade(panel,.9f):shade(panel,1.45f)|0xff000000;
+        float rad=corners==0?dp*3:corners==1?dp*9:dp*5;
+        ui.round(c,r,rad,alpha(base,.92f));
+        if(selected){ui.round(c,r,rad,alpha(accent,.16f));ui.outline(c,r,rad,accentOnPanel(),dp*1.6f);}
+        else ui.outline(c,r,rad,alpha(lightPanel()?0xff000000:0xffffffff,.08f),dp);
+    }
+    /** A rectangular themed button: normal, active (selected tab), primary (main action) or ghost (icon only). */
+    void rectButton(Canvas c,Paint p,Ui ui,RectF r,int icon,String label,int style,float dp){
+        int fg=text;
+        if(style==BTN_PRIMARY){int a=accentOnPanel();float rad=corners==0?dp*3:corners==1?dp*9:dp*5;
+            ui.round(c,r.left,r.top+dp*2,r.right,r.bottom+dp*2,rad,0x50000000);ui.round(c,r,rad,a);ui.round(c,r.left,r.top,r.right,r.top+r.height()*.45f,rad,0x22ffffff);
+            ui.outline(c,r,rad,shade(a,.6f),dp);fg=luma(a)>.55f?0xff1a1206:0xffffffff;}
+        else if(style==BTN_GHOST){fg=text;}
+        else{card(c,p,ui,r,style==BTN_ACTIVE,dp);if(style==BTN_ACTIVE)fg=accentOnPanel();}
+        float size=r.height()<dp*30?11.5f:12.5f;
+        if(label==null||label.isEmpty()){if(icon>=0)ui.icon(c,icon,r.centerX(),r.centerY(),Math.min(18,r.height()/dp-14),fg);return;}
+        if(icon<0){ui.textMid(c,ui.ellipsize(label,size,1,r.width()-dp*12),r.centerX(),r.centerY(),size,fg,1,0);return;}
+        float iw=dp*16,gap=dp*6,tw=Math.min(ui.measure(label,size,1),r.width()-iw-gap-dp*16),x0=r.centerX()-(iw+gap+tw)*.5f;
+        ui.icon(c,icon,x0+iw*.5f,r.centerY(),15,fg);ui.textMid(c,ui.ellipsize(label,size,1,tw+1),x0+iw+gap,r.centerY(),size,fg,1,-1);
+    }
+    /** Toggle switch and slider in theme colours. */
+    void toggle(Canvas c,Paint p,Ui ui,float x,float y,boolean on,float dp){
+        int a=accentOnPanel();ui.round(c,x,y,x+dp*40,y+dp*20,dp*10,on?shade(a,.7f):alpha(0xff000000,.3f));
+        p.setStyle(Paint.Style.FILL);p.setColor(on?a:textFaint());c.drawCircle(on?x+dp*30:x+dp*10,y+dp*10,dp*8,p);
+    }
+
     // ------------------------------------------------------------------ json
     JSONObject toJson()throws Exception{
         JSONObject o=new JSONObject();o.put("name",name);o.put("material",material);o.put("panel",panel);o.put("accent",accent);o.put("text",text);
