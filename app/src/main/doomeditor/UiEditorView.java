@@ -17,7 +17,12 @@ import android.view.View;
 public class UiEditorView extends View {
     interface Host extends UiHost {void exit();void saved();}
     private static final int H_HEAD=1,H_COLLAPSE=2,H_PRESETS=3,H_GRID=4,H_RESET_ALL=5,H_SAVE=6,H_EXIT=7,H_SHOW=8,H_JOYMODE=9,H_RESET_ONE=10,
-            H_NUDGE=20,H_SIZE=30,H_ALPHA=31,H_TAB=40,H_LIST=100;
+            H_NUDGE=20,H_SIZE=30,H_ALPHA=31,H_TAB=40,H_LIST=100,H_BACK=101,H_TOPSAVE=102;
+    static final String[] TABS={"HUD & Controls","Theme","Main Menu","Screens"};
+    private static final int[] TAB_ICONS={Icons.GAMEPAD,Icons.PALETTE,Icons.LIST,Icons.FLAG};
+    private int tab;
+    /** The game screen is previewed at its real size, scaled to fit under the top bar. */
+    private float vw,vh,scale=1,offX,offY,barH;
 
     private final Project project;private final Host host;private final Ui ui;private final Paint p;
     private final GameHud hud;private final World world;private final Renderer renderer=new Renderer();
@@ -46,8 +51,14 @@ public class UiEditorView extends View {
 
     // ================================================================== drawing
     @Override protected void onDraw(Canvas c){
-        w=getWidth();h=getHeight();hud.layout=project.hud;
+        vw=getWidth();vh=getHeight();barH=dp(48);
+        w=vw;h=vh;   // HUD positions use the real screen size
+        scale=Math.min(1,(vh-barH-dp(8))/vh);offX=(vw-w*scale)*.5f;offY=barH+dp(4);
+        hud.layout=project.hud;
         ui.clearHits();
+        c.drawColor(Ui.BG);
+        if(tab!=0){drawTopBar(c);drawComingSoon(c);return;}
+        c.save();c.translate(offX,offY);c.scale(scale,scale);c.clipRect(0,0,w,h);
         drawBackdrop(c);
         if(grid)drawGrid(c);
         boolean caster=world.hero!=null&&!world.hero.spells.isEmpty();
@@ -66,8 +77,11 @@ public class UiEditorView extends View {
         // labels on hidden elements
         for(int i=0;i<HudLayout.N;i++)if(!L().e[i].visible&&(hud.drawn[i]||i==HudLayout.JOYSTICK)){RectF q=hud.rects[i];ui.text(c,"hidden",q.centerX(),q.centerY()+dp(4),10,0xd0ffffff,2,0);}
         if(sel>=0)drawSelection(c);
+        c.restore();
+        ui.clearHits();   // preview targets were in preview space; the bar and panel use screen space
+        drawTopBar(c);
         drawPanel(c);
-        if(hint!=null&&System.currentTimeMillis()<hintUntil){float tw=ui.measure(hint,12,1)+dp(32),cx=w*.5f,t=dp(14);ui.pill(c,cx-tw*.5f,t,cx+tw*.5f,t+dp(32),0xf02a313a);ui.textMid(c,hint,cx,t+dp(16),12,Ui.TEXT,1,0);postInvalidateDelayed(300);}
+        if(hint!=null&&System.currentTimeMillis()<hintUntil){float tw=ui.measure(hint,12,1)+dp(32),cx=vw*.5f,t=barH+dp(12);ui.pill(c,cx-tw*.5f,t,cx+tw*.5f,t+dp(32),0xf02a313a);ui.textMid(c,hint,cx,t+dp(16),12,Ui.TEXT,1,0);postInvalidateDelayed(300);}
     }
     private void drawBackdrop(Canvas c){
         int W=(int)w,H=(int)h;
@@ -80,6 +94,29 @@ public class UiEditorView extends View {
             bc.drawColor(0x40000000);
         }
         c.drawBitmap(backdrop,0,0,null);
+    }
+    private void drawTopBar(Canvas c){
+        ui.rect(c,0,0,vw,barH,Ui.SURFACE);ui.hline(c,0,vw,barH-dp(1),Ui.BORDER);
+        float cy=barH*.5f,bh=dp(34),top=cy-bh*.5f;
+        r.set(dp(8),top,dp(8)+bh,top+bh);ui.button(c,r,Icons.ARROW_LEFT,null,Ui.GHOST);ui.hit(r,H_BACK);
+        boolean wide=vw>dp(820);
+        float ib=dp(28);ui.round(c,dp(50),cy-ib*.5f,dp(50)+ib,cy+ib*.5f,dp(7),0xffd8a830);ui.icon(c,Icons.GAMEPAD,dp(50)+ib*.5f,cy,16,0xff1a1206);
+        float tl=dp(86);if(wide){ui.textMid(c,"UI Editor",tl,cy,15,Ui.TEXT,1,-1);tl+=dp(90);}
+        float saveW=wide?dp(84):bh;r.set(vw-dp(10)-saveW,top,vw-dp(10),top+bh);ui.button(c,r,Icons.SAVE,wide?"Save":null,Ui.PRIMARY);ui.hit(r,H_TOPSAVE);
+        float avail=vw-dp(20)-saveW-tl-dp(8),tw=Math.min(dp(150),avail/TABS.length);
+        for(int i=0;i<TABS.length;i++){r.set(tl+i*tw,top,tl+(i+1)*tw-dp(5),top+bh);ui.button(c,r,TAB_ICONS[i],TABS[i],i==tab?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_TAB+i);}
+    }
+    private void drawComingSoon(Canvas c){
+        String[][] info={{},
+            {"Theme","One style for the status bar, buttons, menus, dialogue and inventory.","Built-in fantasy themes (Parchment, Stone & Iron, Elven Wood, Arcane Crystal, Royal Gold…) and a style generator with Randomize and Mutate."},
+            {"Main Menu","Title text and style, background (level camera, image or gradient), menu buttons and menu music.","Plus your own splash logo after \"Powered by RPG Pocket Editor\"."},
+            {"Screens","Level title cards, the death screen and the victory screen.","Text, colours and timing for each one."}};
+        String[] t=info[tab];float cx=vw*.5f,cy=barH+(vh-barH)*.45f;
+        ui.icon(c,TAB_ICONS[tab],cx,cy-dp(56),40,Ui.TEXT_3);
+        ui.text(c,t[0]+" · coming next",cx,cy-dp(10),18,Ui.TEXT,1,0);
+        ui.text(c,ui.ellipsize(t[1],12.5f,0,vw-dp(60)),cx,cy+dp(16),12.5f,Ui.TEXT_2,0,0);
+        ui.text(c,ui.ellipsize(t[2],12,0,vw-dp(60)),cx,cy+dp(36),12,Ui.TEXT_3,0,0);
+        r.set(cx-dp(110),cy+dp(58),cx+dp(110),cy+dp(94));ui.button(c,r,Icons.GAMEPAD,"Back to HUD & Controls",Ui.NORMAL);ui.hit(r,H_TAB);
     }
     private void drawGrid(Canvas c){
         float step=dp(16);
@@ -98,16 +135,16 @@ public class UiEditorView extends View {
 
     // ------------------------------------------------------------------ floating panel
     private void drawPanel(Canvas c){
-        panelW=Math.min(dp(320),w-dp(24));
+        panelW=Math.min(dp(320),vw-dp(24));
         panelH=collapsed?dp(40):sel>=0?dp(sel==HudLayout.JOYSTICK?320:sel==HudLayout.STATUS?198:286):dp(152);
-        if(panelX<0){panelX=(w-panelW)*.5f;panelY=(h-panelH)*.42f;}
-        panelX=Math.max(dp(4),Math.min(w-panelW-dp(4),panelX));panelY=Math.max(dp(4),Math.min(h-panelH-dp(4),panelY));
+        if(panelX<0){panelX=(vw-panelW)*.5f;panelY=barH+(vh-barH-panelH)*.42f;}
+        panelX=Math.max(dp(4),Math.min(vw-panelW-dp(4),panelX));panelY=Math.max(barH+dp(4),Math.min(vh-panelH-dp(4),panelY));
         float l=panelX,t=panelY,rr=l+panelW,b=t+panelH;panel.set(l,t,rr,b);
         ui.round(c,l,t+dp(4),rr,b+dp(4),dp(12),0x90000000);ui.round(c,l,t,rr,b,dp(12),0xf21b1f25);ui.outline(c,l,t,rr,b,dp(12),Ui.BORDER,dp(1));
         // header: drag handle + title + collapse
         r.set(l,t,rr-dp(40),t+dp(40));ui.hit(r,H_HEAD);
         ui.icon(c,Icons.MOVE,l+dp(18),t+dp(20),14,Ui.TEXT_3);
-        ui.textMid(c,"UI Editor · HUD & Controls",l+dp(34),t+dp(20),12.5f,Ui.TEXT,1,-1);
+        ui.textMid(c,"HUD & Controls",l+dp(34),t+dp(20),12.5f,Ui.TEXT,1,-1);
         r.set(rr-dp(38),t+dp(4),rr-dp(4),t+dp(36));ui.button(c,r,collapsed?Icons.CHEVRON_DOWN:Icons.CHEVRON_UP,null,Ui.GHOST);ui.hit(r,H_COLLAPSE);
         if(collapsed)return;
         float x=l+dp(10),y=t+dp(42),bw2=(panelW-dp(20)-dp(18))/4f;
@@ -151,6 +188,7 @@ public class UiEditorView extends View {
         int a=e.getActionMasked();float x=e.getX(),y=e.getY();
         if(a==MotionEvent.ACTION_DOWN){
             downX=x;downY=y;moved=false;mode=0;downHit=-1;
+            if(y<barH||tab!=0){downHit=ui.hitAt(x,y);mode=5;return true;}
             if(panel.contains(x,y)){
                 downHit=ui.hitAt(x,y);
                 if(downHit==H_HEAD){mode=2;grabX=x-panelX;grabY=y-panelY;}
@@ -158,14 +196,15 @@ public class UiEditorView extends View {
                 else if(downHit==H_ALPHA){mode=4;setSlider(4,x);}
                 else mode=5;
                 invalidate();return true;}
-            int hit=elementAt(x,y);
-            if(hit>=0){sel=hit;if(HudLayout.movable(hit)){mode=1;L().center(hit,w,h,ui.dp,isCaster(),pt);grabX=x-pt[0];grabY=y-pt[1];}}
+            float px=(x-offX)/scale,py=(y-offY)/scale;
+            int hit=elementAt(px,py);
+            if(hit>=0){sel=hit;if(HudLayout.movable(hit)){mode=1;L().center(hit,w,h,ui.dp,isCaster(),pt);grabX=px-pt[0];grabY=py-pt[1];}}
             else sel=-1;
             invalidate();return true;
         }
         if(a==MotionEvent.ACTION_MOVE){
             if(!moved&&Math.abs(x-downX)+Math.abs(y-downY)>dp(6))moved=true;
-            if(mode==1&&moved&&sel>=0){float cx=x-grabX,cy=y-grabY;if(grid){float s=dp(8);cx=Math.round(cx/s)*s;cy=Math.round(cy/s)*s;}
+            if(mode==1&&moved&&sel>=0){float cx=(x-offX)/scale-grabX,cy=(y-offY)/scale-grabY;if(grid){float s=dp(8);cx=Math.round(cx/s)*s;cy=Math.round(cy/s)*s;}
                 boolean wasFloating=sel==HudLayout.JOYSTICK&&!L().joyFixed;
                 L().place(sel,cx,cy,w,h,ui.dp);if(wasFloating)hint("Joystick switched to a fixed position");}
             else if(mode==2){panelX=x-grabX;panelY=y-grabY;}
@@ -195,7 +234,10 @@ public class UiEditorView extends View {
     private void changed(){project.save(getContext());}
     private void tap(int hid){
         HudLayout.Elem el=sel>=0?L().e[sel]:null;
+        if(hid>=H_TAB&&hid<H_TAB+TABS.length){tab=hid-H_TAB;sel=-1;return;}
         switch(hid){
+            case H_BACK:if(host!=null)host.exit();return;
+            case H_TOPSAVE:if(host!=null)host.saved();return;
             case H_COLLAPSE:collapsed=!collapsed;return;
             case H_GRID:grid=!grid;hint(grid?"Grid on · controls snap to it":"Grid off · free placement");return;
             case H_SAVE:if(host!=null)host.saved();return;
