@@ -68,6 +68,7 @@ final class World {
         float target=player.z+EYE;if(player.noGravity)viewZ=target;else if(target>viewZ)viewZ+=Math.min(target-viewZ,Math.max(dt*4f,(target-viewZ)*dt*12f));else viewZ=target;}
     private World(Project p,SoundFx sfx,boolean live){
         project=p;this.sfx=sfx;this.live=live;
+        if(sfx!=null&&!live){sfx.stopSounds();sfx.useProject(p);playMusic(p.levelMusic,true,0);}
         level=live?p.level:p.level.copy();
         lines=PortalTopology.build(level);geoSig=Renderer.signature(level);
         doorOpen=new float[level.sectors.size()];secretFound=new boolean[level.sectors.size()];
@@ -577,9 +578,32 @@ final class World {
     void sound(int id,Actor at){sound(id,at,null);}
     void sound(int id,Actor at,float[] pos){
         if(sfx==null||id<0)return;
-        float vol=1;
-        if(player!=null&&at!=player){float x=at!=null?at.x:pos!=null?pos[0]:player.x,y=at!=null?at.y:pos!=null?pos[1]:player.y;
-            float d=(float)Math.hypot(x-player.x,y-player.y);vol=Math.max(0,1-d/28f);}
+        float vol=distanceVolume(at,pos);
         if(vol>.02f)sfx.play(id,vol);
     }
+    private float distanceVolume(Actor at,float[] pos){
+        if(player==null||at==player)return 1;
+        float x=at!=null?at.x:pos!=null?pos[0]:player.x,y=at!=null?at.y:pos!=null?pos[1]:player.y;
+        float d=(float)Math.hypot(x-player.x,y-player.y);return Math.max(0,1-d/28f);
+    }
+    /** Plays an FSM sound value (project sound id or built-in name). Returns a handle for soundPlaying, or 0. */
+    int playSound(String value,Actor at,float volume,float speed,boolean positional){
+        if(sfx==null||value==null||value.isEmpty())return 0;
+        SoundAsset a=project.sound(value);short[] clip=a!=null?a.render():sfx.clip(SoundFx.builtinIndex(value));
+        float vol=volume*(positional?distanceVolume(at,null):1);
+        if(clip==null||vol<=.02f)return 0;
+        return sfx.play(clip,vol,speed);
+    }
+    boolean soundPlaying(int handle){return sfx!=null&&sfx.playing(handle);}
+    void stopSounds(){if(sfx!=null)sfx.stopSounds();}
+    void setSoundVolume(float v){if(sfx!=null)sfx.sfxVolume=Math.max(0,Math.min(1,v));}
+    void playMusic(String songId,boolean loop,float fadeIn){
+        if(sfx==null)return;Song m=project.song(songId);
+        if(m==null){sfx.stopMusic(0);return;}
+        sfx.playMusic(m.compile(project),loop,fadeIn);
+    }
+    void stopMusic(float fadeOut){if(sfx!=null)sfx.stopMusic(fadeOut);}
+    void setMusicVolume(float v){if(sfx!=null)sfx.setMusicVolume(v);}
+    boolean musicPlaying(){return sfx!=null&&sfx.musicPlaying();}
+    long musicTicks(){return sfx==null?0:sfx.musicTicks;}
 }

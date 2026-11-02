@@ -108,6 +108,12 @@ public class MainActivity extends Activity implements UiHost {
         startActivity(i);
     }
 
+    @Override public void openSound(int tab) {
+        Intent i = new Intent(this, SoundEditorActivity.class);
+        i.putExtra("tab", tab);
+        startActivity(i);
+    }
+
     /** Shows the last crash report with options to copy it, wipe saved data, or carry on. */
     private void showCrash(String report) {
         LinearLayout root = new LinearLayout(this);

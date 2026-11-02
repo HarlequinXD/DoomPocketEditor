@@ -360,7 +360,7 @@ public class FSMGraphView extends View {
             if(pm.type==Actions.T_FLOAT&&v.equals("0")&&b.length()>0)continue;
             if(b.length()>0)b.append(" · ");
             if(pm.type==Actions.T_BOOL)b.append(pm.label);else if(pm.type==Actions.T_EVENT)b.append("→ ").append(v);
-            else if(pm.type==Actions.T_CHOICE||pm.type==Actions.T_CLIP||pm.type==Actions.T_ENTITY||pm.type==Actions.T_MATERIAL||pm.type==Actions.T_SECTOR||pm.type==Actions.T_TEXT)b.append(display(pm,v));
+            else if(pm.type==Actions.T_CHOICE||pm.type==Actions.T_CLIP||pm.type==Actions.T_ENTITY||pm.type==Actions.T_MATERIAL||pm.type==Actions.T_SECTOR||pm.type==Actions.T_TEXT||pm.type==Actions.T_SOUND||pm.type==Actions.T_SONG)b.append(display(pm,v));
             else b.append(pm.label.toLowerCase()).append(' ').append(display(pm,v));
             if(b.length()>60)break;}
         return b.length()==0?s.category:b.toString();
@@ -371,6 +371,8 @@ public class FSMGraphView extends View {
             case Actions.T_MATERIAL:try{return Textures.NAMES[Math.max(0,Math.min(Textures.COUNT-1,Integer.parseInt(v)))];}catch(NumberFormatException e){return v;}
             case Actions.T_SECTOR:try{return "Sector "+(Integer.parseInt(v)+1);}catch(NumberFormatException e){return v;}
             case Actions.T_EVENT:return v.isEmpty()?"—":v;
+            case Actions.T_SOUND:return v.isEmpty()?"none":project.soundLabel(v);
+            case Actions.T_SONG:return v.isEmpty()?"none":project.songLabel(v);
             default:return v;
         }
     }
@@ -389,7 +391,7 @@ public class FSMGraphView extends View {
             if(pm.type==Actions.T_BOOL){boolean on=v.equals("true");float tx=rr-dp(44),ty=iy+dp(15);ui.round(c,tx,ty,tx+dp(32),ty+dp(16),dp(8),on?Ui.ACCENT:Ui.SURFACE_3);p.setColor(0xffffffff);c.drawCircle(on?tx+dp(24):tx+dp(8),ty+dp(8),dp(6),p);
                 ui.text(c,on?"Yes":"No",l+dp(10),iy+dp(36),12.5f,Ui.TEXT,1,-1);}
             else{String shown=display(pm,v);boolean empty=v.isEmpty();ui.text(c,ui.ellipsize(empty?(pm.type==Actions.T_EVENT?"No event":"Not set"):shown,12.5f,1,rr-l-dp(44)),l+dp(10),iy+dp(36),12.5f,empty?Ui.TEXT_3:pm.type==Actions.T_EVENT?Ui.AMBER:Ui.TEXT,1,-1);
-                ui.icon(c,pm.type==Actions.T_CHOICE||pm.type==Actions.T_CLIP||pm.type==Actions.T_EVENT||pm.type==Actions.T_ENTITY||pm.type==Actions.T_MATERIAL||pm.type==Actions.T_VAR?Icons.CHEVRON_DOWN:Icons.PEN,rr-dp(16),iy+dp(23),13,Ui.TEXT_3);}
+                ui.icon(c,pm.type==Actions.T_CHOICE||pm.type==Actions.T_CLIP||pm.type==Actions.T_EVENT||pm.type==Actions.T_ENTITY||pm.type==Actions.T_MATERIAL||pm.type==Actions.T_VAR||pm.type==Actions.T_SOUND||pm.type==Actions.T_SONG?Icons.CHEVRON_DOWN:Icons.PEN,rr-dp(16),iy+dp(23),13,Ui.TEXT_3);}
             ihit(r,H_PARAM+i);iy+=dp(52);}
         iy+=dp(4);
         float half=(rr-l-dp(6))/2f;
@@ -578,6 +580,18 @@ public class FSMGraphView extends View {
             case Actions.T_CLIP:{java.util.ArrayList<String> clips=project.clipNames(def);String[] items=new String[clips.size()+1];
                 for(int k=0;k<clips.size();k++)items[k]=clips.get(k);items[clips.size()]="Draw or edit clips in the Sprite Editor…";
                 host.choose(pm.label,items,clips.indexOf(v),k->{if(k==clips.size())host.openSprites(def.id);else a.params.put(pm.key,clips.get(k));});break;}
+            case Actions.T_SOUND:{
+                ArrayList<String> vals=new ArrayList<>(),names=new ArrayList<>();vals.add("");names.add("(none)");
+                for(SoundAsset sa:project.sounds){vals.add(sa.id);names.add("♪ "+sa.name);}
+                for(String bn:SoundFx.NAMES){vals.add(bn);names.add(bn+(project.soundOverride(bn)!=null?" (replaced)":""));}
+                names.add("Make or edit sounds in the Sound Editor…");
+                String[] arr=names.toArray(new String[0]);int cur=vals.indexOf(v);
+                host.choose(pm.label,arr,cur,k->{if(k==arr.length-1)host.openSound(0);else a.params.put(pm.key,vals.get(k));});break;}
+            case Actions.T_SONG:{
+                String[] arr=new String[project.songs.size()+2];arr[0]="(none)";int cur=0;
+                for(int k=0;k<project.songs.size();k++){arr[k+1]=project.songs.get(k).name;if(project.songs.get(k).id.equals(v))cur=k+1;}
+                arr[arr.length-1]="Compose music in the Sound Editor…";
+                host.choose(pm.label,arr,cur,k->{if(k==arr.length-1)host.openSound(1);else a.params.put(pm.key,k==0?"":project.songs.get(k-1).id);});break;}
             case Actions.T_MATERIAL:{int cur=0;try{cur=Integer.parseInt(v);}catch(NumberFormatException ignored){}host.choose(pm.label,Textures.NAMES,cur,k->a.params.put(pm.key,String.valueOf(k)));break;}
             case Actions.T_SECTOR:{int cur=0;try{cur=Integer.parseInt(v);}catch(NumberFormatException ignored){}
                 host.prompt(pm.label,"Sector number as shown in the editor",String.valueOf(cur+1),true,t->{try{a.params.put(pm.key,String.valueOf(Math.max(0,Math.round(Float.parseFloat(t))-1)));}catch(NumberFormatException ignored){}});break;}

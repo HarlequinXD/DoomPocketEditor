@@ -21,11 +21,11 @@ public class EditorView extends View {
     private static final String[] MODE_NAMES={"Sectors","Entities","3D View","Play"};
     private static final int[] MODE_ICONS={Icons.SECTORS,Icons.ENTITIES,Icons.CUBE,Icons.PLAY};
     // Every editor in the app, in header / launcher order. Index 4 and 5 open their own screens.
-    static final String[] EDITOR_NAMES={"Sectors","Entities","3D View","Play","FSM","Sprites"};
-    static final int[] EDITOR_ICONS={Icons.SECTORS,Icons.ENTITIES,Icons.CUBE,Icons.PLAY,Icons.GRAPH,Icons.PIXEL};
-    static final int[] EDITOR_COLORS={0xff3d8bfd,0xfff0a030,0xff9b6dff,0xff3ecf8e,0xff2fb8c8,0xffef6b8a};
-    static final String[] EDITOR_DESC={"Rooms, doors & stairs","Monsters, items & types","Walk & paint surfaces","Test with the real engine","Behaviour & actions","Pixel art & animation"};
-    private static final int[] EDITOR_MODES={POLY,THINGS,POLY3D,PLAY,-1,-1};
+    static final String[] EDITOR_NAMES={"Sectors","Entities","3D View","Play","FSM","Sprites","Sound"};
+    static final int[] EDITOR_ICONS={Icons.SECTORS,Icons.ENTITIES,Icons.CUBE,Icons.PLAY,Icons.GRAPH,Icons.PIXEL,Icons.MUSIC};
+    static final int[] EDITOR_COLORS={0xff3d8bfd,0xfff0a030,0xff9b6dff,0xff3ecf8e,0xff2fb8c8,0xffef6b8a,0xffe0679a};
+    static final String[] EDITOR_DESC={"Rooms, doors & stairs","Monsters, items & types","Walk & paint surfaces","Test with the real engine","Behaviour & actions","Pixel art & animation","Sound effects & music"};
+    private static final int[] EDITOR_MODES={POLY,THINGS,POLY3D,PLAY,-1,-1,-1};
     private static final int H_ED=3000,H_SWITCH=3010,H_MORE=3011,H_LAUNCH=3020,H_LAUNCH_HOME=3027,H_LAUNCH_CLOSE=3028,H_TILE=3040,H_HOMEPLAY=3050,H_HOME3D=3051,H_HOMEFIX=3052;
     private boolean launcherOpen;
     // Touch target ids registered while drawing.
@@ -213,6 +213,7 @@ public class EditorView extends View {
         if(i<0){if(mode!=HOME)changeMode(HOME);return;}
         if(i==4){openFsm(mode==THINGS?selDef:null);return;}
         if(i==5){openSprites(mode==THINGS?selDef:null);return;}
+        if(i==6){save(false);if(host!=null)host.openSound(0);return;}
         if(EDITOR_MODES[i]!=mode)changeMode(EDITOR_MODES[i]);
     }
     /** Android back: close the launcher, leave Play, leave an editor for Home; false means leave the project. */
@@ -261,7 +262,8 @@ public class EditorView extends View {
             case 2:return "First-person editing";
             case 3:return statWarnings==0?"Ready to play":statWarnings+" map warning"+(statWarnings==1?"":"s");
             case 4:return statStates+" states · "+project.defs.size()+" machines";
-            default:return project.sprites.size()+(project.sprites.size()==1?" custom sprite":" custom sprites");
+            case 5:return project.sprites.size()+(project.sprites.size()==1?" custom sprite":" custom sprites");
+            default:return project.sounds.size()+(project.sounds.size()==1?" sound · ":" sounds · ")+project.songs.size()+(project.songs.size()==1?" song":" songs");
         }
     }
     private void drawHome(Canvas c,float dt){
@@ -294,7 +296,7 @@ public class EditorView extends View {
         ui.text(c,"Editors",gl+dp(2),T+dp(16),15,Ui.TEXT,1,-1);
         if(!shortScreen)ui.text(c,ui.ellipsize("Tap one to open it · use the icons above or the title menu to switch at any time",11,0,R-gl),gl+dp(2),T+dp(34),11,Ui.TEXT_3,0,-1);
         float gt=shortScreen?T+dp(26):T+dp(48),gap=dp(10);int cols=w>dp(700)?2:1;
-        if((B-gt-gap*2)/3f<dp(60))cols=3;   // short screens: 3 x 2 compact tiles
+        if(cols==2&&(B-gt-gap*3)/4f<dp(60))cols=3;   // short screens: 3 columns of compact tiles
         int rows=(EDITOR_NAMES.length+cols-1)/cols;
         float tw=(R-gl-gap*(cols-1))/cols,th=Math.max(dp(44),Math.min(dp(96),(B-gt-gap*(rows-1))/rows));
         for(int i=0;i<EDITOR_NAMES.length;i++){int col=i%cols,row=i/cols;float x=gl+col*(tw+gap),y=gt+row*(th+gap);
@@ -1065,7 +1067,7 @@ public class EditorView extends View {
     private void flushSave(){removeCallbacks(saveTask);saveQueued=false;project.save(getContext());}
     private void resetLevel(){project.level=new Level();level=project.level;sectorEditor=new SectorEditor(level);pending.clear();selKind=0;walker=null;cancelStage();changed("Level reset");}
     private void changeMode(int next){
-        if(mode==PLAY&&next!=PLAY){sfx.stop();world=null;}
+        if(mode==PLAY&&next!=PLAY){sfx.stopMusic(0);sfx.stopSounds();sfx.stop();world=null;}
         if(next==PLAY&&mode!=PLAY)returnMode=mode;
         if(next==HOME)save(false);
         launcherOpen=false;

@@ -10,11 +10,11 @@ import java.util.LinkedHashMap;
  */
 final class Actions {
     private Actions(){}
-    static final int T_FLOAT=0,T_INT=1,T_BOOL=2,T_TEXT=3,T_EVENT=4,T_VAR=5,T_CHOICE=6,T_ENTITY=7,T_MATERIAL=8,T_SECTOR=9,T_CLIP=10;
+    static final int T_FLOAT=0,T_INT=1,T_BOOL=2,T_TEXT=3,T_EVENT=4,T_VAR=5,T_CHOICE=6,T_ENTITY=7,T_MATERIAL=8,T_SECTOR=9,T_CLIP=10,T_SOUND=11,T_SONG=12;
     static final int DONE=0,RUNNING=1;
     static final String CAM_STYLES="Orbit|Shoulder|Chase";
-    static final String[] CATEGORIES={"Flow","Animation","Variables","Input","Weapons","Health","Movement","Camera","AI","World","Entities","Feedback"};
-    static final int[] CATEGORY_ICONS={Icons.GRAPH,Icons.FILM,Icons.TAG,Icons.MOVE,Icons.CROSSHAIR,Icons.HEART,Icons.ARROW_UP,Icons.CAMERA,Icons.SKULL,Icons.LAYERS,Icons.ENTITIES,Icons.INFO};
+    static final String[] CATEGORIES={"Flow","Animation","Variables","Input","Weapons","Health","Movement","Camera","AI","World","Entities","Feedback","Audio"};
+    static final int[] CATEGORY_ICONS={Icons.GRAPH,Icons.FILM,Icons.TAG,Icons.MOVE,Icons.CROSSHAIR,Icons.HEART,Icons.ARROW_UP,Icons.CAMERA,Icons.SKULL,Icons.LAYERS,Icons.ENTITIES,Icons.INFO,Icons.SPEAKER};
     static final String WEAPONS="Fist|Pistol|Shotgun|Chaingun|Rocket Launcher";
     static final String AMMO="Bullets|Shells|Rockets";
     static final String BUTTONS="Fire|Use|Jump|Weapon|Alt";
@@ -37,12 +37,12 @@ final class Actions {
     static ArrayList<Spec> inCategory(String cat){ArrayList<Spec> out=new ArrayList<>();for(Spec s:ALL.values())if(cat==null||s.category.equals(cat))out.add(s);return out;}
     static ArrayList<Spec> search(String q){ArrayList<Spec> out=new ArrayList<>();String l=q.toLowerCase();for(Spec s:ALL.values())if(s.name.toLowerCase().contains(l)||s.desc.toLowerCase().contains(l)||s.category.toLowerCase().contains(l))out.add(s);return out;}
 
-    /** Parses "key:type=default" where type is f,i,b,t,e,v,E,M,X or c(A|B|C). */
+    /** Parses "key:type=default" where type is f,i,b,t,e,v,E,M,A,X,S (sound),U (song) or c(A|B|C). */
     private static Param parse(String spec){
         int colon=spec.indexOf(':'),eq=spec.indexOf('=',colon);
         String key=spec.substring(0,colon),type=spec.substring(colon+1,eq<0?spec.length():eq),def=eq<0?"":spec.substring(eq+1);
         if(type.startsWith("c(")){String[] opts=type.substring(2,type.length()-1).split("\\|");return new Param(key,T_CHOICE,def.isEmpty()?opts[0]:def,opts);}
-        int t;switch(type){case "f":t=T_FLOAT;break;case "i":t=T_INT;break;case "b":t=T_BOOL;break;case "e":t=T_EVENT;break;case "v":t=T_VAR;break;case "E":t=T_ENTITY;break;case "M":t=T_MATERIAL;break;case "A":t=T_CLIP;break;case "X":t=T_SECTOR;break;default:t=T_TEXT;}
+        int t;switch(type){case "f":t=T_FLOAT;break;case "i":t=T_INT;break;case "b":t=T_BOOL;break;case "e":t=T_EVENT;break;case "v":t=T_VAR;break;case "E":t=T_ENTITY;break;case "M":t=T_MATERIAL;break;case "A":t=T_CLIP;break;case "X":t=T_SECTOR;break;case "S":t=T_SOUND;break;case "U":t=T_SONG;break;default:t=T_TEXT;}
         return new Param(key,t,def,null);
     }
     private static void def(String id,String name,String cat,int icon,String desc,Impl impl,String... params){
@@ -214,9 +214,9 @@ final class Actions {
         def("target_dead_event","Target Lost","AI",Icons.SKULL,"Sends an event when there is no living target.",c->{if(c.self.target==null||!c.self.target.alive)c.send("event");return c.doneOrRun();},"event:e=LOST","everyFrame:b=true");
         def("hitscan_attack","Hitscan Attack","AI",Icons.CROSSHAIR,"Fires instant bullets at the target (like a zombieman or shotgun guy).",c->{
             c.self.attackTimer=.3f;Actor t=c.self.target;float ang=t!=null?c.w.angleTo(c.self,t):c.self.angle;
-            c.w.sound(Actions.indexOf(SOUNDS,c.s("sound")),c.self);
+            c.w.playSound(c.s("sound"),c.self,1,1,true);
             c.w.hitscan(c.self,ang,c.i("damageMin"),c.i("damageMax"),(float)Math.toRadians(c.f("spread")),Math.max(1,c.i("pellets")),32);return DONE;},
-            "damageMin:i=3","damageMax:i=15","spread:f=5","pellets:i=1","sound:c("+SOUNDS+")=Pistol");
+            "damageMin:i=3","damageMax:i=15","spread:f=5","pellets:i=1","sound:S=Pistol");
         def("melee_attack","Melee Attack","AI",Icons.SKULL,"Bites or claws the target if it is in range; otherwise sends the miss event.",c->{
             c.self.attackTimer=.3f;if(!c.w.melee(c.self,c.f("range"),c.rndInt(c.i("damageMin"),c.i("damageMax"))))c.send("missEvent");return DONE;},"damageMin:i=4","damageMax:i=20","range:f=1.4","missEvent:e=");
         def("fire_projectile","Fire Projectile","AI",Icons.SUN,"Launches a projectile at the target (fireball, rocket or plasma).",c->{
@@ -298,8 +298,35 @@ final class Actions {
         // ------------------------------------------------------------------ Feedback
         def("show_message","Show Message","Feedback",Icons.INFO,"Shows a message at the top of the screen, like Doom pickups.",c->{c.w.message(c.s("text"),c.f("seconds"));return DONE;},"text:t=Hello","seconds:f=3");
         def("center_print","Center Message","Feedback",Icons.INFO,"Shows large text in the middle of the screen.",c->{c.w.centerPrint(c.s("text"),c.f("seconds"));return DONE;},"text:t=","seconds:f=2");
-        def("play_sound","Play Sound","Feedback",Icons.ZAP,"Plays a sound effect at this entity.",c->{c.w.sound(c.choice("sound",SOUNDS),c.self);return DONE;},"sound:c("+SOUNDS+")=Pickup");
         def("screen_flash","Screen Flash","Feedback",Icons.SUN,"Tints the screen briefly (red for pain, gold for pickups).",c->{c.w.flash(c.choice("color","Red|Gold|White|Green"),c.f("strength"));return DONE;},"color:c(Red|Gold|White|Green)=Gold","strength:f=0.4");
         def("camera_shake","Camera Shake","Feedback",Icons.MOVE,"Shakes the player's view.",c->{c.w.shake(c.f("strength"),c.f("seconds"));return DONE;},"strength:f=0.3","seconds:f=0.5");
+
+        // ------------------------------------------------------------------ Audio
+        def("play_sound","Play Sound","Audio",Icons.SPEAKER,"Plays a built-in or project sound. Positional sounds get quieter with distance from the player. Pitch is in semitones.",c->{
+            c.w.playSound(c.s("sound"),c.self,c.f("volume"),pitchRate(c),c.b("positional"));return DONE;},
+            "sound:S=Pickup","volume:f=1","pitch:f=0","randomPitch:f=0","positional:b=true");
+        def("play_sound_wait","Play Sound And Wait","Audio",Icons.SPEAKER,"Plays a sound, then sends an event when it has finished.",c->{
+            if(c.enter){c.m[0]=c.w.playSound(c.s("sound"),c.self,c.f("volume"),pitchRate(c),c.b("positional"));c.m[1]=0;}
+            c.m[1]+=c.dt;if(c.m[0]==0||!c.w.soundPlaying((int)c.m[0])||c.m[1]>12){c.send("finishedEvent");return DONE;}return RUNNING;},
+            "sound:S=Pickup","volume:f=1","pitch:f=0","randomPitch:f=0","positional:b=true","finishedEvent:e=FINISHED");
+        def("random_sound","Random Sound","Audio",Icons.SPARKLE,"Plays one of up to three sounds, picked at random. Good for footsteps and grunts.",c->{
+            ArrayList<String> l=new ArrayList<>();for(String k:new String[]{"soundA","soundB","soundC"})if(!c.s(k).isEmpty())l.add(c.s(k));
+            if(!l.isEmpty())c.w.playSound(l.get(c.w.rng.nextInt(l.size())),c.self,c.f("volume"),pitchRate(c),c.b("positional"));return DONE;},
+            "soundA:S=Monster Sight","soundB:S=Monster Pain","soundC:S=","volume:f=1","pitch:f=0","randomPitch:f=1","positional:b=true");
+        def("repeat_sound","Repeat Sound","Audio",Icons.RESET,"Keeps playing a sound at a fixed interval while the state is active (engines, alarms, humming).",c->{
+            if(c.enter)c.m[0]=9999;c.m[0]+=c.dt;if(c.m[0]>=Math.max(.05f,c.f("interval"))){c.m[0]=0;c.w.playSound(c.s("sound"),c.self,c.f("volume"),pitchRate(c),c.b("positional"));}return RUNNING;},
+            "sound:S=Beep","interval:f=1","volume:f=1","pitch:f=0","randomPitch:f=0","positional:b=true");
+        def("stop_sounds","Stop All Sounds","Audio",Icons.STOP,"Silences every sound effect that is playing (music keeps going).",c->{c.w.stopSounds();return DONE;});
+        def("set_sound_volume","Set Sound Volume","Audio",Icons.SPEAKER,"Sets the volume of all sound effects for this play session (0 to 1).",c->{c.w.setSoundVolume(c.f("volume"));return DONE;},"volume:f=1");
+        def("play_music","Play Music","Audio",Icons.MUSIC,"Starts a song from the Sound & Music editor, replacing the current one.",c->{
+            c.w.playMusic(c.s("song"),c.b("loop"),c.f("fadeIn"));return DONE;},"song:U=","loop:b=true","fadeIn:f=0");
+        def("stop_music","Stop Music","Audio",Icons.STOP,"Stops the music, optionally fading it out over some seconds.",c->{c.w.stopMusic(c.f("fadeOut"));return DONE;},"fadeOut:f=1");
+        def("set_music_volume","Set Music Volume","Audio",Icons.MUSIC,"Sets the music volume for this play session (0 to 1).",c->{c.w.setMusicVolume(c.f("volume"));return DONE;},"volume:f=0.8");
+        def("music_beat","On Music Beat","Audio",Icons.MUSIC,"Sends an event in time with the music: every 4 steps is one beat, 16 is one bar.",c->{
+            long t=c.w.musicTicks();if(c.enter)c.m[0]=t<=0?-1:(t-1)/Math.max(1,c.i("every"));
+            if(t>0){float beat=(t-1)/Math.max(1,c.i("every"));if(beat!=c.m[0]){c.m[0]=beat;c.send("event");}}return RUNNING;},"every:i=4","event:e=BEAT");
+        def("music_playing","Is Music Playing?","Audio",Icons.MUSIC,"Sends one event if music is playing, another if it is silent.",c->{c.send(c.w.musicPlaying()?"yesEvent":"noEvent");return c.doneOrRun();},"yesEvent:e=","noEvent:e=","everyFrame:b=false");
     }
+    /** Playback speed from an action's pitch and random pitch (semitones). */
+    private static float pitchRate(Ctx c){float st=c.f("pitch");float rp=c.f("randomPitch");if(rp>0)st+=c.rnd(-rp,rp);return (float)Math.pow(2,st/12f);}
 }

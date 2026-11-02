@@ -14,6 +14,12 @@ final class Project {
     Level level;
     final ArrayList<EntityDef> defs=new ArrayList<>();
     final ArrayList<CustomSprite> sprites=new ArrayList<>();
+    final ArrayList<SoundAsset> sounds=new ArrayList<>();
+    final ArrayList<Song> songs=new ArrayList<>();
+    /** Built-in sound name (e.g. "Pistol") to the project sound that replaces it everywhere in the game. */
+    final java.util.HashMap<String,String> soundOverrides=new java.util.HashMap<>();
+    String levelMusic="";
+    float musicVolume=.8f,sfxVolume=1f;
     String loadWarning;
 
     /** The open project; opens the last one used, or creates a starter project. */
@@ -33,8 +39,14 @@ final class Project {
 
     EntityDef def(String id){if(id==null)return null;for(EntityDef d:defs)if(d.id.equals(id))return d;return null;}
     CustomSprite sprite(String id){if(id==null||id.isEmpty())return null;for(CustomSprite s:sprites)if(s.id.equals(id))return s;return null;}
+    SoundAsset sound(String id){if(id==null||id.isEmpty())return null;for(SoundAsset a:sounds)if(a.id.equals(id))return a;return null;}
+    Song song(String id){if(id==null||id.isEmpty())return null;for(Song m:songs)if(m.id.equals(id))return m;return null;}
+    String soundOverride(String builtinName){return soundOverrides.get(builtinName);}
+    /** Name shown for an FSM sound value: a project sound id or a built-in sound name. */
+    String soundLabel(String v){if(v==null||v.isEmpty())return "None";SoundAsset a=sound(v);if(a!=null)return a.name;int b=SoundFx.builtinIndex(v);return b>=0?SoundFx.NAMES[b]:v+"?";}
+    String songLabel(String v){if(v==null||v.isEmpty())return "None";Song m=song(v);return m!=null?m.name:v+"?";}
     EntityDef playerDef(){for(EntityDef d:defs)if(d.kind==EntityDef.PLAYER)return d;EntityDef p=DefaultContent.player();defs.add(0,p);return p;}
-    String uniqueId(String base){String b=base.toLowerCase().replaceAll("[^a-z0-9]+","_");if(b.isEmpty())b="entity";String id=b;int n=2;while(def(id)!=null||sprite(id)!=null)id=b+"_"+(n++);return id;}
+    String uniqueId(String base){String b=base.toLowerCase().replaceAll("[^a-z0-9]+","_");if(b.isEmpty())b="entity";String id=b;int n=2;while(def(id)!=null||sprite(id)!=null||sound(id)!=null||song(id)!=null)id=b+"_"+(n++);return id;}
     int countPlaced(String defId){int c=0;for(Level.Thing t:level.things)if(defId.equals(t.def))c++;return c;}
     /** Sprite frame for an entity type, preferring its custom sprite. */
     Sprites.Sprite spriteFor(EntityDef d,int builtin,int frame,float time,float deadTime){return spriteFor(d,builtin,frame,time,deadTime,0f);}
@@ -81,7 +93,7 @@ final class Project {
         return out;
     }
     JSONObject toJson()throws Exception{
-        JSONObject o=new JSONObject();o.put("version",6);
+        JSONObject o=new JSONObject();o.put("version",7);
         JSONObject m=new JSONObject();m.put("name",name);m.put("template",template);m.put("created",(double)created);o.put("meta",m);
         o.put("level",level.toJson());
         JSONArray a=new JSONArray();for(EntityDef d:defs)a.put(d.toJson());o.put("entities",a);
@@ -94,6 +106,11 @@ final class Project {
         p.level=Level.fromJson(o.getJSONObject("level"));
         JSONArray a=o.optJSONArray("entities");if(a!=null)for(int i=0;i<a.length();i++)p.defs.add(EntityDef.fromJson(a.getJSONObject(i)));
         JSONArray s=o.optJSONArray("sprites");if(s!=null)for(int i=0;i<s.length();i++){try{p.sprites.add(CustomSprite.fromJson(s.getJSONObject(i)));}catch(Exception ignored){}}
+        JSONArray sn=o.optJSONArray("sounds");if(sn!=null)for(int i=0;i<sn.length();i++){JSONObject j=sn.optJSONObject(i);if(j!=null)p.sounds.add(SoundAsset.fromJson(j));}
+        JSONArray mu=o.optJSONArray("songs");if(mu!=null)for(int i=0;i<mu.length();i++){JSONObject j=mu.optJSONObject(i);if(j!=null)p.songs.add(Song.fromJson(j));}
+        JSONObject au=o.optJSONObject("audio");
+        if(au!=null){JSONObject ov=au.optJSONObject("overrides");if(ov!=null){java.util.Iterator<String> k=ov.keys();while(k.hasNext()){String key=k.next();p.soundOverrides.put(key,ov.optString(key));}}
+            p.levelMusic=au.optString("levelMusic","");p.musicVolume=(float)Math.max(0,Math.min(1,au.optDouble("musicVolume",.8)));p.sfxVolume=(float)Math.max(0,Math.min(1,au.optDouble("sfxVolume",1)));}
         if(!p.level.isConsistent())throw new IllegalStateException("inconsistent map");
         p.fixUp();return p;
     }
