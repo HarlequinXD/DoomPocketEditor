@@ -25,8 +25,13 @@ final class Sprites {
 
     /** Pixel data plus its density: built-in model sprites use 64 pixels per unit, hand-drawn ones 32. */
     static final class Sprite {final int w,h;final int[] px;final boolean bright;float ppu=PPU;Sprite(int w,int h,boolean bright){this.w=w;this.h=h;px=new int[w*h];this.bright=bright;}}
-    /** Model sprites are rendered at twice the hand-drawn density for crisper close-ups. */
-    static final float MODEL_PPU=80f;
+    /**
+     * Model sprites are rendered at 3x the editor density (96 px per unit) and, in pixel-art style, reduced 3x to
+     * exactly 32 px per unit: the same pixel size as wall/floor textures and hand-drawn sprites, so they sit in the
+     * world like everything else and a copy in the sprite editor is pixel-for-pixel identical.
+     */
+    private static final int PIXEL_K_CONST=3;
+    static final float MODEL_PPU=PPU*PIXEL_K_CONST;
     /** Number of view angles stored for every built-in sprite slot (characters really use all 8). */
     static final int VIEWS=8;
     private static Sprite[][][] cache;
@@ -35,12 +40,12 @@ final class Sprites {
     private static final Object lock=new Object();
 
     /** Bump when the models or renderer change so stale disk-cached sprites are ignored. */
-    static final int MODEL_VERSION=5;
+    static final int MODEL_VERSION=6;
     private static java.io.File diskRoot,diskDir;
     /** Pixel-art style (default): built-in sprites are rendered in HD, then reduced 3x keeping each block's main colour,
      *  exactly like copying a built-in sprite into the sprite editor. Off = the smooth HD render. */
     static volatile boolean pixel=true;
-    static final int PIXEL_K=3;
+    static final int PIXEL_K=PIXEL_K_CONST;
     /** Rendered sprites are saved here (compressed) so each one is only ever rendered once per install. */
     static void setCacheDir(java.io.File dir){
         diskRoot=dir;
