@@ -27,6 +27,8 @@ final class Project {
      * {@link #maps}. Maps are referred to by a number that never changes, so exits survive renames and deletes.
      */
     static final class GameMap {int num;String name;Level level;String music="";
+        /** Line under the map name on its title card. */
+        String card="";
         /** Atmosphere (Atmosphere.FOGS, TINTS, WEATHERS). */
         int fog,tint,weather;GameMap(int num,String name,Level level){this.num=num;this.name=name;this.level=level;}}
     final ArrayList<GameMap> maps=new ArrayList<>();
@@ -65,6 +67,8 @@ final class Project {
     UiTheme theme=new UiTheme();
     /** Main menu and splash look (UI Editor → Main Menu). */
     final MenuStyle menu=new MenuStyle();
+    /** Title cards, death and victory screens (UI Editor → Screens). */
+    final ScreenStyle screens=new ScreenStyle();
     String loadWarning;
 
     /** The open project; opens the last one used, or creates a starter project. */
@@ -158,7 +162,8 @@ final class Project {
                 JSONArray rh=new JSONArray();for(Rpg.Shop sh:shops)rh.put(Rpg.toJson(sh));o.put("shops",rh);break;}
             case SEC_DIALOGUE:{JSONArray dl=new JSONArray();for(Dialogue.Def d:dialogues)dl.put(Dialogue.toJson(d));o.put("dialogues",dl);
                 JSONArray qd=new JSONArray();for(Dialogue.QuestDef q:quests)qd.put(Dialogue.toJson(q));o.put("quests",qd);break;}
-            case SEC_UI:o.put("hud",hud.toJson());o.put("theme",theme.toJson());o.put("menu",menu.toJson());break;
+            case SEC_UI:o.put("hud",hud.toJson());o.put("theme",theme.toJson());o.put("menu",menu.toJson());o.put("screens",screens.toJson());
+                JSONArray cards=new JSONArray();for(GameMap gm:maps)cards.put(gm.card);o.put("cards",cards);break;
             case SEC_AUDIO:{JSONArray sn=new JSONArray();for(SoundAsset sa:sounds)sn.put(sa.toJson());o.put("sounds",sn);
                 JSONArray mu=new JSONArray();for(Song m2:songs)mu.put(m2.toJson());o.put("songs",mu);
                 JSONObject ov=new JSONObject();for(java.util.Map.Entry<String,String> e:soundOverrides.entrySet())ov.put(e.getKey(),e.getValue());o.put("overrides",ov);
@@ -184,7 +189,8 @@ final class Project {
                 JSONArray dl=o.getJSONArray("dialogues");dialogues.clear();for(int i=0;i<dl.length();i++)dialogues.add(Dialogue.fromJson(dl.getJSONObject(i)));
                 JSONArray qd=o.getJSONArray("quests");quests.clear();for(int i=0;i<qd.length();i++)quests.add(Dialogue.questFrom(qd.getJSONObject(i)));break;}
             case SEC_UI:{HudLayout h=HudLayout.fromJson(o.getJSONObject("hud"));System.arraycopy(h.e,0,hud.e,0,HudLayout.N);hud.joyFixed=h.joyFixed;
-                theme.read(o.getJSONObject("theme"));menu.read(o.optJSONObject("menu"));break;}
+                theme.read(o.getJSONObject("theme"));menu.read(o.optJSONObject("menu"));screens.read(o.optJSONObject("screens"));
+                JSONArray cards=o.optJSONArray("cards");if(cards!=null&&cards.length()==maps.size())for(int i=0;i<maps.size();i++)maps.get(i).card=cards.optString(i,"");break;}
             case SEC_AUDIO:{
                 JSONArray sn=o.getJSONArray("sounds");sounds.clear();for(int i=0;i<sn.length();i++)sounds.add(SoundAsset.fromJson(sn.getJSONObject(i)));
                 JSONArray mu=o.getJSONArray("songs");songs.clear();for(int i=0;i<mu.length();i++)songs.add(Song.fromJson(mu.getJSONObject(i)));
@@ -206,7 +212,7 @@ final class Project {
         o.put("level",level.toJson());
         // Every map; the open one's level is the "level" entry above (older versions only know that one).
         JSONArray ma=new JSONArray();
-        for(GameMap gm:maps){JSONObject j=new JSONObject();j.put("num",gm.num);j.put("name",gm.name);j.put("music",gm.music);j.put("fog",gm.fog);j.put("tint",gm.tint);j.put("weather",gm.weather);if(gm.num!=currentMap)j.put("level",gm.level.toJson());ma.put(j);}
+        for(GameMap gm:maps){JSONObject j=new JSONObject();j.put("num",gm.num);j.put("name",gm.name);j.put("music",gm.music);j.put("fog",gm.fog);j.put("tint",gm.tint);j.put("weather",gm.weather);j.put("card",gm.card);if(gm.num!=currentMap)j.put("level",gm.level.toJson());ma.put(j);}
         o.put("maps",ma);o.put("currentMap",currentMap);o.put("startMap",startMap);
         JSONArray a=new JSONArray();for(EntityDef d:defs)a.put(d.toJson());o.put("entities",a);
         JSONArray s=new JSONArray();for(CustomSprite cs:sprites)s.put(cs.toJson());o.put("sprites",s);
@@ -227,7 +233,7 @@ final class Project {
         JSONArray dl=new JSONArray();for(Dialogue.Def d:dialogues)dl.put(Dialogue.toJson(d));o.put("dialogues",dl);
         JSONArray qd=new JSONArray();for(Dialogue.QuestDef q:quests)qd.put(Dialogue.toJson(q));o.put("quests",qd);
         JSONArray pf=new JSONArray();for(Prefab x:prefabs)pf.put(x.toJson());o.put("prefabs",pf);
-        JSONObject ui=new JSONObject();ui.put("hud",hud.toJson());ui.put("theme",theme.toJson());ui.put("menu",menu.toJson());o.put("ui",ui);
+        JSONObject ui=new JSONObject();ui.put("hud",hud.toJson());ui.put("theme",theme.toJson());ui.put("menu",menu.toJson());ui.put("screens",screens.toJson());o.put("ui",ui);
         return o;
     }
     static Project fromJson(JSONObject o)throws Exception{
@@ -245,7 +251,7 @@ final class Project {
         if(ma!=null){p.currentMap=o.optInt("currentMap",1);p.startMap=o.optInt("startMap",1);
             for(int i=0;i<ma.length();i++){JSONObject j=ma.optJSONObject(i);if(j==null)continue;int num=j.optInt("num",i+1);
                 Level l;if(num==p.currentMap)l=p.level;else{JSONObject lj=j.optJSONObject("level");if(lj==null)continue;try{l=Level.fromJson(lj);if(!l.isConsistent())l=Templates.empty();}catch(Exception ex){l=Templates.empty();}}
-                GameMap gm=new GameMap(num,j.optString("name","Map "+num),l);gm.music=j.optString("music","");gm.fog=j.optInt("fog",0);gm.tint=j.optInt("tint",0);gm.weather=j.optInt("weather",0);p.maps.add(gm);}
+                GameMap gm=new GameMap(num,j.optString("name","Map "+num),l);gm.music=j.optString("music","");gm.fog=j.optInt("fog",0);gm.tint=j.optInt("tint",0);gm.weather=j.optInt("weather",0);gm.card=j.optString("card","");p.maps.add(gm);}
             if(p.map(p.currentMap)==null){p.maps.add(0,new GameMap(p.nextMapNum(),"Map",p.level));p.currentMap=p.maps.get(0).num;}}
         p.ensureMaps();
         JSONObject rpg=o.optJSONObject("rpg");
@@ -259,7 +265,7 @@ final class Project {
         JSONArray dl=o.optJSONArray("dialogues");if(dl!=null)for(int i=0;i<dl.length();i++){JSONObject j=dl.optJSONObject(i);if(j!=null)p.dialogues.add(Dialogue.fromJson(j));}
         JSONArray qd=o.optJSONArray("quests");if(qd!=null)for(int i=0;i<qd.length();i++){JSONObject j=qd.optJSONObject(i);if(j!=null)p.quests.add(Dialogue.questFrom(j));}
         JSONArray pf=o.optJSONArray("prefabs");if(pf!=null)for(int i=0;i<pf.length();i++){JSONObject j=pf.optJSONObject(i);if(j!=null)p.prefabs.add(Prefab.fromJson(j));}
-        JSONObject ui=o.optJSONObject("ui");if(ui!=null){p.hud=HudLayout.fromJson(ui.optJSONObject("hud"));JSONObject th=ui.optJSONObject("theme");if(th!=null)p.theme=UiTheme.fromJson(th);p.menu.read(ui.optJSONObject("menu"));}
+        JSONObject ui=o.optJSONObject("ui");if(ui!=null){p.hud=HudLayout.fromJson(ui.optJSONObject("hud"));JSONObject th=ui.optJSONObject("theme");if(th!=null)p.theme=UiTheme.fromJson(th);p.menu.read(ui.optJSONObject("menu"));p.screens.read(ui.optJSONObject("screens"));}
         if(!p.level.isConsistent())throw new IllegalStateException("inconsistent map");
         p.fixUp();return p;
     }

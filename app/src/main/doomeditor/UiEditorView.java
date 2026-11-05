@@ -64,7 +64,7 @@ public class UiEditorView extends View {
         c.drawColor(Ui.BG);
         if(tab==1){drawThemeTab(c);drawTopBar(c);drawHint(c);return;}
         if(tab==2){drawMenuTab(c);drawTopBar(c);drawHint(c);return;}
-        if(tab!=0){drawTopBar(c);drawComingSoon(c);return;}
+        if(tab==3){drawScreensTab(c);drawTopBar(c);drawHint(c);return;}
         c.save();c.translate(offX,offY);c.scale(scale,scale);c.clipRect(0,0,w,h);
         drawBackdrop(c);
         if(grid)drawGrid(c);
@@ -338,17 +338,55 @@ public class UiEditorView extends View {
         pick("Menu music",items,cur,k->m.music=k==0?"":k==1?"none":project.songs.get(k-2).id);
         if(project.songs.isEmpty())hint("Add songs in the Sound editor to pick one here");
     }
-    private void drawComingSoon(Canvas c){
-        String[][] info={{},
-            {},
-            {"Main Menu","Title text and style, background (level camera, image or gradient), menu buttons and menu music.","Plus your own splash logo after \"Powered by RPG Pocket Editor\"."},
-            {"Screens","Level title cards, the death screen and the victory screen.","Text, colours and timing for each one."}};
-        String[] t=info[tab];float cx=vw*.5f,cy=barH+(vh-barH)*.45f;
-        ui.icon(c,TAB_ICONS[tab],cx,cy-dp(56),40,Ui.TEXT_3);
-        ui.text(c,t[0]+" · coming next",cx,cy-dp(10),18,Ui.TEXT,1,0);
-        ui.text(c,ui.ellipsize(t[1],12.5f,0,vw-dp(60)),cx,cy+dp(16),12.5f,Ui.TEXT_2,0,0);
-        ui.text(c,ui.ellipsize(t[2],12,0,vw-dp(60)),cx,cy+dp(36),12,Ui.TEXT_3,0,0);
-        r.set(cx-dp(110),cy+dp(58),cx+dp(110),cy+dp(94));ui.button(c,r,Icons.GAMEPAD,"Back to HUD & Controls",Ui.NORMAL);ui.hit(r,H_TAB);
+    // ================================================================== Screens page
+    private int screenPreview;private float screenT;
+    private static final String[] PREVIEWS={"Title card","Death screen","Victory screen"};
+    private static final String[] CARD_SECS={"2 seconds","3 seconds","4 seconds","6 seconds"};private static final float[] CARD_SEC_V={2,3,4,6};
+    private static final String[] DELAYS={"Straight away","0.6 seconds","1.2 seconds","2 seconds","3 seconds"};private static final float[] DELAY_V={0,.6f,1.2f,2,3};
+    private void drawScreensTab(Canvas c){
+        float sideW=Math.min(dp(300),vw*.42f);side.set(vw-sideW,barH,vw,vh);
+        float aw=vw-sideW-dp(12),ah=vh-barH-dp(8);
+        scale=Math.min(aw/w,ah/h);offX=dp(6)+(aw-w*scale)*.5f;offY=barH+dp(4);
+        long now=System.nanoTime();float dt=menuFrame==0?0:Math.min(.05f,(now-menuFrame)*1e-9f);menuFrame=now;screenT+=dt;
+        ScreenStyle ss=project.screens;Project.GameMap gm=project.current();
+        c.save();c.translate(offX,offY);c.scale(scale,scale);c.clipRect(0,0,w,h);
+        drawBackdrop(c);
+        Ui pu=menuUi;pu.clearHits();RectF tmp=new RectF();
+        if(screenPreview==0){
+            if(ss.cardStyle==ScreenStyle.CARD_OFF)ui.text(c,"Title cards are off · the map name flashes briefly instead",w*.5f,h*.4f,14,0xc0ffffff,1,0);
+            else if(!ss.drawCard(c,p,pu,project.theme,w,h,project.mapName(gm.num),gm.card,project.maps.indexOf(gm),screenT)&&screenT>ss.cardSeconds+.8f)screenT=0;}
+        else if(screenPreview==1){
+            if(!ss.death)ui.text(c,"Death screen off · the player's FSM decides what happens",w*.5f,h*.4f,14,0xc0ffffff,1,0);
+            else ss.drawDeath(c,p,pu,project.theme,w,h,screenT,true,"Main menu",1,2,3,tmp);}
+        else ss.drawVictory(c,p,pu,project.theme,w,h,"Level 4 fighter · 1250 XP · 86 gold",new String[]{"Foes slain","Treasure","Secrets","Time"},new String[]{"92%","75%","67%","12:40"},"Main menu",1,2,tmp);
+        c.restore();
+        ui.outline(c,offX,offY,offX+w*scale,offY+h*scale,0,Ui.BORDER,dp(1));
+        rows.clear();
+        head("Preview");
+        val("Showing",PREVIEWS[screenPreview],()->pick("Preview",PREVIEWS,screenPreview,k->{screenPreview=k;screenT=0;}));
+        btn("Replay the preview",()->screenT=0);
+        head("Title card (each map start)");
+        val("Style",ScreenStyle.CARD_STYLES[ss.cardStyle],()->pick("Title card style",ScreenStyle.CARD_STYLES,ss.cardStyle,k->{ss.cardStyle=k;screenPreview=0;screenT=0;}));
+        val("Length",CARD_SECS[nearest(CARD_SEC_V,ss.cardSeconds)],()->pick("Title card length",CARD_SECS,nearest(CARD_SEC_V,ss.cardSeconds),k->{ss.cardSeconds=CARD_SEC_V[k];screenT=0;}));
+        tog("Show \"Chapter 1, 2, 3…\"",ss.chapter,()->ss.chapter=!ss.chapter);
+        for(Project.GameMap m:project.maps)val("Line under "+m.name,m.card.isEmpty()?"None":m.card,()->text("Title card line for "+m.name,"e.g. \"The road north\"",m.card,t->{m.card=t;screenPreview=0;screenT=0;}));
+        head("Death screen");
+        tog("Show the death screen",ss.death,()->{ss.death=!ss.death;screenPreview=1;screenT=0;});
+        if(ss.death){
+            val("Title",ss.deathTitle,()->text("Death title",null,ss.deathTitle,t->ss.deathTitle=t.isEmpty()?"You have fallen":t));
+            val("Text",ss.deathText,()->text("Death text","A line under the title (can be empty)",ss.deathText,t->ss.deathText=t));
+            val("Colour",ScreenStyle.DEATH_TINTS[ss.deathTint],()->pick("Death screen colour",ScreenStyle.DEATH_TINTS,ss.deathTint,k->{ss.deathTint=k;screenPreview=1;screenT=0;}));rows.get(rows.size()-1).swatch=ScreenStyle.DEATH_TINT_COLS[ss.deathTint]|0xff000000;
+            val("Appears after",DELAYS[nearest(DELAY_V,ss.deathDelay)],()->pick("Death screen delay",DELAYS,nearest(DELAY_V,ss.deathDelay),k->ss.deathDelay=DELAY_V[k]));
+            val("Retry button",ss.lRetry,()->text("Retry button",null,ss.lRetry,t->ss.lRetry=t.isEmpty()?"Try again":t));
+            val("Load button",ss.lLoadSave,()->text("Load button","Shown when there is a save",ss.lLoadSave,t->ss.lLoadSave=t.isEmpty()?"Load last save":t));}
+        head("Victory screen (game complete)");
+        val("Title",ss.winTitle,()->text("Victory title",null,ss.winTitle,t->{ss.winTitle=t.isEmpty()?"Quest complete":t;screenPreview=2;}));
+        val("Text",ss.winText.isEmpty()?"None":ss.winText,()->text("Victory text","e.g. \"The crypt is quiet at last.\"",ss.winText,t->{ss.winText=t;screenPreview=2;}));
+        tog("Show stats (foes, treasure, secrets, time)",ss.winStats,()->{ss.winStats=!ss.winStats;screenPreview=2;});
+        tog("Show the hero's level, XP and gold",ss.winHero,()->{ss.winHero=!ss.winHero;screenPreview=2;});
+        val("Play again button",ss.lAgain,()->text("Play again button",null,ss.lAgain,t->ss.lAgain=t.isEmpty()?"Play again":t));
+        drawRows(c,"Screens","Title cards, death screen and victory screen");
+        postInvalidateOnAnimation();
     }
     private void drawGrid(Canvas c){
         float step=dp(16);

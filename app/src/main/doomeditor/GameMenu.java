@@ -53,6 +53,8 @@ final class GameMenu {
     /** UI Editor preview of the splash, restarting it. */
     void previewSplash(){state=SPLASH;splashTime=0;}
     private boolean hasStudio(){return !project.menu.studio.trim().isEmpty()||!project.menu.studioPic.isEmpty();}
+    /** Loads a save from outside the menu (e.g. the death screen) and leaves the menu closed. */
+    boolean listenerLoad(String slot){boolean ok=listener.loadGame(slot);if(ok){state=OFF;paused=false;}return ok;}
     void openPause(){state=MAIN;paused=true;refreshSaves();}
     boolean active(){return state!=OFF;}
     private void startMenuMusic(){

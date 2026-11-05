@@ -1196,7 +1196,7 @@ public class EditorView extends View {
             @Override public boolean loadGame(String slot){
                 project.syncCurrent();World w=GameSave.load(getContext(),project,sfx,slot);if(w==null)return false;
                 sfx.start();world=w;bagOpen=false;mapFade=1f;for(int i=0;i<buttonPointer.length;i++)buttonPointer[i]=-1;joyPointer=lookPointer=-1;joyVisible=false;
-                world.centerPrint(project.mapName(world.mapNum),2f);return true;}
+                startCard();return true;}
             @Override public void exitToEditor(){leavePlay();}
         });
         return menu;
@@ -1217,7 +1217,29 @@ public class EditorView extends View {
     }
     private float mapFade;private int playThisMap=-1;private final Atmosphere.Weather weather=new Atmosphere.Weather();
     private void startPlay(){startPlay(project.startMap);}
-    private void startPlay(int mapNum){bagOpen=false;mapFade=0;world=new World(project,sfx,mapNum,null,"");sfx.start();for(int i=0;i<buttonPointer.length;i++)buttonPointer[i]=-1;joyPointer=lookPointer=-1;joyVisible=false;}
+    // story screens (UI Editor → Screens): title card on each map start, death screen
+    private float cardTime=-1,deathTime;private final RectF sr=new RectF();
+    private static final int H_DRETRY=547,H_DLOAD=548,H_DBACK=549;
+    private void startCard(){if(world==null)return;cardTime=0;if(project.screens.cardStyle==ScreenStyle.CARD_OFF)world.centerPrint(project.mapName(world.mapNum),2f);}
+    private void drawStoryScreens(Canvas c,float dt){
+        ScreenStyle ss=project.screens;Actor pl=world.player;
+        if(cardTime>=0&&!world.levelComplete){cardTime+=dt;Project.GameMap gm=project.map(world.mapNum);
+            if(!ss.drawCard(c,p,ui,project.theme,w,h,project.mapName(world.mapNum),gm==null?"":gm.card,project.maps.indexOf(gm),cardTime))cardTime=-1;else nextFrame();}
+        if(pl!=null&&!pl.alive&&ss.death&&!world.levelComplete){deathTime+=dt;if(deathTime>ss.deathDelay)world.centerTime=0;   // the death screen replaces "You have fallen" text
+            ss.drawDeath(c,p,ui,project.theme,w,h,deathTime,deathSave!=null,frontEnd()?"Main menu":playerMode?"Quit":"Back to editor",H_DRETRY,H_DLOAD,H_DBACK,sr);nextFrame();}
+        else{deathTime=0;}
+        if(pl!=null&&pl.alive)deathSave=null;else if(deathTime>0&&deathTime<dt*1.5f)deathSave=GameSave.latest(getContext(),project);
+    }
+    private GameSave.Info deathSave;
+    private boolean deathTap(int hid){
+        if(world==null||world.player==null||world.player.alive||!project.screens.death||deathTime<project.screens.deathDelay+.8f)return false;
+        if(hid==H_DRETRY){startPlay(world.mapNum);startCard();return true;}
+        if(hid==H_DLOAD&&deathSave!=null){if(!menu().listenerLoad(deathSave.slot))hint("That save couldn't be loaded");return true;}
+        if(hid==H_DBACK){backFromEnd();return true;}
+        return true;   // swallow other taps while the death screen is up
+    }
+    private void backFromEnd(){if(frontEnd()){world=null;menu().paused=false;menu().state=GameMenu.MAIN;}else leavePlay();}
+    private void startPlay(int mapNum){bagOpen=false;mapFade=0;cardTime=-1;deathTime=0;deathSave=null;world=new World(project,sfx,mapNum,null,"");sfx.start();for(int i=0;i<buttonPointer.length;i++)buttonPointer[i]=-1;joyPointer=lookPointer=-1;joyVisible=false;}
     private void drawPlay(Canvas c,float dt){
         if(menu!=null&&menu.active()){menu.draw(c,w,h,dt);nextFrame();return;}
         if(world==null)startPlay();
@@ -1227,7 +1249,7 @@ public class EditorView extends View {
         world.tick(dt);
         if(world.pendingMap>0){   // exit sector or Go To Map: load the next map, carrying the hero over
             World next=new World(project,sfx,world.pendingMap,world,world.pendingArrival);world=next;mapFade=1f;bagOpen=false;
-            world.centerPrint(project.mapName(world.mapNum),2.2f);in=world.input;
+            startCard();in=world.input;
             GameSave.save(getContext(),project,world,"auto");}   // autosave on every map change
         Actor pl=world.player;
         spriteList.clear();int pool=0;
@@ -1263,6 +1285,7 @@ public class EditorView extends View {
         drawFloaters(c);
         hud().drawStatus(c,w,h,world,false);
         if(world.menuRequested){world.menuRequested=false;openBag();}
+        drawStoryScreens(c,dt);
         if(world.levelComplete)drawComplete(c);
         else if(world.shop!=null)drawShop(c);
         else if(bagOpen)drawBag(c);
@@ -1484,17 +1507,10 @@ public class EditorView extends View {
         return true;
     }
     private void drawComplete(Canvas c){
-        UiTheme th=project.theme;float D=ui.dp;
-        ui.rect(c,0,0,w,h,0x99000000);
-        float pw=Math.min(w-dp(40),dp(460)),pl=(w-pw)*.5f;th.panel(c,p,pl,h*.24f-dp(46),pl+pw,h*.24f+dp(226),D,.97f,false);
-        float cx=w*.5f,y=h*.24f;
-        ui.text(c,"QUEST STAGE COMPLETE",cx,y,26,th.accentOnPanel(),2,0);if(world.hero!=null)ui.text(c,"Level "+world.hero.level+" "+world.hero.cls.name.toLowerCase()+" · "+world.hero.xp+" XP · "+world.hero.gold+" gold",cx,y+dp(22),12,th.textDim(),1,0);
+        String hero=world.hero==null?null:"Level "+world.hero.level+" "+world.hero.cls.name.toLowerCase()+" · "+world.hero.xp+" XP · "+world.hero.gold+" gold";
         String[] rows={"Foes slain","Treasure","Secrets","Time"};
         String[] vals={pct(world.kills,world.totalKills),pct(world.items,world.totalItems),pct(world.secrets,world.totalSecrets),String.format(java.util.Locale.US,"%d:%02d",(int)(world.time-world.completeTime)/60,(int)(world.time-world.completeTime)%60)};
-        for(int i=0;i<4;i++){ui.text(c,rows[i],cx-dp(20),y+dp(46)+i*dp(28),16,th.textDim(),1,1);ui.text(c,vals[i],cx+dp(20),y+dp(46)+i*dp(28),16,th.text,2,-1);}
-        float by=y+dp(170);
-        r.set(cx-dp(170),by,cx-dp(10),by+dp(40));th.rectButton(c,p,ui,r,Icons.RESET,"Play again",UiTheme.BTN_PRIMARY,D);ui.hit(r,H_RETRY);
-        r.set(cx+dp(10),by,cx+dp(170),by+dp(40));th.rectButton(c,p,ui,r,Icons.ARROW_LEFT,frontEnd()?"Main menu":"Back to editor",UiTheme.BTN_NORMAL,D);ui.hit(r,H_BACK);
+        project.screens.drawVictory(c,p,ui,project.theme,w,h,hero,rows,vals,frontEnd()?"Main menu":playerMode?"Quit":"Back to editor",H_RETRY,H_BACK,r);
     }
     private static String pct(int a,int b){return b==0?"—":Math.round(a*100f/b)+"%";}
 
@@ -1671,7 +1687,8 @@ public class EditorView extends View {
             int hid=ui.hitAt(x,y);
             if(debug!=null&&debug.open){debugDownHit=hid;bagDragY=y;bagDragged=false;return true;}
             if(hid==H_DEBUG&&!playerMode){debug().toggle(world);for(int i=0;i<buttonPointer.length;i++)buttonPointer[i]=-1;world.input.clear();joyPointer=lookPointer=-1;joyVisible=false;moveX=moveY=0;return true;}
-            if(world.levelComplete){if(hid==H_RETRY)startPlay(world.mapNum);else if(hid==H_BACK){if(frontEnd()){world=null;menu().paused=false;menu().state=GameMenu.MAIN;}else changeMode(returnMode);}return true;}
+            if(world.levelComplete){if(hid==H_RETRY){startPlay(world.mapNum);startCard();}else if(hid==H_BACK)backFromEnd();return true;}
+            if(deathTap(hid))return true;
             if(world.shop!=null){shopDownHit=hid;bagDragY=y;bagDragged=false;return true;}
             if(bagOpen){bagTap(hid);bagDragY=y;bagDragged=false;return true;}
             if(world.dialogue!=null){if(hid>=H_DLG&&hid<H_DLG+8)world.chooseDialogue(hid-H_DLG);return true;}
