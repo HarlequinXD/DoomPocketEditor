@@ -112,7 +112,7 @@ public class EditorView extends View {
     boolean exitPlay(){if(mode!=PLAY)return false;changeMode(returnMode);return true;}
     void onPause(){sfx.stop();flushSave();setKeepScreenOn(false);}
     /** Undo for entity types and placed entities on this map; sector shapes use the SectorEditor's own history. */
-    final Undo entityUndo=new Undo(()->project==null?null:project.section(Project.SEC_ENTITIES),t->project.restoreSection(Project.SEC_ENTITIES,t));
+    final Undo entityUndo=new Undo(()->this.project==null?null:this.project.section(Project.SEC_ENTITIES),t->this.project.restoreSection(Project.SEC_ENTITIES,t));
     private void entityUndoRedo(boolean back){
         if(back?entityUndo.undo():entityUndo.redo()){
             if(project.def(selDef)==null)selDef=project.defs.size()>1?project.defs.get(1).id:project.defs.get(0).id;
