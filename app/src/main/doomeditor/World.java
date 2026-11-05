@@ -60,14 +60,41 @@ final class World {
     /** Moves a floor or ceiling to a target, optionally waits and returns (doors, lifts). */
     static final class Mover {int sector;boolean ceiling;float target,speed,wait,returnTo;boolean returning;float delay;}
 
-    World(Project p,SoundFx sfx){this(p,sfx,false,p.currentMap,null,"");}
+    World(Project p,SoundFx sfx){this(p,sfx,false,p.currentMap,null,"",null);}
     /** Plays map {@code mapNum}. When {@code from} is given the hero, quests and global variables carry over from it. */
-    World(Project p,SoundFx sfx,int mapNum,World from,String arrival){this(p,sfx,false,mapNum,from,arrival);}
+    World(Project p,SoundFx sfx,int mapNum,World from,String arrival){this(p,sfx,false,mapNum,from,arrival,null);}
+    /** Loading a saved game: starts map {@code mapNum} with a remembered session. */
+    World(Project p,SoundFx sfx,int mapNum,World from,String arrival,GameSave.Session ses){this(p,sfx,false,mapNum,from,arrival,ses);}
+    /** Re-centres the camera after the player was moved (loading a save). */
+    void syncView(){viewZ=player.z+EYE;}
     /** Map being played, and a map change requested by an exit or the Go To Map action (applied by the screen). */
     int mapNum;int pendingMap=-1;String pendingArrival="";
-    void goToMap(int num,String arrival){if(levelComplete||pendingMap>0||project.map(num)==null)return;pendingMap=num;pendingArrival=arrival==null?"":arrival;paused=true;}
+    /** Everything remembered across maps this game (visited map states, play time); shared when changing maps. */
+    GameSave.Session session;
+    private Actor[] thingActors=new Actor[0];
+    /** Snapshot of this map's placed entities, secrets and counters. */
+    GameSave.MapState captureMapState(){
+        GameSave.MapState m=new GameSave.MapState();m.things=new GameSave.ThingState[thingActors.length];
+        for(int i=0;i<thingActors.length;i++){Actor a=thingActors[i];if(a==null)continue;GameSave.ThingState t=new GameSave.ThingState();
+            t.gone=a.removed;t.alive=a.alive;t.x=a.x;t.y=a.y;t.angle=a.angle;t.health=a.health;t.sprite=a.sprite;t.visible=a.visible;
+            if(a.fsm!=null){t.state=a.fsm.stateId();t.vars=new java.util.HashMap<>(a.fsm.vars);}
+            m.things[i]=t;}
+        m.secrets=secretFound.clone();m.kills=kills;m.items=items;m.secretCount=secrets;
+        return m;
+    }
+    void applyMapState(GameSave.MapState m){
+        for(int i=0;i<thingActors.length&&m.things!=null&&i<m.things.length;i++){Actor a=thingActors[i];GameSave.ThingState t=m.things[i];if(a==null||t==null)continue;
+            if(t.gone){a.removed=true;a.alive=false;continue;}
+            a.x=t.x;a.y=t.y;a.angle=t.angle;a.z=floorAt(a.x,a.y);a.health=t.health;a.sprite=t.sprite;a.visible=t.visible;
+            if(!t.alive){a.alive=false;a.health=0;a.solid=false;a.shootable=false;a.deadTime=60;if(a.fsm!=null)a.fsm.state=null;}   // stays a corpse; its death actions don't run again
+            else if(a.fsm!=null&&t.state!=null&&!t.state.isEmpty())a.fsm.restore(t.state,t.vars);}
+        if(m.secrets!=null)for(int i=0;i<Math.min(m.secrets.length,secretFound.length);i++)secretFound[i]=m.secrets[i];
+        kills=m.kills;items=m.items;secrets=m.secretCount;
+    }
+    void goToMap(int num,String arrival){if(levelComplete||pendingMap>0||project.map(num)==null)return;pendingMap=num;pendingArrival=arrival==null?"":arrival;paused=true;
+        session.maps.put(mapNum,captureMapState());}   // remember this map for when the hero comes back
     /** Editor camera body: walks the live level (no copy, no entities, doors left as drawn). */
-    static World walker(Project p){return new World(p,null,true,p.currentMap,null,"");}
+    static World walker(Project p){return new World(p,null,true,p.currentMap,null,"",null);}
     private long geoSig;
     final boolean live;
     /** Rebuilds collision lines if the live level's shape changed. */
@@ -75,7 +102,7 @@ final class World {
     /** Physics only, for the editor camera. */
     void walkerTick(float dt){dt=Math.min(dt,.05f);time+=dt;syncGeometry();physics(player,dt);
         float target=player.z+EYE;if(player.noGravity)viewZ=target;else if(target>viewZ)viewZ+=Math.min(target-viewZ,Math.max(dt*4f,(target-viewZ)*dt*12f));else viewZ=target;}
-    private World(Project p,SoundFx sfx,boolean live,int mapNum,World from,String arrival){
+    private World(Project p,SoundFx sfx,boolean live,int mapNum,World from,String arrival,GameSave.Session ses){
         project=p;this.sfx=sfx;this.live=live;
         p.syncCurrent();
         Project.GameMap gm=p.map(mapNum);if(gm==null)gm=p.current();this.mapNum=gm.num;
@@ -99,10 +126,14 @@ final class World {
         player.z=floorAt(player.x,player.y);viewZ=player.z+EYE;
         actors.add(player);
         if(live){player.fsm=null;return;}
-        for(Level.Thing t:level.things){EntityDef d=p.def(t.def);if(d==null||d.kind==EntityDef.PLAYER)continue;
-            Actor a=makeActor(d,t.x,t.y,t.angle);a.z=floorAt(a.x,a.y);actors.add(a);
+        thingActors=new Actor[level.things.size()];
+        for(int ti=0;ti<level.things.size();ti++){Level.Thing t=level.things.get(ti);EntityDef d=p.def(t.def);if(d==null||d.kind==EntityDef.PLAYER)continue;
+            Actor a=makeActor(d,t.x,t.y,t.angle);a.z=floorAt(a.x,a.y);a.thingIndex=ti;thingActors[ti]=a;actors.add(a);
             if(d.countKill)totalKills++;if(d.countItem)totalItems++;}
         for(Actor a:actors)if(a.fsm!=null)a.fsm.start();
+        // remembered state of this map from earlier in the session (or a loaded save)
+        session=from!=null?from.session:ses!=null?ses:new GameSave.Session();
+        GameSave.MapState ms=session.maps.get(this.mapNum);if(ms!=null)applyMapState(ms);
     }
     private Actor makeActor(EntityDef d,float x,float y,float angle){
         Actor a=new Actor(d);a.x=a.spawnX=x;a.y=a.spawnY=y;a.angle=angle;a.radius=d.radius;a.height=d.height;a.health=d.health;a.speed=d.speed;
@@ -177,6 +208,7 @@ final class World {
         if(levelComplete){completeTime+=dt;input.endFrame();return;}
         for(int i=floaters.size()-1;i>=0;i--){Floater f=floaters.get(i);f.t+=dt;f.z+=dt*.45f;if(f.t>1.1f)floaters.remove(i);}
         if(paused||dialogue!=null){input.endFrame();return;}
+        if(session!=null)session.playTime+=dt;
         tickBlood(dt);
         if(hero!=null){if(hero.wardTime>0)hero.wardTime-=dt;weapon=hero.weaponOrFists().fp;}
         for(int i=0;i<actors.size();i++){Actor a=actors.get(i);if(a.removed)continue;

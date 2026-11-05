@@ -13,6 +13,8 @@ final class Actor {
     /** Animation chosen by the FSM (null = automatic: idle/walk/attack/pain/death picked by the engine). */
     String animClip;float animTime,animSpeed=1;int animLoop=-1,lastAnimFrame=-1;
     FsmRuntime fsm;
+    /** Index of the placed thing this actor came from (-1 for the player, projectiles and spawned actors). */
+    int thingIndex=-1;
     // Projectiles
     int projectileType=-1;Actor owner;int dmgMin,dmgMax;
     int maxHealth;

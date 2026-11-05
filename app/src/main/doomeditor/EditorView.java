@@ -1047,6 +1047,11 @@ public class EditorView extends View {
             @Override public void newGame(){startPlay();hint("Left: move · right: look · Attack, Cast, Use and Potion on the right · Bag top right");}
             @Override public void resume(){if(world==null)startPlay();else{world.paused=bagOpen;}}
             @Override public void restart(){if(world!=null)startPlay(world.mapNum);else startPlay();}
+            @Override public boolean saveGame(String slot){return world!=null&&GameSave.save(getContext(),project,world,slot);}
+            @Override public boolean loadGame(String slot){
+                project.syncCurrent();World w=GameSave.load(getContext(),project,sfx,slot);if(w==null)return false;
+                sfx.start();world=w;bagOpen=false;mapFade=1f;for(int i=0;i<buttonPointer.length;i++)buttonPointer[i]=-1;joyPointer=lookPointer=-1;joyVisible=false;
+                world.centerPrint(project.mapName(world.mapNum),2f);return true;}
             @Override public void exitToEditor(){changeMode(returnMode);}
         });
         return menu;
@@ -1070,7 +1075,8 @@ public class EditorView extends View {
         world.tick(dt);
         if(world.pendingMap>0){   // exit sector or Go To Map: load the next map, carrying the hero over
             World next=new World(project,sfx,world.pendingMap,world,world.pendingArrival);world=next;mapFade=1f;bagOpen=false;
-            world.centerPrint(project.mapName(world.mapNum),2.2f);in=world.input;}
+            world.centerPrint(project.mapName(world.mapNum),2.2f);in=world.input;
+            GameSave.save(getContext(),project,world,"auto");}   // autosave on every map change
         Actor pl=world.player;
         spriteList.clear();int pool=0;
         boolean tp=world.thirdPerson();

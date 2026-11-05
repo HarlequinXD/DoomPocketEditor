@@ -21,6 +21,9 @@ final class FsmRuntime {
     FsmRuntime(FSMGraph g){graph=g;}
 
     void start(){FSMGraph.Node s=graph.find(graph.start);if(s!=null)enter(s);}
+    /** Saved games: resume in a state (its actions run again from the start) with the saved local variables. */
+    void restore(String stateId,java.util.Map<String,Float> v){FSMGraph.Node n=graph.find(stateId);if(n!=null)enter(n);vars.clear();if(v!=null)vars.putAll(v);}
+    String stateId(){return state==null?"":state.id;}
     private void enter(FSMGraph.Node n){
         state=n;stateTime=0;entering=true;finishedSent=false;pending=null;transitions++;
         int k=n.actions.size();done=new boolean[k];scratch=new float[k][8];

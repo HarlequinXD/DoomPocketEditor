@@ -14,11 +14,16 @@ import java.util.ArrayList;
  * with game and audio settings. The same menu doubles as the pause menu, with Continue on top.
  */
 final class GameMenu {
-    interface Listener {void newGame();void resume();void exitToEditor();void restart();}
-    static final int OFF=0,SPLASH=1,MAIN=2,OPTIONS=3;
+    interface Listener {void newGame();void resume();void exitToEditor();void restart();boolean saveGame(String slot);boolean loadGame(String slot);}
+    static final int OFF=0,SPLASH=1,MAIN=2,OPTIONS=3,SLOTS=4;
     private static final float SPLASH_SECONDS=2.8f;
     private static final int GOLD=0xffe8c070,GOLD_DARK=0xff8a6a2a;
-    private static final int H_CONTINUE=1,H_NEW=2,H_OPTIONS=3,H_EXIT=4,H_BACK=5,H_TAB=10,H_DIFF=20,H_ROW=40,H_SPLASH=99;
+    private static final int H_CONTINUE=1,H_NEW=2,H_OPTIONS=3,H_EXIT=4,H_BACK=5,H_TAB=10,H_DIFF=20,H_ROW=40,H_SPLASH=99,H_SAVE=6,H_LOAD=7,H_CONTINUE_SAVE=8,H_SLOT=60;
+    // save slots
+    private boolean slotSave;private String confirmSlot;private GameSave.Info[] slotInfo=new GameSave.Info[GameSave.SLOTS.length];private GameSave.Info latest;
+    private String note;private long noteUntil;
+    private void note(String s){note=s;noteUntil=System.currentTimeMillis()+2200;}
+    void refreshSaves(){for(int i=0;i<GameSave.SLOTS.length;i++)slotInfo[i]=GameSave.info(ctx,project,GameSave.SLOTS[i]);latest=null;for(GameSave.Info i:slotInfo)if(i.exists&&(latest==null||i.time>latest.time))latest=i;}
 
     int state=OFF;
     boolean paused;   // opened from inside a running game: Continue is offered, the frozen game is the backdrop
@@ -40,8 +45,8 @@ final class GameMenu {
     }
     private float dp(float v){return ui.dp(v);}
     /** Entering Play: splash first, then the main menu with the level music. */
-    void begin(){GameSettings.load(ctx);state=SPLASH;splashTime=0;paused=false;startMenuMusic();}
-    void openPause(){state=MAIN;paused=true;}
+    void begin(){GameSettings.load(ctx);state=SPLASH;splashTime=0;paused=false;refreshSaves();startMenuMusic();}
+    void openPause(){state=MAIN;paused=true;refreshSaves();}
     boolean active(){return state!=OFF;}
     private void startMenuMusic(){
         sfx.start();
@@ -53,6 +58,7 @@ final class GameMenu {
     /** Android back: options → menu, splash → menu; returns false when the main menu should leave Play. */
     boolean back(){
         if(state==OPTIONS){state=MAIN;GameSettings.save(ctx);return true;}
+        if(state==SLOTS){state=MAIN;return true;}
         if(state==SPLASH){state=MAIN;return true;}
         if(state==MAIN&&paused){state=OFF;listener.resume();return true;}
         return false;
@@ -64,7 +70,8 @@ final class GameMenu {
         time+=dt;ui.clearHits();
         if(state==SPLASH){drawSplash(c,w,h,dt);return true;}
         drawBackdrop(c,w,h);
-        if(state==OPTIONS)drawOptions(c,w,h);else drawMain(c,w,h);
+        if(state==OPTIONS)drawOptions(c,w,h);else if(state==SLOTS)drawSlots(c,w,h);else drawMain(c,w,h);
+        if(note!=null&&System.currentTimeMillis()<noteUntil){float tw=ui.measure(note,12.5f,1)+dp(36);ui.pill(c,w*.5f-tw*.5f,h-dp(56),w*.5f+tw*.5f,h-dp(22),0xf0262a31);ui.textMid(c,note,w*.5f,h-dp(39),12.5f,0xffe8ecf1,1,0);}
         return true;
     }
     private void drawSplash(Canvas c,float w,float h,float dt){
@@ -111,14 +118,44 @@ final class GameMenu {
         ui.text(c,ui.ellipsize(title,size,2,w*.6f),L+dp(2),y+dp(2),size,0xc0000000,2,-1);
         int tc=UiTheme.luma(th().accent)<.35f?0xffe8c070:th().accent;ui.text(c,ui.ellipsize(title,size,2,w*.6f),L,y,size,tc,2,-1);
         ui.rect(c,L,y+dp(12),L+Math.min(w*.4f,dp(220)),y+dp(14),UiTheme.alpha(tc,.5f));
-        float by=y+dp(44),bw=Math.min(dp(280),w*.4f),bh=Math.max(dp(40),Math.min(dp(50),(h-by-dp(60))/4.6f)),gap=dp(10);
-        if(paused){menuButton(c,L,by,bw,bh,Icons.PLAY,"Continue",H_CONTINUE,true);by+=bh+gap;}
-        menuButton(c,L,by,bw,bh,Icons.FLAG,paused?"Restart level":"New Game",H_NEW,!paused);by+=bh+gap;
-        menuButton(c,L,by,bw,bh,Icons.MORE,"Options",H_OPTIONS,false);by+=bh+gap;
-        menuButton(c,L,by,bw,bh,Icons.ARROW_LEFT,"Exit to editor",H_EXIT,false);
+        // buttons: pause menu or title menu; Continue/Load appear once there is a save
+        java.util.ArrayList<Object[]> b=new java.util.ArrayList<>();
+        if(paused){b.add(new Object[]{Icons.PLAY,"Continue",H_CONTINUE});b.add(new Object[]{Icons.SAVE,"Save game",H_SAVE});
+            if(latest!=null)b.add(new Object[]{Icons.FOLDER,"Load game",H_LOAD});b.add(new Object[]{Icons.FLAG,"Restart level",H_NEW});}
+        else{if(latest!=null)b.add(new Object[]{Icons.PLAY,"Continue",H_CONTINUE_SAVE});b.add(new Object[]{Icons.FLAG,"New Game",H_NEW});
+            if(latest!=null)b.add(new Object[]{Icons.FOLDER,"Load game",H_LOAD});}
+        b.add(new Object[]{Icons.MORE,"Options",H_OPTIONS});b.add(new Object[]{Icons.ARROW_LEFT,"Exit to editor",H_EXIT});
+        float by=y+dp(36),bw=Math.min(dp(280),w*.4f),gap=dp(8),bh=Math.max(dp(34),Math.min(dp(50),(h-by-dp(48))/b.size()-gap));
+        for(int i=0;i<b.size();i++){Object[] o=b.get(i);menuButton(c,L,by,bw,bh,(Integer)o[0],(String)o[1],(Integer)o[2],i==0);by+=bh+gap;}
+        if(!paused&&latest!=null){ui.text(c,ui.ellipsize(latestLabel(latest),11,1,w-L-bw-dp(40)),L+bw+dp(14),y+dp(36)+bh*.5f+dp(4),11,0xc0e8ecf1,1,-1);}
         // small credit, bottom-left
         float ls=dp(22);ui.logo(c,L,h-dp(16)-ls,ls);
         ui.textMid(c,"Powered by RPG Pocket Editor",L+ls+dp(8),h-dp(16)-ls*.5f,10.5f,0xb0e8ecf1,1,-1);
+    }
+    private static String latestLabel(GameSave.Info i){return i.className+" · level "+i.level+(i.mapName.isEmpty()?"":" · "+i.mapName);}
+    private void drawSlots(Canvas c,float w,float h){
+        float pw=Math.min(w-dp(40),dp(560)),ph=Math.min(h-dp(32),dp(340)),L=(w-pw)*.5f,T=(h-ph)*.5f,R=L+pw,B=T+ph;
+        ui.round(c,L,T+dp(4),R,B+dp(4),dp(16),0x90000000);th().panel(c,p,L,T,R,B,ui.dp,.97f,false);
+        ui.text(c,slotSave?"Save game":"Load game",L+dp(22),T+dp(36),20,acc(),2,-1);
+        r.set(R-dp(110),T+dp(14),R-dp(16),T+dp(48));th().rectButton(c,p,ui,r,Icons.ARROW_LEFT,"Back",UiTheme.BTN_NORMAL,ui.dp);ui.hit(r,H_BACK);
+        float y=T+dp(60),rowH=Math.min(dp(60),(B-y-dp(14))/(slotSave?3:4)-dp(6));
+        for(int i=0;i<GameSave.SLOTS.length;i++){String slot=GameSave.SLOTS[i];if(slotSave&&slot.equals("auto"))continue;GameSave.Info in=slotInfo[i];
+            r.set(L+dp(18),y,R-dp(18),y+rowH);boolean confirm=slot.equals(confirmSlot);th().card(c,p,ui,r,confirm,ui.dp);
+            ui.icon(c,slot.equals("auto")?Icons.RESET:Icons.SAVE,r.left+dp(22),r.centerY(),16,acc());
+            ui.text(c,GameSave.slotName(slot),r.left+dp(44),r.centerY()-dp(4),14,th().text,2,-1);
+            String sub=confirm?"Tap again to overwrite this save":in!=null&&in.exists?latestLabel(in)+"  ·  played "+GameSave.formatTime(in.playTime)+"  ·  "+android.text.format.DateFormat.format("d MMM HH:mm",in.time):slotSave?"Empty":"Empty – nothing to load";
+            ui.text(c,ui.ellipsize(sub,10.5f,1,r.width()-dp(56)),r.left+dp(44),r.centerY()+dp(13),10.5f,confirm?acc():th().textDim(),1,-1);
+            ui.hit(r,H_SLOT+i);y+=rowH+dp(6);}
+    }
+    private void slotTap(int i){
+        String slot=GameSave.SLOTS[i];GameSave.Info in=slotInfo[i];
+        if(slotSave){
+            if(in!=null&&in.exists&&!slot.equals(confirmSlot)){confirmSlot=slot;return;}
+            confirmSlot=null;boolean ok=listener.saveGame(slot);refreshSaves();note(ok?"Saved to "+GameSave.slotName(slot):"Couldn't save the game");if(ok)state=MAIN;
+        }else{
+            if(in==null||!in.exists)return;
+            if(listener.loadGame(slot)){state=OFF;paused=false;}else note("That save couldn't be loaded");
+        }
     }
     private UiTheme th(){return project.theme;}
     /** Accent that reads on the panel (dark accents are lifted on dark panels and vice versa). */
@@ -193,14 +230,18 @@ final class GameMenu {
     private void tap(int hid){
         switch(hid){
             case H_CONTINUE:state=OFF;listener.resume();return;
+            case H_CONTINUE_SAVE:if(latest!=null){if(listener.loadGame(latest.slot)){state=OFF;paused=false;}else note("That save couldn't be loaded");}return;
+            case H_SAVE:slotSave=true;confirmSlot=null;refreshSaves();state=SLOTS;return;
+            case H_LOAD:slotSave=false;confirmSlot=null;refreshSaves();state=SLOTS;return;
             case H_NEW:state=OFF;boolean wasPaused=paused;paused=false;if(wasPaused)listener.restart();else listener.newGame();return;
             case H_OPTIONS:state=OPTIONS;return;
             case H_EXIT:state=OFF;GameSettings.save(ctx);listener.exitToEditor();return;
-            case H_BACK:state=MAIN;GameSettings.save(ctx);return;
+            case H_BACK:state=MAIN;confirmSlot=null;GameSettings.save(ctx);return;
             case H_ROW+ROW_INVERT:GameSettings.invertLook=!GameSettings.invertLook;GameSettings.save(ctx);return;
             case H_ROW+ROW_TEXT:GameSettings.combatText=!GameSettings.combatText;GameSettings.save(ctx);return;
             case H_ROW+ROW_SHAKE:GameSettings.cameraShake=!GameSettings.cameraShake;GameSettings.save(ctx);return;
         }
+        if(hid>=H_SLOT&&hid<H_SLOT+GameSave.SLOTS.length){slotTap(hid-H_SLOT);return;}
         if(hid>=H_TAB&&hid<H_TAB+2){optTab=hid-H_TAB;return;}
         if(hid>=H_DIFF&&hid<H_DIFF+3){GameSettings.difficulty=hid-H_DIFF;GameSettings.save(ctx);}
     }
