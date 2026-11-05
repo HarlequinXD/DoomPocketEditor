@@ -26,7 +26,7 @@ public class SoundEditorView extends View {
 
     private static final int H_BACK=1,H_SAVE=2,H_NEW_SOUND=3,H_PLAY=4,H_STOP=5,H_AUTOPLAY=6,H_RESET_EDITS=7,H_RENAME=8,H_DUP=9,H_DELETE=10,H_EXPORT=11,
             H_REPLACE=12,H_WAVE=13,H_BUILTIN_COPY=14,H_BUILTIN_ASSIGN=15,H_NEW_SONG=16,H_MPLAY=17,H_INST=18,H_CLEAR=19,H_ADD_TRACK=20,H_TRACK_NAME=21,
-            H_TRACK_SOUND=22,H_TRACK_DEL=23,H_TRACK_PREVIEW=24,H_LEVEL_MUSIC=25,H_SONG_RENAME=26,H_SONG_DUP=27,H_SONG_DEL=28,H_SONG_EXPORT=29,H_ROLL=30,H_KEYS=31,H_IMPORT=32,H_LIB=33,H_LIB_CAT=900,H_LIB_PLAY=3000,H_LIB_ADD=3100,
+            H_TRACK_SOUND=22,H_TRACK_DEL=23,H_TRACK_PREVIEW=24,H_LEVEL_MUSIC=25,H_SONG_RENAME=26,H_SONG_DUP=27,H_SONG_DEL=28,H_SONG_EXPORT=29,H_ROLL=30,H_KEYS=31,H_IMPORT=32,H_LIB=33,H_UNDO=34,H_REDO=35,H_LIB_CAT=900,H_LIB_PLAY=3000,H_LIB_ADD=3100,
             H_TAB=100,H_SOUND=200,H_BUILTIN=400,H_PRESET=450,H_SONG=500,H_TRACK=600,H_MUTE=650,H_BRUSH=700,H_GAME=800,H_GAME_PLAY=850,H_SLIDER=10000;
 
     final Project project;
@@ -57,7 +57,18 @@ public class SoundEditorView extends View {
         super(c);this.project=project;this.host=host;ui=new Ui(c);p=ui.p;tab=startTab;
         if(!project.sounds.isEmpty())sel=project.sounds.get(0);
         if(!project.songs.isEmpty())song=project.songs.get(0);
+        undo=new Undo(()->project.section(Project.SEC_AUDIO),t->project.restoreSection(Project.SEC_AUDIO,t));undo.reset();
     }
+    final Undo undo;
+    void afterEdit(){undo.commit();invalidate();}
+    private void undoRedo(boolean back){
+        String sid=sel==null?null:sel.id,gid=song==null?null:song.id;
+        if(back?undo.undo():undo.redo()){
+            sel=null;for(SoundAsset a:project.sounds)if(a.id.equals(sid))sel=a;if(sel==null&&!project.sounds.isEmpty())sel=project.sounds.get(0);
+            song=null;for(Song g:project.songs)if(g.id.equals(gid))song=g;if(song==null&&!project.songs.isEmpty())song=project.songs.get(0);
+            if(song!=null)track=Math.max(0,Math.min(Math.max(0,song.tracks.size()-1),track));
+            replaceTarget=null;peakClip=null;sfx.stopSounds();sfx.useProject(project);project.save(getContext());hint(back?"Undo":"Redo");}
+        else hint(back?"Nothing to undo":"Nothing to redo");}
     void onResume(){sfx.start();invalidate();}
     void onPause(){sfx.stopMusic(0);sfx.stopSounds();sfx.stop();playingSong=null;}
     private float dp(float v){return ui.dp(v);}
@@ -85,7 +96,8 @@ public class SoundEditorView extends View {
         boolean wide=w>dp(760);
         if(wide)ui.textMid(c,"Sound & Music",dp(88),cy,15,Ui.TEXT,1,-1);
         float saveW=wide?dp(84):bh;r.set(w-dp(10)-saveW,top,w-dp(10),top+bh);ui.button(c,r,Icons.SAVE,wide?"Save":null,Ui.PRIMARY);ui.hit(r,H_SAVE);
-        float tabW=Math.min(dp(132),(w-dp(230)-saveW)/3f),tl=wide?Math.max(dp(220),(w-tabW*3)*.5f):dp(88);
+        float ux=Undo.buttons(ui,c,r,undo,w-dp(16)-saveW,top,bh,H_UNDO,H_REDO);
+        float tabW=Math.min(dp(132),(ux-dp(230))/3f),tl=wide?Math.max(dp(220),(w-tabW*3)*.5f):dp(88);
         for(int i=0;i<3;i++){r.set(tl+i*tabW,top,tl+(i+1)*tabW-dp(4),top+bh);ui.button(c,r,TAB_ICONS[i],TABS[i],i==tab?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_TAB+i);}
     }
     /** Starts a scrollable region; returns the y where content starts. */
@@ -461,7 +473,7 @@ public class SoundEditorView extends View {
             if(zone==3){if(autoPlay)playSel();}
             else if(sliderDrag){SliderRef s=sliderFor(downHit);if(s!=null)afterSlider(s);}
             else if(!moved){int hid=ui.hitAt(x,y);if(hid==downHit&&hid>=0)tap(hid,x,y);}
-            zone=0;downHit=-1;sliderDrag=false;invalidate();return true;
+            zone=0;downHit=-1;sliderDrag=false;undo.commit();invalidate();return true;
         }
         if(a==MotionEvent.ACTION_CANCEL){zone=0;downHit=-1;sliderDrag=false;invalidate();}
         return true;
@@ -483,6 +495,7 @@ public class SoundEditorView extends View {
     private void tap(int hid,float x,float y){
         if(hid==H_BACK){if(host!=null)host.exit();return;}
         if(hid==H_SAVE){if(host!=null)host.saved();return;}
+        if(hid==H_UNDO||hid==H_REDO){undoRedo(hid==H_UNDO);return;}
         if(hid>=H_TAB&&hid<H_TAB+3){tab=hid-H_TAB;mainScroll=0;leftScroll=0;invalidate();return;}
         if(hid>=H_SLIDER){SliderRef s=sliderFor(hid);if(s==null)return;
             if(s.p.choice()){

@@ -20,7 +20,7 @@ public class FSMGraphView extends View {
     interface Host extends UiHost {void exit();void saved();}
     static final String[] STANDARD_EVENTS={"FINISHED","DIED","DAMAGED","TOUCHED","USED","SEE","READY","NO_AMMO","FIRE","USE","ATTACK","LOST","TRUE","FALSE"};
 
-    private static final int H_BACK=1,H_ADD=2,H_LINK=3,H_START=4,H_DELETE=5,H_FIT=6,H_RUN=7,H_SAVE=8,H_NEWDEF=9,
+    private static final int H_BACK=1,H_ADD=2,H_LINK=3,H_START=4,H_DELETE=5,H_FIT=6,H_RUN=7,H_SAVE=8,H_NEWDEF=9,H_UNDO=10,H_REDO=11,
             H_NAME=20,H_ADD_ACTION=21,H_ADD_TR=23,H_ADD_GLOBAL=24,H_ACTION_BACK=25,H_ACT_UP=26,H_ACT_DOWN=27,H_ACT_TOGGLE=28,H_ACT_DEL=29,
             H_CANCEL_LINK=30,H_BROWSER_CLOSE=31,H_BROWSER_SEARCH=32,H_DUP_STATE=33,H_ANIM=34,H_EDIT_SPRITE=35,
             H_DEL_TR=100,H_ACTION=150,H_DEL_GLOBAL=200,H_PARAM=250,H_SEND=300,H_DEF=400,H_CAT=900,H_PICK=1000;
@@ -55,8 +55,19 @@ public class FSMGraphView extends View {
     void selectDef(EntityDef d){
         stopRun();def=d;graph=d.fsm;selected=null;linkFrom=null;selectedAction=-1;inspScroll=0;browserOpen=false;fitted=false;
         if(graph.nodes.isEmpty())graph.add("Idle",0,0);
-        invalidate();
+        undo.reset();invalidate();
     }
+    /** Undo history for the FSM being edited (starts fresh when another entity is opened). */
+    final Undo undo=new Undo(()->def==null?null:def.fsm.toJson().toString(),t->{def.fsm=FSMGraph.fromJson(t);});
+    void afterEdit(){undo.commit();invalidate();}
+    private void undoRedo(boolean back){
+        stopRun();String sid=selected==null?null:selected.id;int act=selectedAction;
+        if(back?undo.undo():undo.redo()){
+            graph=def.fsm;selected=null;linkFrom=null;dragNode=null;
+            if(sid!=null)for(FSMGraph.Node n:graph.nodes)if(sid.equals(n.id))selected=n;
+            selectedAction=selected!=null&&act<selected.actions.size()?act:-1;
+            project.save(getContext());}
+        invalidate();}
 
     // ---------------------------------------------------------------- geometry
     private float dp(float v){return ui.dp(v);}
@@ -246,7 +257,8 @@ public class FSMGraphView extends View {
         float x=w-dp(10);boolean wide=w>dp(900);
         float sw=wide?dp(82):bh;r.set(x-sw,top,x,top+bh);ui.button(c,r,Icons.SAVE,wide?"Save":null,Ui.PRIMARY);ui.hit(r,H_SAVE);x-=sw+dp(8);
         float rw=wide?dp(78):bh;r.set(x-rw,top,x,top+bh);ui.button(c,r,sim!=null?Icons.STOP:Icons.PLAY,wide?(sim!=null?"Stop":"Run"):null,sim!=null?Ui.SUCCESS:Ui.NORMAL);ui.hit(r,H_RUN);x-=rw+dp(8);
-        r.set(x-bh,top,x,top+bh);ui.button(c,r,Icons.FIT,null,Ui.NORMAL);ui.hit(r,H_FIT);x-=bh+dp(14);
+        r.set(x-bh,top,x,top+bh);ui.button(c,r,Icons.FIT,null,Ui.NORMAL);ui.hit(r,H_FIT);x-=bh+dp(8);
+        x=Undo.buttons(ui,c,r,undo,x,top,bh,H_UNDO,H_REDO)-dp(6);
         ui.vline(c,x+dp(6),top+dp(4),top+bh-dp(4),Ui.BORDER);
         boolean has=selected!=null,labels=w>dp(1000);
         Object[][] items={{H_DELETE,Icons.TRASH,"Delete",has?Ui.DANGER:Ui.DISABLED},{H_START,Icons.FLAG,"Set Start",has?Ui.NORMAL:Ui.DISABLED},
@@ -488,7 +500,7 @@ public class FSMGraphView extends View {
             else if(!moved&&browserOpen&&downHit<0){float L=canvasL()+dp(10),T=toolbarH+dp(10);if(x<L||y<T||x>w-dp(10)||y>h-dp(10))browserOpen=false;}
             else if(dragNode!=null&&moved){dragNode.x=Math.round(dragNode.x/8f)*8f;dragNode.y=Math.round(dragNode.y/8f)*8f;}
             else if(panning&&!moved){selected=null;selectedAction=-1;}
-            dragNode=null;panning=false;downHit=-1;scrollZone=0;invalidate();return true;
+            dragNode=null;panning=false;downHit=-1;scrollZone=0;undo.commit();invalidate();return true;
         }
         if(a==MotionEvent.ACTION_CANCEL){dragNode=null;panning=false;downHit=-1;scrollZone=0;return true;}
         return true;
@@ -505,6 +517,7 @@ public class FSMGraphView extends View {
         switch(id){
             case H_BACK:if(host!=null)host.exit();break;
             case H_SAVE:if(host!=null)host.saved();break;
+            case H_UNDO:case H_REDO:undoRedo(id==H_UNDO);break;
             case H_RUN:if(sim!=null)stopRun();else startRun();break;
             case H_FIT:fit();break;
             case H_CANCEL_LINK:linkFrom=null;break;

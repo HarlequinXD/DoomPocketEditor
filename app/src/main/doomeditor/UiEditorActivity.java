@@ -24,8 +24,8 @@ public class UiEditorActivity extends Activity implements UiEditorView.Host {
     @Override public void saved() { project.save(this); Toast.makeText(this, "Layout saved to project", Toast.LENGTH_SHORT).show(); }
     @Override public void exit() { project.save(this); finish(); }
     @Override public void onBackPressed() { if (view.back()) return; exit(); }
-    @Override public void prompt(String title, String hint, String initial, boolean numeric, java.util.function.Consumer<String> done) { MainActivity.prompt(this, title, hint, initial, numeric, done, view::invalidate); }
-    @Override public void choose(String title, String[] items, int checked, java.util.function.IntConsumer done) { MainActivity.choose(this, title, items, checked, done, view::invalidate); }
-    @Override public void confirm(String title, String message, String ok, Runnable yes) { MainActivity.confirm(this, title, message, ok, yes, view::invalidate); }
+    @Override public void prompt(String title, String hint, String initial, boolean numeric, java.util.function.Consumer<String> done) { MainActivity.prompt(this, title, hint, initial, numeric, done, view::afterEdit); }
+    @Override public void choose(String title, String[] items, int checked, java.util.function.IntConsumer done) { MainActivity.choose(this, title, items, checked, done, view::afterEdit); }
+    @Override public void confirm(String title, String message, String ok, Runnable yes) { MainActivity.confirm(this, title, message, ok, yes, view::afterEdit); }
     @Override public void openFsm(String defId) {}
 }

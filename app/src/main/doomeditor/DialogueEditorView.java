@@ -17,7 +17,7 @@ import java.util.ArrayList;
 public class DialogueEditorView extends View {
     interface Host extends UiHost {void exit();void saved();}
     static final String[] TABS={"Conversations","Quests"};
-    private static final int H_BACK=1,H_SAVE=2,H_PICK=3,H_ZIN=4,H_ZOUT=5,H_FIT=6,H_NEWQ=7,H_DELQ=8,H_ADDNODE=9,H_TAB=10,H_QROW=100,H_PROP=1000;
+    private static final int H_BACK=1,H_SAVE=2,H_PICK=3,H_ZIN=4,H_ZOUT=5,H_FIT=6,H_NEWQ=7,H_DELQ=8,H_ADDNODE=9,H_TAB=10,H_UNDO=11,H_REDO=12,H_QROW=100,H_PROP=1000;
     private static final float NODE_W=210,HEAD_H=24,LINE_H=15,ROW_H=22;
 
     private final Project project;private final Host host;private final Ui ui;private final Paint p;private final Path path=new Path();
@@ -36,10 +36,22 @@ public class DialogueEditorView extends View {
         super(c);this.project=project;this.host=host;ui=new Ui(c);p=ui.p;tab=startTab==1?1:0;
         project.ensureContent();Rpg.use(project);
         if(!project.dialogues.isEmpty())talk=project.dialogues.get(0);
+        undo=new Undo(()->project.section(Project.SEC_DIALOGUE),t->project.restoreSection(Project.SEC_DIALOGUE,t));undo.reset();
     }
+    final Undo undo;
+    void afterEdit(){undo.commit();invalidate();}
+    private void undoRedo(boolean back){
+        String tid=talk==null?null:talk.id,nid=node==null?null:node.id;
+        if(back?undo.undo():undo.redo()){
+            talk=null;node=null;for(Dialogue.Def d:project.dialogues)if(d.id.equals(tid))talk=d;
+            if(talk==null&&!project.dialogues.isEmpty())talk=project.dialogues.get(0);
+            if(talk!=null&&nid!=null)for(Dialogue.Node n:talk.nodes)if(nid.equals(n.id))node=n;
+            questSel=Math.max(0,Math.min(Math.max(0,project.quests.size()-1),questSel));
+            project.save(getContext());hint(back?"Undo":"Redo");}
+        else hint(back?"Nothing to undo":"Nothing to redo");}
     private float dp(float v){return ui.dp(v);}
     private void hint(String s){hint=s;hintUntil=System.currentTimeMillis()+2600;invalidate();}
-    private void changed(){project.save(getContext());invalidate();}
+    private void changed(){undo.commit();project.save(getContext());invalidate();}
 
     // ================================================================== geometry
     private float sc(){return zoom*ui.dp;}
@@ -87,7 +99,8 @@ public class DialogueEditorView extends View {
         float ib=dp(28);ui.round(c,dp(50),cy-ib*.5f,dp(50)+ib,cy+ib*.5f,dp(7),0xff5a8a4a);ui.icon(c,Icons.CHAT,dp(50)+ib*.5f,cy,16,0xffffffff);
         float tl=dp(86);if(wide){ui.textMid(c,"Dialogue",tl,cy,15,Ui.TEXT,1,-1);tl+=dp(84);}
         float saveW=wide?dp(84):bh;r.set(w-dp(10)-saveW,top,w-dp(10),top+bh);ui.button(c,r,Icons.SAVE,wide?"Save":null,Ui.PRIMARY);ui.hit(r,H_SAVE);
-        for(int i=0;i<TABS.length;i++){r.set(tl+i*dp(150),top,tl+(i+1)*dp(150)-dp(6),top+bh);ui.button(c,r,i==0?Icons.CHAT:Icons.SCROLL,TABS[i],i==tab?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_TAB+i);}
+        float ux=Undo.buttons(ui,c,r,undo,w-dp(16)-saveW,top,bh,H_UNDO,H_REDO);float tw=Math.min(dp(150),(ux-tl)/TABS.length);
+        for(int i=0;i<TABS.length;i++){r.set(tl+i*tw,top,tl+(i+1)*tw-dp(6),top+bh);ui.button(c,r,i==0?Icons.CHAT:Icons.SCROLL,TABS[i],i==tab?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_TAB+i);}
     }
     private void drawGraph(Canvas c){
         RectF R=canvasR;c.save();c.clipRect(R);c.drawColor(0xff1b1e22);
@@ -331,13 +344,14 @@ public class DialogueEditorView extends View {
             if(!moved){int hid=ui.hitAt(x,y);
                 if(hid>=0&&hid==downHit)tap(hid);
                 else if(zone==1&&drag==null&&hid<0){node=null;inspScroll=0;}}
-            drag=null;invalidate();return true;
+            drag=null;undo.commit();invalidate();return true;
         }
         return true;
     }
     private void tap(int hid){
         if(hid==H_BACK){if(host!=null)host.exit();return;}
         if(hid==H_SAVE){if(host!=null)host.saved();return;}
+        if(hid==H_UNDO||hid==H_REDO){undoRedo(hid==H_UNDO);return;}
         if(hid>=H_TAB&&hid<H_TAB+TABS.length){tab=hid-H_TAB;inspScroll=0;node=null;return;}
         if(hid>=H_QROW&&hid<H_QROW+800){questSel=hid-H_QROW;inspScroll=0;return;}
         if(hid>=H_PROP&&hid<H_PROP+props.size()){Prop pr=props.get(hid-H_PROP);if(pr.tap!=null)pr.tap.run();return;}

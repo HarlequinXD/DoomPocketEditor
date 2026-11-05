@@ -18,7 +18,7 @@ public class ContentEditorView extends View {
     interface Host extends UiHost {void exit();void saved();}
     static final String[] TABS={"Items","Spells","Classes","Loot","Shops"};
     private static final int[] TAB_ICONS={Icons.SWORD,Icons.SPARKLE,Icons.PERSON,Icons.PACKAGE,Icons.COIN};
-    private static final int H_BACK=1,H_SAVE=2,H_NEW=3,H_RESET=4,H_DUP=5,H_DEL=6,H_TEST=7,H_TAB=10,H_ROW=100,H_PROP=1000;
+    private static final int H_BACK=1,H_SAVE=2,H_NEW=3,H_RESET=4,H_DUP=5,H_DEL=6,H_TEST=7,H_UNDO=8,H_REDO=9,H_TAB=10,H_ROW=100,H_PROP=1000;
 
     private final Project project;private final Host host;private final Ui ui;private final Paint p;
     private int tab;private int sel;
@@ -37,10 +37,16 @@ public class ContentEditorView extends View {
     ContentEditorView(Context c,Project project,int startTab,Host host){
         super(c);this.project=project;this.host=host;ui=new Ui(c);p=ui.p;tab=Math.max(0,Math.min(TABS.length-1,startTab));
         project.ensureContent();Rpg.use(project);
+        undo=new Undo(()->project.section(Project.SEC_CONTENT),t->project.restoreSection(Project.SEC_CONTENT,t));undo.reset();
     }
+    final Undo undo;
+    /** After a dialog: records an undo step if something changed. */
+    void afterEdit(){undo.commit();invalidate();}
+    private void undoRedo(boolean back){
+        if(back?undo.undo():undo.redo()){sel=Math.max(0,Math.min(Math.max(0,count()-1),sel));project.save(getContext());hint(back?"Undo":"Redo");}else hint(back?"Nothing to undo":"Nothing to redo");}
     private float dp(float v){return ui.dp(v);}
     private void hint(String s){hint=s;hintUntil=System.currentTimeMillis()+2600;invalidate();}
-    private void changed(){project.save(getContext());invalidate();}
+    private void changed(){undo.commit();project.save(getContext());invalidate();}
     private Bitmap thumb(int sprite){Bitmap b=thumbs.get(sprite);if(b==null){b=Sprites.preview(sprite);thumbs.put(sprite,b);}return b;}
 
     // ------------------------------------------------------------------ current list
@@ -75,7 +81,8 @@ public class ContentEditorView extends View {
         float ib=dp(28);ui.round(c,dp(50),cy-ib*.5f,dp(50)+ib,cy+ib*.5f,dp(7),0xffc0703a);ui.icon(c,Icons.BACKPACK,dp(50)+ib*.5f,cy,16,0xffffffff);
         float tl=dp(86);if(wide){ui.textMid(c,"Content",tl,cy,15,Ui.TEXT,1,-1);tl+=dp(78);}
         float saveW=wide?dp(84):bh;r.set(w-dp(10)-saveW,top,w-dp(10),top+bh);ui.button(c,r,Icons.SAVE,wide?"Save":null,Ui.PRIMARY);ui.hit(r,H_SAVE);
-        float avail=w-dp(20)-saveW-tl-dp(8),tw=Math.min(dp(124),avail/TABS.length);
+        float ux=Undo.buttons(ui,c,r,undo,w-dp(16)-saveW,top,bh,H_UNDO,H_REDO);
+        float avail=ux-tl-dp(4),tw=Math.min(dp(124),avail/TABS.length);
         for(int i=0;i<TABS.length;i++){r.set(tl+i*tw,top,tl+(i+1)*tw-dp(5),top+bh);ui.button(c,r,TAB_ICONS[i],TABS[i],i==tab?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_TAB+i);}
     }
     private void hitIn(RectF rr,int id,RectF area){if(rr.bottom<area.top||rr.top>area.bottom)return;ui.hit(rr.left,Math.max(rr.top,area.top),rr.right,Math.min(rr.bottom,area.bottom),id);}
@@ -318,12 +325,13 @@ public class ContentEditorView extends View {
         if(a==MotionEvent.ACTION_MOVE){if(!moved&&Math.abs(x-downX)+Math.abs(y-downY)>dp(8))moved=true;
             if(moved){if(zone==1)leftScroll=Math.max(0,leftScroll-(y-lastY));else if(zone==2)rightScroll=Math.max(0,rightScroll-(y-lastY));invalidate();}
             lastY=y;return true;}
-        if(a==MotionEvent.ACTION_UP){if(!moved){int hid=ui.hitAt(x,y);if(hid==downHit&&hid>=0)tap(hid);}invalidate();return true;}
+        if(a==MotionEvent.ACTION_UP){if(!moved){int hid=ui.hitAt(x,y);if(hid==downHit&&hid>=0)tap(hid);}undo.commit();invalidate();return true;}
         return true;
     }
     private void tap(int hid){
         if(hid==H_BACK){if(host!=null)host.exit();return;}
         if(hid==H_SAVE){if(host!=null)host.saved();return;}
+        if(hid==H_UNDO||hid==H_REDO){undoRedo(hid==H_UNDO);return;}
         if(hid>=H_TAB&&hid<H_TAB+TABS.length){tab=hid-H_TAB;sel=0;leftScroll=rightScroll=0;return;}
         if(hid>=H_ROW&&hid<H_ROW+900){sel=hid-H_ROW;rightScroll=0;return;}
         if(hid>=H_PROP&&hid<H_PROP+props.size()){Prop pr=props.get(hid-H_PROP);if(pr.tap!=null)pr.tap.run();if(pr.toggle)invalidate();return;}

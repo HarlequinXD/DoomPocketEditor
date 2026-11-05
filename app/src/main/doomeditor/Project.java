@@ -48,6 +48,8 @@ final class Project {
     /** Conversations and quests from the Dialogue editor. */
     final ArrayList<Dialogue.Def> dialogues=new ArrayList<>();
     final ArrayList<Dialogue.QuestDef> quests=new ArrayList<>();
+    /** Saved chunks of map that can be stamped into any map. */
+    final ArrayList<Prefab> prefabs=new ArrayList<>();
     Dialogue.Def dialogue(String id){if(id==null)return null;for(Dialogue.Def d:dialogues)if(d.id.equals(id))return d;return null;}
     Dialogue.QuestDef questDef(String id){if(id==null)return null;for(Dialogue.QuestDef q:quests)if(q.id.equals(id))return q;return null;}
     String uniqueTalkId(String base){String b=base.toLowerCase(java.util.Locale.US).replaceAll("[^a-z0-9]+","_").replaceAll("^_|_$","");if(b.isEmpty())b="talk";String id=b;int n=2;while(dialogue(id)!=null)id=b+"_"+(n++);return id;}
@@ -141,6 +143,60 @@ final class Project {
         for(String s:CustomSprite.STANDARD_CLIPS)if(!out.contains(s))out.add(s);
         return out;
     }
+    // ---------------------------------------------------------------- undo snapshots of one editor's data
+    static final int SEC_CONTENT=0,SEC_DIALOGUE=1,SEC_UI=2,SEC_AUDIO=3,SEC_ENTITIES=4;
+    String section(int sec)throws Exception{
+        JSONObject o=new JSONObject();
+        switch(sec){
+            case SEC_CONTENT:{ensureContent();
+                JSONArray ri=new JSONArray();for(Rpg.Item i:items)ri.put(Rpg.toJson(i));o.put("items",ri);
+                JSONArray rs=new JSONArray();for(Rpg.Spell sp:spells)rs.put(Rpg.toJson(sp));o.put("spells",rs);
+                JSONArray rc=new JSONArray();for(Rpg.HeroClass hc:classes)rc.put(Rpg.toJson(hc));o.put("classes",rc);
+                JSONArray rl=new JSONArray();for(Rpg.LootTable lt:loot)rl.put(Rpg.toJson(lt));o.put("loot",rl);
+                JSONArray rh=new JSONArray();for(Rpg.Shop sh:shops)rh.put(Rpg.toJson(sh));o.put("shops",rh);break;}
+            case SEC_DIALOGUE:{JSONArray dl=new JSONArray();for(Dialogue.Def d:dialogues)dl.put(Dialogue.toJson(d));o.put("dialogues",dl);
+                JSONArray qd=new JSONArray();for(Dialogue.QuestDef q:quests)qd.put(Dialogue.toJson(q));o.put("quests",qd);break;}
+            case SEC_UI:o.put("hud",hud.toJson());o.put("theme",theme.toJson());break;
+            case SEC_AUDIO:{JSONArray sn=new JSONArray();for(SoundAsset sa:sounds)sn.put(sa.toJson());o.put("sounds",sn);
+                JSONArray mu=new JSONArray();for(Song m2:songs)mu.put(m2.toJson());o.put("songs",mu);
+                JSONObject ov=new JSONObject();for(java.util.Map.Entry<String,String> e:soundOverrides.entrySet())ov.put(e.getKey(),e.getValue());o.put("overrides",ov);
+                o.put("levelMusic",levelMusic);o.put("musicVolume",(double)musicVolume);o.put("sfxVolume",(double)sfxVolume);
+                JSONArray mm=new JSONArray();for(GameMap gm:maps)mm.put(gm.music);o.put("mapMusic",mm);break;}
+            case SEC_ENTITIES:{JSONArray a=new JSONArray();for(EntityDef d:defs)a.put(d.toJson());o.put("defs",a);
+                JSONArray arr=new JSONArray();for(Level.Thing t:level.things){JSONObject j=new JSONObject();j.put("x",(double)t.x);j.put("y",(double)t.y);j.put("angle",(double)t.angle);j.put("def",t.def);arr.put(j);}
+                o.put("things",arr);o.put("map",currentMap);break;}
+        }
+        return o.toString();
+    }
+    void restoreSection(int sec,String text)throws Exception{
+        JSONObject o=new JSONObject(text);
+        switch(sec){
+            case SEC_CONTENT:{
+                JSONArray ri=o.getJSONArray("items");items.clear();for(int i=0;i<ri.length();i++)items.add(Rpg.itemFrom(ri.getJSONObject(i)));
+                JSONArray rs=o.getJSONArray("spells");spells.clear();for(int i=0;i<rs.length();i++)spells.add(Rpg.spellFrom(rs.getJSONObject(i)));
+                JSONArray rc=o.getJSONArray("classes");classes.clear();for(int i=0;i<rc.length();i++)classes.add(Rpg.classFrom(rc.getJSONObject(i)));
+                JSONArray rl=o.getJSONArray("loot");loot.clear();for(int i=0;i<rl.length();i++)loot.add(Rpg.lootFrom(rl.getJSONObject(i)));
+                JSONArray rh=o.getJSONArray("shops");shops.clear();for(int i=0;i<rh.length();i++)shops.add(Rpg.shopFrom(rh.getJSONObject(i)));
+                ensureContent();Rpg.use(this);break;}
+            case SEC_DIALOGUE:{
+                JSONArray dl=o.getJSONArray("dialogues");dialogues.clear();for(int i=0;i<dl.length();i++)dialogues.add(Dialogue.fromJson(dl.getJSONObject(i)));
+                JSONArray qd=o.getJSONArray("quests");quests.clear();for(int i=0;i<qd.length();i++)quests.add(Dialogue.questFrom(qd.getJSONObject(i)));break;}
+            case SEC_UI:{HudLayout h=HudLayout.fromJson(o.getJSONObject("hud"));System.arraycopy(h.e,0,hud.e,0,HudLayout.N);hud.joyFixed=h.joyFixed;
+                theme.read(o.getJSONObject("theme"));break;}
+            case SEC_AUDIO:{
+                JSONArray sn=o.getJSONArray("sounds");sounds.clear();for(int i=0;i<sn.length();i++)sounds.add(SoundAsset.fromJson(sn.getJSONObject(i)));
+                JSONArray mu=o.getJSONArray("songs");songs.clear();for(int i=0;i<mu.length();i++)songs.add(Song.fromJson(mu.getJSONObject(i)));
+                soundOverrides.clear();JSONObject ov=o.getJSONObject("overrides");java.util.Iterator<String> k=ov.keys();while(k.hasNext()){String key=k.next();soundOverrides.put(key,ov.optString(key));}
+                levelMusic=o.optString("levelMusic","");musicVolume=(float)o.optDouble("musicVolume",.8);sfxVolume=(float)o.optDouble("sfxVolume",1);
+                JSONArray mm=o.optJSONArray("mapMusic");if(mm!=null&&mm.length()==maps.size())for(int i=0;i<maps.size();i++)maps.get(i).music=mm.optString(i,"");break;}
+            case SEC_ENTITIES:{
+                if(o.optInt("map",currentMap)!=currentMap)throw new IllegalStateException("other map");
+                JSONArray a=o.getJSONArray("defs");defs.clear();for(int i=0;i<a.length();i++)defs.add(EntityDef.fromJson(a.getJSONObject(i)));
+                JSONArray arr=o.getJSONArray("things");level.things.clear();
+                for(int i=0;i<arr.length();i++){JSONObject j=arr.getJSONObject(i);Level.Thing t=new Level.Thing((float)j.getDouble("x"),(float)j.getDouble("y"),j.optString("def","skeleton"));t.angle=(float)j.optDouble("angle",0);level.things.add(t);}
+                break;}
+        }
+    }
     JSONObject toJson()throws Exception{
         JSONObject o=new JSONObject();o.put("version",7);
         JSONObject m=new JSONObject();m.put("name",name);m.put("template",template);m.put("created",(double)created);o.put("meta",m);
@@ -168,6 +224,7 @@ final class Project {
         o.put("rpg",rpg);
         JSONArray dl=new JSONArray();for(Dialogue.Def d:dialogues)dl.put(Dialogue.toJson(d));o.put("dialogues",dl);
         JSONArray qd=new JSONArray();for(Dialogue.QuestDef q:quests)qd.put(Dialogue.toJson(q));o.put("quests",qd);
+        JSONArray pf=new JSONArray();for(Prefab x:prefabs)pf.put(x.toJson());o.put("prefabs",pf);
         JSONObject ui=new JSONObject();ui.put("hud",hud.toJson());ui.put("theme",theme.toJson());o.put("ui",ui);
         return o;
     }
@@ -199,6 +256,7 @@ final class Project {
         p.ensureContent();
         JSONArray dl=o.optJSONArray("dialogues");if(dl!=null)for(int i=0;i<dl.length();i++){JSONObject j=dl.optJSONObject(i);if(j!=null)p.dialogues.add(Dialogue.fromJson(j));}
         JSONArray qd=o.optJSONArray("quests");if(qd!=null)for(int i=0;i<qd.length();i++){JSONObject j=qd.optJSONObject(i);if(j!=null)p.quests.add(Dialogue.questFrom(j));}
+        JSONArray pf=o.optJSONArray("prefabs");if(pf!=null)for(int i=0;i<pf.length();i++){JSONObject j=pf.optJSONObject(i);if(j!=null)p.prefabs.add(Prefab.fromJson(j));}
         JSONObject ui=o.optJSONObject("ui");if(ui!=null){p.hud=HudLayout.fromJson(ui.optJSONObject("hud"));JSONObject th=ui.optJSONObject("theme");if(th!=null)p.theme=UiTheme.fromJson(th);}
         if(!p.level.isConsistent())throw new IllegalStateException("inconsistent map");
         p.fixUp();return p;

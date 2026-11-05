@@ -67,6 +67,18 @@ public final class SectorEditor {
         return true;
     }
     public boolean addSector(ArrayList<float[]> points){if(!validate(points,-1))return false;push();Level.Sector s=new Level.Sector();for(float[] p:points)s.loop.add(level.addVertex(p[0],p[1]));level.sectors.add(s);normalizeEdges();return true;}
+    /** Adds every sector of a prefab as one undo step; nothing changes if any of them won't fit. */
+    public boolean stamp(Prefab pf,int rot,float ox,float oy){
+        String before=snapshot();if(before==null){error="Can't place here";return false;}
+        java.util.ArrayList<java.util.ArrayList<float[]>> polys=pf.polys(rot,ox,oy);
+        for(int i=0;i<polys.size();i++){java.util.ArrayList<float[]> poly=polys.get(i);
+            if(!validate(poly,-1)){String why=error;try{Level l=Level.fromJson(new JSONObject(before));level.vertices=l.vertices;level.sectors=l.sectors;level.wallOverrides=l.wallOverrides;}catch(Exception ignored){}
+                error=why.isEmpty()?"Doesn't fit here":"Doesn't fit here: "+why.toLowerCase();return false;}
+            Prefab.Sec q=pf.secs.get(i);Level.Sector sec=new Level.Sector();for(float[] p:poly)sec.loop.add(level.addVertex(p[0],p[1]));
+            sec.floor=q.floor;sec.ceiling=q.ceiling;sec.floorMaterial=q.floorMat;sec.ceilingMaterial=q.ceilMat;sec.wallMaterial=q.wallMat;sec.light=q.light;sec.special=q.special;sec.tag=q.tag;
+            level.sectors.add(sec);normalizeEdges();}
+        undo.push(before);if(undo.size()>60)undo.removeLast();redo.clear();return true;
+    }
     public boolean deleteSector(int index){if(index<0||index>=level.sectors.size())return false;push();level.sectors.remove(index);return true;}
     public boolean changeHeight(int index,float floorDelta,float ceilingDelta){if(index<0||index>=level.sectors.size())return false;Level.Sector s=level.sectors.get(index);if(s.ceiling+ceilingDelta-s.floor-floorDelta<.5f){error="Not enough clearance";return false;}push();s.floor+=floorDelta;s.ceiling+=ceilingDelta;return true;}
     public boolean moveVertex(int id,float x,float y){if(id<0||id>=level.vertices.size())return false;Level.Vertex v=level.vertices.get(id);float oldX=v.x,oldY=v.y;v.x=x;v.y=y;

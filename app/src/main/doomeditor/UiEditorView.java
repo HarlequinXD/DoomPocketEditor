@@ -17,7 +17,7 @@ import android.view.View;
 public class UiEditorView extends View {
     interface Host extends UiHost {void exit();void saved();}
     private static final int H_HEAD=1,H_COLLAPSE=2,H_PRESETS=3,H_GRID=4,H_RESET_ALL=5,H_SAVE=6,H_EXIT=7,H_SHOW=8,H_JOYMODE=9,H_RESET_ONE=10,
-            H_NUDGE=20,H_SIZE=30,H_ALPHA=31,H_TAB=40,H_LIST=100,H_BACK=101,H_TOPSAVE=102;
+            H_NUDGE=20,H_SIZE=30,H_ALPHA=31,H_TAB=40,H_LIST=100,H_BACK=101,H_TOPSAVE=102,H_GUNDO=103,H_GREDO=104;
     static final String[] TABS={"HUD & Controls","Theme","Main Menu","Screens"};
     private static final int[] TAB_ICONS={Icons.GAMEPAD,Icons.PALETTE,Icons.LIST,Icons.FLAG};
     private int tab;
@@ -43,7 +43,12 @@ public class UiEditorView extends View {
         hud=new GameHud(ui,project.hud);
         world=new World(project,null);
         dash.setStyle(Paint.Style.STROKE);dash.setPathEffect(new DashPathEffect(new float[]{ui.dp(6),ui.dp(4)},0));
+        history=new Undo(()->project.section(Project.SEC_UI),t->project.restoreSection(Project.SEC_UI,t));history.reset();
     }
+    final Undo history;
+    void afterEdit(){history.commit();invalidate();}
+    private void undoRedo(boolean back){
+        if(back?history.undo():history.redo()){project.save(getContext());hint(back?"Undo":"Redo");}else hint(back?"Nothing to undo":"Nothing to redo");}
     private float dp(float v){return ui.dp(v);}
     private HudLayout L(){return project.hud;}
     private void hint(String s){hint=s;hintUntil=System.currentTimeMillis()+2400;invalidate();}
@@ -135,7 +140,7 @@ public class UiEditorView extends View {
         float bw=(rr-l-dp(12))/3f;
         r.set(l,y,l+bw,y+dp(34));ui.button(c,r,Icons.SPARKLE,"Random",Ui.PRIMARY);sideHit(r,H_RANDOM);
         r.set(l+bw+dp(6),y,l+bw*2+dp(6),y+dp(34));ui.button(c,r,Icons.RESET,"Mutate",Ui.ACTIVE);sideHit(r,H_MUTATE);
-        r.set(l+bw*2+dp(12),y,rr,y+dp(34));ui.button(c,r,Icons.UNDO,"Undo",undo.isEmpty()?Ui.DISABLED:Ui.NORMAL);sideHit(r,H_UNDO);y+=dp(44);
+        r.set(l+bw*2+dp(12),y,rr,y+dp(34));ui.button(c,r,Icons.UNDO,"Undo",history.canUndo()?Ui.NORMAL:Ui.DISABLED);sideHit(r,H_UNDO);y+=dp(44);
         ui.caption(c,"Built-in themes",l,y+dp(8),Ui.TEXT_3);y+=dp(16);
         float tw=(rr-l-dp(8))/2f;
         for(int i=0;i<presetThemes.length;i++){if(presetThemes[i]==null)presetThemes[i]=UiTheme.preset(i);UiTheme pt2=presetThemes[i];
@@ -178,7 +183,7 @@ public class UiEditorView extends View {
         switch(hid){
             case H_RANDOM:pushUndo();project.theme=UiTheme.random(rng);themeChanged();hint("Generated "+UiTheme.MATERIALS[project.theme.material].toLowerCase()+" theme · Mutate to tweak, Undo to go back");return;
             case H_MUTATE:pushUndo();th.mutate(rng);themeChanged();return;
-            case H_UNDO:if(!undo.isEmpty()){project.theme=undo.pop();themeChanged();}return;
+            case H_UNDO:undoRedo(true);return;
         }
         if(hid<H_PROP||hid>=H_PROP+PROPS.length||host==null)return;
         int i=hid-H_PROP;
@@ -217,7 +222,8 @@ public class UiEditorView extends View {
         float ib=dp(28);ui.round(c,dp(50),cy-ib*.5f,dp(50)+ib,cy+ib*.5f,dp(7),0xffd8a830);ui.icon(c,Icons.GAMEPAD,dp(50)+ib*.5f,cy,16,0xff1a1206);
         float tl=dp(86);if(wide){ui.textMid(c,"UI Editor",tl,cy,15,Ui.TEXT,1,-1);tl+=dp(90);}
         float saveW=wide?dp(84):bh;r.set(vw-dp(10)-saveW,top,vw-dp(10),top+bh);ui.button(c,r,Icons.SAVE,wide?"Save":null,Ui.PRIMARY);ui.hit(r,H_TOPSAVE);
-        float avail=vw-dp(20)-saveW-tl-dp(8),tw=Math.min(dp(150),avail/TABS.length);
+        float ux=Undo.buttons(ui,c,r,history,vw-dp(16)-saveW,top,bh,H_GUNDO,H_GREDO);
+        float avail=ux-tl-dp(4),tw=Math.min(dp(150),avail/TABS.length);
         for(int i=0;i<TABS.length;i++){r.set(tl+i*tw,top,tl+(i+1)*tw-dp(5),top+bh);ui.button(c,r,TAB_ICONS[i],TABS[i],i==tab?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_TAB+i);}
     }
     private void drawComingSoon(Canvas c){
@@ -332,7 +338,7 @@ public class UiEditorView extends View {
             if((mode==5||mode==6)&&!moved){int hid=ui.hitAt(x,y);if(hid==downHit){if(mode==6)themeTap(hid);else tap(hid);}}
             if(mode==7)changed();
             if(mode==1||mode==3||mode==4)changed();
-            mode=0;invalidate();return true;
+            mode=0;history.commit();invalidate();return true;
         }
         if(a==MotionEvent.ACTION_CANCEL){mode=0;invalidate();}
         return true;
@@ -356,6 +362,7 @@ public class UiEditorView extends View {
         switch(hid){
             case H_BACK:if(host!=null)host.exit();return;
             case H_TOPSAVE:if(host!=null)host.saved();return;
+            case H_GUNDO:case H_GREDO:undoRedo(hid==H_GUNDO);return;
             case H_COLLAPSE:collapsed=!collapsed;return;
             case H_GRID:grid=!grid;hint(grid?"Grid on · controls snap to it":"Grid off · free placement");return;
             case H_SAVE:if(host!=null)host.saved();return;

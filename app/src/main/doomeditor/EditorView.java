@@ -32,7 +32,7 @@ public class EditorView extends View {
     private static final int H_MODE=100,H_FSM=110,H_SAVE=111,H_RESET=112,H_PAGE=120,H_TOOL=200,H_APPLY=520,H_MAT=4000,
             H_RAISE=500,H_LOWER=501,H_LIGHTUP=502,H_LIGHTDN=503,H_FLY=504,H_UP=505,H_DOWN=506,H_EDITFSM3D=507,H_START3D=508,
             H_FIRE=510,H_USE=511,H_JUMP=512,H_WEAPON=513,H_EXITPLAY=514,H_SPELL=515,H_POTION=516,H_BAG=517,H_DLG=3200,H_INV_ITEM=3300,H_INV_SPELL=3600,H_INV_CLOSE=3700,H_INV_TAB=3710,H_RETRY=530,H_BACK=531,
-            H_NEWDEF=590,H_LOGO=593,H_SPRITES=594,H_EDITSPRITE=813,H_ZOOMIN=591,H_ZOOMOUT=592,H_DEF=2000,H_PROP=700,H_ETOOL=800,H_EDITFSM=810,H_DUPDEF=811,H_DELDEF=812;
+            H_NEWDEF=590,H_LOGO=593,H_SPRITES=594,H_EDITSPRITE=813,H_ZOOMIN=591,H_ZOOMOUT=592,H_DEF=2000,H_PROP=700,H_ETOOL=800,H_EDITFSM=810,H_DUPDEF=811,H_DELDEF=812,H_EUNDO=814,H_EREDO=815;
     // Sector tools (cursor + Apply) and immediate actions.
     private static final int DRAW=1,RECT=2,PREFAB=3,STAIRS=4,SELECT=5,MOVE=6,SPLIT=7,EXTRUDE=8,DUPLICATE=9,DELETE=10,SPECIAL=11,START=12;
     private static final int CLOSE=101,UNDO_PT=102,CANCEL=103,UNDO=104,REDO=105,VALIDATE=106,CLEAN=107,DESELECT=108,
@@ -45,7 +45,7 @@ public class EditorView extends View {
     private static final String[] ENTITY_TOOLS={"Place","Select","Move","Rotate","Delete"};
     private static final int[] ENTITY_TOOL_ICONS={Icons.PLUS_SQUARE,Icons.POINTER,Icons.MOVE,Icons.RESET,Icons.TRASH};
 
-    private static String toolName(int t){switch(t){case DRAW:return "Draw";case RECT:return "Rectangle";case PREFAB:return "Prefab room";case STAIRS:return "Stairs";
+    private static String toolName(int t){switch(t){case DRAW:return "Draw";case RECT:return "Rectangle";case PREFAB:return "Prefab";case STAIRS:return "Stairs";
         case SELECT:return "Select";case MOVE:return "Move";case SPLIT:return "Split edge";case EXTRUDE:return "Extrude";case DUPLICATE:return "Duplicate";case DELETE:return "Delete";
         case SPECIAL:return "Special";case START:return "Player start";case CLOSE:return "Close";case UNDO_PT:return "Undo pt";case CANCEL:return "Cancel";case UNDO:return "Undo";
         case REDO:return "Redo";case VALIDATE:return "Validate";case CLEAN:return "Clean up";case DESELECT:return "Deselect";case FLOOR_UP:return "Floor +";case FLOOR_DN:return "Floor −";
@@ -74,6 +74,8 @@ public class EditorView extends View {
     // selection (Sectors)
     private int selKind=0,selSector=-1,selEdge=-1,selVertex=-1; // kind: 0 none,1 sector,2 edge,3 vertex
     private int pickSector=-1,pickEdge=-1;private float anchorX,anchorY;
+    // prefab tool: the chunk to stamp, its quarter turns, and whether Apply is marking an area to save
+    private Prefab curPrefab=Prefab.builtins().get(0);private int prefabRot;private boolean prefabSaving;
     private int[] moveIds=new int[0];private float[] moveOrig=new float[0];
     // cursor & map view
     private float cursorX=6,cursorY=6,viewX=10,viewY=7,zoom=1f;
@@ -102,14 +104,22 @@ public class EditorView extends View {
 
     EditorView(Context ctx){super(ctx);
         ui=new Ui(ctx);p=ui.p;pixelPaint.setFilterBitmap(false);
-        project=Project.get(ctx);level=project.level;sectorEditor=new SectorEditor(level);
+        project=Project.get(ctx);level=project.level;sectorEditor=new SectorEditor(level);entityUndo.reset();
         if(project.loadWarning!=null){message=project.loadWarning;messageUntil=System.currentTimeMillis()+5000;}
         cursorX=Math.round(level.playerX);cursorY=Math.round(level.playerY);viewX=cursorX;viewY=cursorY;
         setFocusable(true);
     }
     boolean exitPlay(){if(mode!=PLAY)return false;changeMode(returnMode);return true;}
     void onPause(){sfx.stop();flushSave();setKeepScreenOn(false);}
-    void onResume(){if(mode==PLAY){sfx.start();setKeepScreenOn(true);}lastInteraction=System.currentTimeMillis();renderer.invalidate();invalidate();}
+    /** Undo for entity types and placed entities on this map; sector shapes use the SectorEditor's own history. */
+    final Undo entityUndo=new Undo(()->project==null?null:project.section(Project.SEC_ENTITIES),t->project.restoreSection(Project.SEC_ENTITIES,t));
+    private void entityUndoRedo(boolean back){
+        if(back?entityUndo.undo():entityUndo.redo()){
+            if(project.def(selDef)==null)selDef=project.defs.size()>1?project.defs.get(1).id:project.defs.get(0).id;
+            if(selThing>=level.things.size())selThing=-1;entStage=0;
+            autoSave();renderer.invalidate();hint(back?"Undo":"Redo");}
+        else hint(back?"Nothing to undo":"Nothing to redo");invalidate();}
+    void onResume(){entityUndo.reset();if(mode==PLAY){sfx.start();setKeepScreenOn(true);}lastInteraction=System.currentTimeMillis();renderer.invalidate();invalidate();}
 
     // ---------------------------------------------------------------- layout
     private float dp(float v){return ui.dp(v);}
@@ -154,7 +164,7 @@ public class EditorView extends View {
         frameStart=System.nanoTime();
         w=getWidth();h=getHeight();toolbarH=mode==PLAY?0:dp(52);statusH=in2D()?dp(26):0;
         long now=System.nanoTime();float dt=Math.min(.05f,(now-lastFrame)*1e-9f);lastFrame=now;
-        if(level!=project.level){level=project.level;sectorEditor=new SectorEditor(level);walker=null;}
+        if(level!=project.level){level=project.level;sectorEditor=new SectorEditor(level);entityUndo.reset();walker=null;}
         ui.clearHits();
         c.drawColor(Ui.BG);
         if(in2D()){
@@ -228,7 +238,7 @@ public class EditorView extends View {
         ui.hit(r,H_MAPS);
     }
     private void openMapLocal(int num){
-        save(false);project.switchMap(num);level=project.level;sectorEditor=new SectorEditor(level);walker=null;
+        save(false);project.switchMap(num);level=project.level;sectorEditor=new SectorEditor(level);entityUndo.reset();walker=null;
         selThing=-1;selKind=0;pending.clear();renderer.invalidate();autoSave();hint("Editing map: "+project.mapName(num));invalidate();
     }
     private void mapsMenu(){
@@ -262,7 +272,7 @@ public class EditorView extends View {
                         int num=cur.num;project.maps.remove(cur);
                         for(Project.GameMap gm:project.maps)for(Level.Sector sc:gm.level.sectors)if(sc.special==Level.SP_EXIT&&sc.tag==num)sc.tag=0;
                         if(project.startMap==num)project.startMap=project.maps.get(0).num;
-                        Project.GameMap nx=project.maps.get(0);project.currentMap=nx.num;project.level=nx.level;level=project.level;sectorEditor=new SectorEditor(level);walker=null;selThing=-1;selKind=0;pending.clear();renderer.invalidate();
+                        Project.GameMap nx=project.maps.get(0);project.currentMap=nx.num;project.level=nx.level;level=project.level;sectorEditor=new SectorEditor(level);entityUndo.reset();walker=null;selThing=-1;selKind=0;pending.clear();renderer.invalidate();
                         autoSave();hint("Map deleted");invalidate();});break;
             }
             invalidate();});
@@ -298,19 +308,71 @@ public class EditorView extends View {
                 sv?"Battery saver: ON (tap to turn off)":"Battery saver: off (30 fps, still backdrops)",
                 Sprites.pixel?"Built-in sprites: Pixel art (tap for HD)":"Built-in sprites: HD (tap for pixel art)","Reset level…","Back to projects",
                 frontEnd()?"Play: splash + main menu ON (tap to start straight in the level)":"Play: starts straight in the level (tap for splash + main menu)",
-                "Play from the cursor (testing)","Maps… (switch, add, rename, delete)"},-1,k->{
+                "Play from the cursor (testing)","Maps… (switch, add, rename, delete)","Search the project…"},-1,k->{
             if(k==0)showMapCheck();
             else if(k==1)save(true);
             else if(k==2){Perf.setSaver(getContext(),!sv);hint(!sv?"Battery saver on · 30 fps game and 3D, still previews":"Battery saver off · 60 fps");lastInteraction=System.currentTimeMillis();}
             else if(k==4)host.confirm("Reset the level?","This clears every sector and placed entity. Entity types, FSMs and sprites are kept.","Reset level",()->{resetLevel();invalidate();});
             else if(k==5){save(false);if(onExitToTitle!=null)onExitToTitle.run();}
             else if(k==8){mapsMenu();return;}
+            else if(k==9){searchProject();return;}
             else if(k==7){playFrom=new float[]{cursorX,cursorY,level.facing};playThisMap=project.currentMap;
                 if(level.sectorAt(cursorX,cursorY)<0)hint("The cursor is outside every sector · starting at the player start");changeMode(PLAY);}
             else if(k==6){GameSettings.frontEnd=!GameSettings.frontEnd;GameSettings.save(getContext());hint(GameSettings.frontEnd?"Play opens with the splash screen and main menu":"Play starts straight in the level");}
             else if(k==3){boolean hd=Sprites.pixel;Perf.setHdSprites(getContext(),hd);java.util.Arrays.fill(spriteThumbs,null);hint(hd?"Built-in sprites: HD":"Built-in sprites: pixel art");}
             invalidate();});
     }
+    // ---------------------------------------------------------------- project search
+    private static boolean has(String text,String q){return text!=null&&text.toLowerCase().contains(q);}
+    private void searchProject(){
+        if(host==null)return;
+        host.prompt("Search the project","Entities, states, actions, items, spells, conversations, quests, sounds, maps…",lastSearch,false,t->{String q=t.trim();if(q.isEmpty())return;lastSearch=q;showSearch(q.toLowerCase());});
+    }
+    private String lastSearch="";
+    private void showSearch(String q){
+        ArrayList<String> labels=new ArrayList<>();ArrayList<Runnable> go=new ArrayList<>();
+        project.syncCurrent();
+        // entity types, their FSM states and actions
+        for(EntityDef d:project.defs){
+            if(has(d.name,q)||has(d.id,q)){labels.add("Entity · "+d.name+" ("+EntityDef.KIND_NAMES[d.kind]+")");go.add(()->{changeMode(THINGS);selDef=d.id;selThing=-1;propScroll=0;hint(d.name+" selected");});}
+            for(FSMGraph.Node n:d.fsm.nodes){
+                if(has(n.name,q)){labels.add("FSM state · "+d.name+" → "+n.name);go.add(()->openFsm(d.id));}
+                for(FSMGraph.Action a:n.actions){Actions.Spec sp=Actions.get(a.type);String an=sp==null?a.type:sp.name;boolean hit=has(an,q);
+                    for(String v:a.params.values())if(has(v,q))hit=true;
+                    if(hit){labels.add("FSM action · "+d.name+" → "+n.name+" → "+an);go.add(()->openFsm(d.id));}}
+                for(String ev:n.transitions.keySet())if(has(ev,q)){labels.add("FSM event · "+d.name+" → "+n.name+" on "+ev);go.add(()->openFsm(d.id));}}}
+        // placed entities on every map
+        for(Project.GameMap gm:project.maps){Level lv=gm.level;
+            for(int i=0;i<lv.things.size();i++){Level.Thing th=lv.things.get(i);EntityDef d=project.def(th.def);if(d==null||!(has(d.name,q)||has(d.id,q)))continue;
+                final int idx=i;final int num=gm.num;
+                labels.add("Placed · "+d.name+" on "+gm.name+" at "+Math.round(th.x)+","+Math.round(th.y));
+                go.add(()->{if(num!=project.currentMap)openMapLocal(num);if(idx>=level.things.size())return;Level.Thing t2=level.things.get(idx);
+                    changeMode(THINGS);selDef=t2.def;selThing=idx;cursorX=t2.x;cursorY=t2.y;viewX=cursorX;viewY=cursorY;followCursor=true;hint(project.def(t2.def).name+" · cursor moved to it");});}}
+        // maps
+        for(Project.GameMap gm:project.maps)if(has(gm.name,q)){final int num=gm.num;labels.add("Map · "+gm.name);go.add(()->openMapLocal(num));}
+        // content
+        project.ensureContent();
+        for(Rpg.Item it:project.items)if(has(it.name,q)||has(it.id,q)){labels.add("Item · "+it.name);go.add(()->openContentTab(0));}
+        for(Rpg.Spell sp:project.spells)if(has(sp.name,q)||has(sp.id,q)||has(sp.desc,q)){labels.add("Spell · "+sp.name);go.add(()->openContentTab(1));}
+        for(Rpg.HeroClass hc:project.classes)if(has(hc.name,q)||has(hc.desc,q)){labels.add("Class · "+hc.name);go.add(()->openContentTab(2));}
+        for(Rpg.LootTable lt:project.loot)if(has(lt.name,q)||has(lt.id,q)){labels.add("Loot table · "+lt.name);go.add(()->openContentTab(3));}
+        for(Rpg.Shop sh:project.shops)if(has(sh.name,q)||has(sh.id,q)||has(sh.greeting,q)){labels.add("Shop · "+sh.name);go.add(()->openContentTab(4));}
+        // conversations and quests
+        for(Dialogue.Def dd:project.dialogues){boolean hit=has(dd.name,q)||has(dd.speaker,q);String line=null;
+            for(Dialogue.Node n:dd.nodes){if(line==null&&(has(n.text,q)||has(n.speaker,q)))line=n.text;for(Dialogue.Choice ch:n.choices)if(line==null&&has(ch.text,q))line=ch.text;}
+            if(hit||line!=null){labels.add("Conversation · "+dd.name+(line!=null?" — “"+ui.ellipsize(line,12,1,dp(220))+"”":""));go.add(()->{save(false);host.openDialogue(0);});}}
+        for(Dialogue.QuestDef qd:project.quests){boolean hit=has(qd.title,q);for(String st:qd.stages)if(has(st,q))hit=true;
+            if(hit){labels.add("Quest · "+qd.title);go.add(()->{save(false);host.openDialogue(1);});}}
+        // audio and sprites
+        for(SoundAsset sa:project.sounds)if(has(sa.name,q)){labels.add("Sound · "+sa.name);go.add(()->{save(false);host.openSound(0);});}
+        for(Song sg:project.songs)if(has(sg.name,q)){labels.add("Song · "+sg.name);go.add(()->{save(false);host.openSound(1);});}
+        for(CustomSprite cs:project.sprites)if(has(cs.name,q)){labels.add("Sprite · "+cs.name);go.add(()->openSprites(null));}
+        for(Prefab pf:project.prefabs)if(has(pf.name,q)){labels.add("Prefab · "+pf.name);go.add(()->{changeMode(POLY);toolPage=0;setTool(PREFAB);curPrefab=pf;prefabRot=0;hint("Apply stamps "+pf.name);});}
+        if(labels.isEmpty()){hint("Nothing found for “"+q+"”");return;}
+        int max=Math.min(labels.size(),80);String[] items=new String[max];for(int i=0;i<max;i++)items[i]=labels.get(i);
+        host.choose(labels.size()+(labels.size()==1?" result":" results")+" for “"+q+"”"+(labels.size()>max?" (first "+max+")":""),items,-1,k->{go.get(k).run();invalidate();});
+    }
+    private void openContentTab(int tab){save(false);if(host!=null)host.openContent(tab);}
     private void showMapCheck(){
         ArrayList<String> errs=MapValidator.check(level);
         if(errs.isEmpty()){hint("Map check: no problems found");return;}
@@ -533,9 +595,17 @@ public class EditorView extends View {
         }
         drawThings(c);
         // previews for two-stage tools
-        if(mode==POLY&&stage==1&&(tool==RECT||tool==DUPLICATE||tool==EXTRUDE)){
+        if(mode==POLY&&tool==PREFAB&&!prefabSaving){
+            java.util.ArrayList<java.util.ArrayList<float[]>> polys=curPrefab.polys(prefabRot,Math.round(cursorX),Math.round(cursorY));
+            p.setStrokeWidth(dp(1.5f));p.setPathEffect(new DashPathEffect(new float[]{dp(6),dp(4)},0));
+            for(java.util.ArrayList<float[]> poly:polys){path.reset();for(int j=0;j<poly.size();j++){float[] v=poly.get(j);if(j==0)path.moveTo(sx(v[0]),sy(v[1]));else path.lineTo(sx(v[0]),sy(v[1]));}path.close();
+                p.setStyle(Paint.Style.FILL);p.setColor(0x1c3d8bfd);c.drawPath(path,p);p.setStyle(Paint.Style.STROKE);p.setColor(Ui.ACCENT);c.drawPath(path,p);}
+            p.setPathEffect(null);p.setStyle(Paint.Style.FILL);float[] pt=new float[2];
+            for(Prefab.Th t:curPrefab.things){curPrefab.place(t.x,t.y,prefabRot,Math.round(cursorX),Math.round(cursorY),pt);p.setColor(0xaaf2b84b);c.drawCircle(sx(pt[0]),sy(pt[1]),dp(3.5f),p);}
+        }
+        if(mode==POLY&&stage==1&&(tool==RECT||tool==DUPLICATE||tool==EXTRUDE||tool==PREFAB&&prefabSaving)){
             p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(1.5f));p.setColor(Ui.ACCENT);p.setPathEffect(new DashPathEffect(new float[]{dp(6),dp(4)},0));
-            if(tool==RECT){float l=sx(Math.min(anchorX,cursorX)),t=sy(Math.min(anchorY,cursorY)),rr=sx(Math.max(anchorX,cursorX)),b=sy(Math.max(anchorY,cursorY));p.setStyle(Paint.Style.FILL);p.setColor(0x223d8bfd);p.setPathEffect(null);c.drawRect(l,t,rr,b,p);p.setStyle(Paint.Style.STROKE);p.setColor(Ui.ACCENT);p.setPathEffect(new DashPathEffect(new float[]{dp(6),dp(4)},0));c.drawRect(l,t,rr,b,p);}
+            if(tool==RECT||tool==PREFAB){float l=sx(Math.min(anchorX,cursorX)),t=sy(Math.min(anchorY,cursorY)),rr=sx(Math.max(anchorX,cursorX)),b=sy(Math.max(anchorY,cursorY));p.setStyle(Paint.Style.FILL);p.setColor(0x223d8bfd);p.setPathEffect(null);c.drawRect(l,t,rr,b,p);p.setStyle(Paint.Style.STROKE);p.setColor(Ui.ACCENT);p.setPathEffect(new DashPathEffect(new float[]{dp(6),dp(4)},0));c.drawRect(l,t,rr,b,p);}
             else if(tool==DUPLICATE&&pickSector>=0&&pickSector<level.sectors.size()){Level.Sector s=level.sectors.get(pickSector);path.reset();float dx=cursorX-anchorX,dy=cursorY-anchorY;
                 for(int j=0;j<s.loop.size();j++){Level.Vertex v=level.vertices.get(s.loop.get(j));if(j==0)path.moveTo(sx(v.x+dx),sy(v.y+dy));else path.lineTo(sx(v.x+dx),sy(v.y+dy));}path.close();c.drawPath(path,p);}
             else if(tool==EXTRUDE&&pickSector>=0){float[] e=edgeCoords(pickSector,pickEdge);if(e!=null){float d=extrudeDistance(e);float[] nrm=edgeNormal(pickSector,pickEdge);
@@ -699,6 +769,8 @@ public class EditorView extends View {
         float tw2=(rr-l)/5f;
         for(int i=0;i<5;i++){r.set(l+i*tw2+dp(1),y,l+(i+1)*tw2-dp(1),y+dp(34));ui.button(c,r,ENTITY_TOOL_ICONS[i],null,entityTool==i?Ui.ACTIVE:i==4?Ui.DANGER:Ui.NORMAL);clipHit(r,H_ETOOL+i,top,bottom);}
         y+=dp(38);ui.text(c,ENTITY_TOOLS[entityTool]+(entityTool==0?" "+d.name:" entity"),l,y+dp(10),11,Ui.TEXT_2);y+=dp(22);
+        r.set(l,y,l+hw,y+dp(32));ui.button(c,r,Icons.UNDO,"Undo",entityUndo.canUndo()?Ui.NORMAL:Ui.DISABLED);clipHit(r,H_EUNDO,top,bottom);
+        r.set(l+hw+dp(6),y,rr,y+dp(32));ui.button(c,r,Icons.REDO,"Redo",entityUndo.canRedo()?Ui.NORMAL:Ui.DISABLED);clipHit(r,H_EREDO,top,bottom);y+=dp(42);
         ui.caption(c,"Properties",l,y+dp(8),Ui.TEXT_3);y+=dp(16);
         String[] labels=propLabels(d);
         for(int i=0;i<labels.length;i++){
@@ -749,7 +821,7 @@ public class EditorView extends View {
         switch(tool){
             case DRAW:return pending.isEmpty()?"Add first corner":"Add corner · "+pending.size();
             case RECT:return stage==0?"First corner":"Opposite corner";
-            case PREFAB:return "Place 4×4 room";case STAIRS:return "Make stairs";case SELECT:return "Select";
+            case PREFAB:return prefabSaving?(stage==0?"Area: first corner":"Area: opposite corner"):"Stamp "+curPrefab.name;case STAIRS:return "Make stairs";case SELECT:return "Select";
             case MOVE:return stage==0?"Pick to move":"Drop here";case SPLIT:return "Split edge here";
             case EXTRUDE:return stage==0?"Pick edge":"Extrude "+(pickSector>=0&&edgeCoords(pickSector,pickEdge)!=null?fmt(extrudeDistance(edgeCoords(pickSector,pickEdge))):"");
             case DUPLICATE:return stage==0?"Pick sector":"Place copy";case DELETE:return "Delete sector";case SPECIAL:return "Set special";case START:return "Set player start";
@@ -780,7 +852,7 @@ public class EditorView extends View {
     // ---------------------------------------------------------------- Sectors: cursor tools
     private void setTool(int t){cancelStage();tool=t;
         switch(t){case DRAW:hint("Move the cursor and Apply on each corner");break;case RECT:hint("Apply on one corner, then the opposite corner");break;
-            case PREFAB:hint("Apply to place a 4×4 room at the cursor");break;case STAIRS:hint("Apply on a rectangular sector; stairs rise away from the cursor");break;
+            case PREFAB:prefabSaving=false;hint("Apply stamps "+curPrefab.name+" · tap Prefab again to pick another");break;case STAIRS:hint("Apply on a rectangular sector; stairs rise away from the cursor");break;
             case SELECT:hint("Apply selects the vertex, edge or sector under the cursor");break;case MOVE:hint("Apply to pick a vertex, edge or sector, move, then Apply to drop");break;
             case SPLIT:hint("Put the cursor on an edge and Apply to split it");break;case EXTRUDE:hint("Apply on an edge, move outwards, Apply again");break;
             case DUPLICATE:hint("Apply on a sector, move, Apply to place the copy");break;case DELETE:hint("Apply on a sector to delete it");break;
@@ -805,7 +877,13 @@ public class EditorView extends View {
                 else{stage=0;if(sectorEditor.rectangle(Math.round(anchorX),Math.round(anchorY),Math.round(cx),Math.round(cy))){selectSector(level.sectors.size()-1);changed("Rectangle created");}else hint(sectorEditor.error);}
                 return;
             case PREFAB:
-                if(sectorEditor.rectangle(Math.round(cx),Math.round(cy),Math.round(cx)+4,Math.round(cy)+4)){selectSector(level.sectors.size()-1);changed("Room created");}else hint(sectorEditor.error);return;
+                if(prefabSaving){
+                    if(stage==0){anchorX=cx;anchorY=cy;stage=1;hint("Move to the opposite corner of the area, then Apply");return;}
+                    stage=0;Prefab pf=Prefab.capture(level,anchorX,anchorY,cx,cy);
+                    if(pf==null){hint("No whole sector inside that area");return;}
+                    if(host==null){savePrefab(pf,"Prefab "+(project.prefabs.size()+1));return;}
+                    host.prompt("Prefab name",pf.secs.size()+" sectors · "+pf.things.size()+" entities","Prefab "+(project.prefabs.size()+1),false,n->savePrefab(pf,n.trim().isEmpty()?"Prefab":n.trim()));return;}
+                stampPrefab(Math.round(cx),Math.round(cy));return;
             case STAIRS:{int s=sectorUnderCursor();if(s<0){hint("Move the cursor onto a sector");return;}
                 float[] ce=centroid(level.sectors.get(s));if(sectorEditor.makeStairs(s,cx+(cx-ce[0])*.01f,cy+(cy-ce[1])*.01f,.25f)){selKind=0;changed("Stairs built");}else hint(sectorEditor.error);return;}
             case SELECT:{
@@ -840,6 +918,42 @@ public class EditorView extends View {
                 if(Math.hypot(level.playerX-px,level.playerY-py)<.01f){level.facing+=(float)Math.PI/4;changed("Player start turned");}else{level.playerX=px;level.playerY=py;changed("Player start moved");}return;}
         }
     }
+    // ---------------------------------------------------------------- prefabs
+    private void savePrefab(Prefab pf,String name){
+        pf.name=name;pf.id="prefab_"+System.currentTimeMillis();project.prefabs.add(pf);curPrefab=pf;prefabRot=0;prefabSaving=false;
+        autoSave();hint("Saved prefab "+name+" · Apply to stamp it");invalidate();
+    }
+    private void stampPrefab(float ox,float oy){
+        Prefab pf=curPrefab;
+        if(!sectorEditor.stamp(pf,prefabRot,ox,oy)){hint(sectorEditor.error);invalidate();return;}
+        float[] pt=new float[2];int placed=0,missing=0;
+        for(Prefab.Th t:pf.things){if(project.def(t.def)==null){missing++;continue;}
+            pf.place(t.x,t.y,prefabRot,ox,oy,pt);Level.Thing th=new Level.Thing(pt[0],pt[1],t.def);th.angle=t.angle+prefabRot*(float)Math.PI*.5f;level.things.add(th);placed++;}
+        selKind=0;changed(pf.name+" placed"+(placed>0?" with "+placed+" entit"+(placed==1?"y":"ies"):"")+(missing>0?" · "+missing+" missing entity types skipped":""));
+    }
+    private void prefabMenu(){
+        if(host==null)return;
+        java.util.ArrayList<Prefab> all=Prefab.builtins();int nb=all.size();all.addAll(project.prefabs);
+        java.util.ArrayList<String> items=new java.util.ArrayList<>();int cur=-1;
+        for(int i=0;i<all.size();i++){Prefab pf=all.get(i);boolean on=pf.id!=null&&pf.id.equals(curPrefab.id);if(on)cur=i;
+            items.add((i<nb?"Built-in: ":"")+pf.name+"  ("+Math.round(pf.w)+"×"+Math.round(pf.h)+(pf.things.isEmpty()?"":", "+pf.things.size()+" entities")+")");}
+        int base=items.size();
+        items.add("Turn 90°  (now "+prefabRot*90+"°)");items.add("Save an area of this map as a prefab…");items.add("Rename or delete a saved prefab…");
+        host.choose("Prefabs",items.toArray(new String[0]),cur,k->{
+            if(k<base){curPrefab=all.get(k);prefabSaving=false;stage=0;hint("Apply stamps "+curPrefab.name+" with its top-left corner at the cursor");}
+            else if(k==base){prefabRot=(prefabRot+1)&3;hint(curPrefab.name+" turned to "+prefabRot*90+"°");}
+            else if(k==base+1){prefabSaving=true;stage=0;hint("Apply on one corner of the area to save, then the opposite corner");}
+            else managePrefabs();
+            invalidate();});
+    }
+    private void managePrefabs(){
+        if(project.prefabs.isEmpty()){hint("No saved prefabs yet · use Save an area");return;}
+        String[] names=new String[project.prefabs.size()];for(int i=0;i<names.length;i++)names[i]=project.prefabs.get(i).name;
+        host.choose("Saved prefabs",names,-1,i->{Prefab pf=project.prefabs.get(i);
+            host.choose(pf.name,new String[]{"Rename…","Delete"},-1,a->{
+                if(a==0)host.prompt("Rename prefab",null,pf.name,false,n->{if(!n.trim().isEmpty()){pf.name=n.trim();autoSave();invalidate();}});
+                else host.confirm("Delete "+pf.name+"?","Maps where it was stamped keep their copy.","Delete",()->{project.prefabs.remove(pf);if(curPrefab==pf){curPrefab=Prefab.builtins().get(0);prefabRot=0;}autoSave();hint("Prefab deleted");});});});
+    }
     private void selectSector(int s){selKind=s>=0?1:0;selSector=s;}
     private void chooseSpecial(int s){
         if(host==null){Level.Sector sec=level.sectors.get(s);sec.special=(sec.special+1)%Level.SPECIAL_NAMES.length;changed(Level.SPECIAL_NAMES[sec.special]);return;}
@@ -854,16 +968,17 @@ public class EditorView extends View {
                     else{sec.tag=others.get(k-1).num;changed("Exit → "+others.get(k-1).name);}});}
             else{sec.tag=0;changed(Level.SPECIAL_NAMES[i]);}});
     }
-    private void changed(String msg){autoSave();if(msg!=null)hint(msg);renderer.invalidate();invalidate();}
+    private void changed(String msg){entityUndo.commit();autoSave();if(msg!=null)hint(msg);renderer.invalidate();invalidate();}
     private void closeSector(){if(sectorEditor.addSector(pending)){selectSector(level.sectors.size()-1);pending.clear();changed("Sector created");}else hint(sectorEditor.error);}
     private void sectorAction(int t){
-        if(t<100){if(tool==t&&stage==0&&t!=DRAW)hint(toolName(t)+" is active");setTool(t);return;}
+        if(t==PREFAB&&tool==PREFAB){prefabMenu();return;}
+        if(t<100){if(tool==t&&stage==0&&t!=DRAW)hint(toolName(t)+" is active");setTool(t);if(t==PREFAB)prefabMenu();return;}
         switch(t){
             case CLOSE:if(pending.size()<3)hint("Add at least three corners first");else closeSector();return;
             case UNDO_PT:if(!pending.isEmpty()){pending.remove(pending.size()-1);hint("Corner removed");}else hint("No corners to remove");return;
             case CANCEL:pending.clear();cancelStage();hint("Cancelled");return;
-            case UNDO:cancelStage();if(sectorEditor.undo()){restoreEditor();hint("Undo");}else hint("Nothing to undo");return;
-            case REDO:cancelStage();if(sectorEditor.redo()){restoreEditor();hint("Redo");}else hint("Nothing to redo");return;
+            case UNDO:case REDO:{cancelStage();java.util.ArrayList<Level.Thing> keep=new java.util.ArrayList<>(level.things);   // placed entities have their own undo
+                if(t==UNDO?sectorEditor.undo():sectorEditor.redo()){Level nl=sectorEditor.level;nl.things.clear();nl.things.addAll(keep);nl.things.removeIf(th->nl.sectorAt(th.x,th.y)<0);restoreEditor();hint(t==UNDO?"Undo":"Redo");}else hint(t==UNDO?"Nothing to undo":"Nothing to redo");return;}
             case VALIDATE:{ArrayList<String> issues=MapValidator.check(level);hint(issues.isEmpty()?"Map validation: no issues":issues.size()+" issue(s): "+issues.get(0));return;}
             case CLEAN:{int n=sectorEditor.cleanOrphans();if(n>0)changed(null);hint("Cleaned "+n+" unused vertices");return;}
             case DESELECT:selKind=0;hint("Selection cleared");return;
@@ -1398,7 +1513,7 @@ public class EditorView extends View {
     private void runQueuedSave(){if(saveQueued){saveQueued=false;project.save(getContext());}}
     private void autoSave(){saveQueued=true;removeCallbacks(saveTask);postDelayed(saveTask,1500);}
     private void flushSave(){removeCallbacks(saveTask);saveQueued=false;project.save(getContext());}
-    private void resetLevel(){project.level=new Level();level=project.level;sectorEditor=new SectorEditor(level);pending.clear();selKind=0;walker=null;cancelStage();changed("Level reset");}
+    private void resetLevel(){project.level=new Level();level=project.level;sectorEditor=new SectorEditor(level);entityUndo.reset();pending.clear();selKind=0;walker=null;cancelStage();changed("Level reset");}
     private void changeMode(int next){
         if(mode==PLAY&&next!=PLAY){sfx.stopMusic(0);sfx.stopSounds();sfx.stop();world=null;if(menu!=null)menu.state=GameMenu.OFF;}
         if(next==PLAY&&mode!=PLAY)returnMode=mode;
@@ -1478,6 +1593,7 @@ public class EditorView extends View {
                     else if(hid==H_NEWDEF)newEntityType();
                     else if(hid>=H_PROP&&hid<H_PROP+20)propertyTap(hid-H_PROP);
                     else if(hid>=H_ETOOL&&hid<H_ETOOL+5){entityTool=hid-H_ETOOL;entStage=0;hint(ENTITY_TOOLS[entityTool]+" · move the cursor and tap Apply");}
+                    else if(hid==H_EUNDO||hid==H_EREDO)entityUndoRedo(hid==H_EUNDO);
                     else if(hid==H_EDITFSM)openFsm(selDef);
                     else if(hid==H_EDITSPRITE)openSprites(selDef);
                     else if(hid==H_DUPDEF){EntityDef d=currentDef();if(d!=null){EntityDef c=d.copy(project.uniqueId(d.name+" copy"),d.name+" copy");if(c.kind==EntityDef.PLAYER)c.kind=EntityDef.DECORATION;project.defs.add(c);selDef=c.id;defScroll=1e9f;changed(c.name+" created");}}
