@@ -186,10 +186,18 @@ public class EditorView extends View {
         r.set(x-bh,top,x,top+bh);ui.button(c,r,Icons.MORE,null,Ui.GHOST);ui.hit(r,H_MORE);x-=bh+dp(10);
         ui.vline(c,x+dp(4),top+dp(5),top+bh-dp(5),Ui.BORDER);x-=dp(6);
         float gap=dp(6);
-        for(int i=EDITOR_NAMES.length-1;i>=0;i--){r.set(x-bh,top,x,top+bh);ui.button(c,r,EDITOR_ICONS[i],null,i==ed?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_ED+i);x-=bh+gap;}
+        // Editor shortcut icons get whatever room is left after the title and the map chip; the rest are
+        // in the title's editor list. Sectors, Entities, 3D and Play come first, then the other editors.
+        float tl=dp(50);
+        float titleW=ed>=0?Math.min(dp(190),ui.measure(EDITOR_NAMES[ed],15,1)+dp(78)):Math.min(dp(200),dp(40)+Math.max(ui.measure(project.name,15,1),ui.measure("Project · Home",10.5f,0)));
+        float chipW=Math.min(dp(190),ui.measure(project.current().name,12,1)+dp(76));
+        int fit=Math.max(0,(int)((x-(tl+titleW+dp(10)+chipW+dp(14)))/(bh+gap)));
+        boolean[] show=new boolean[EDITOR_NAMES.length];int shown=0;
+        if(ed>=0&&fit>0){show[ed]=true;shown++;}
+        for(int i=0;i<EDITOR_NAMES.length&&shown<fit;i++)if(!show[i]){show[i]=true;shown++;}
+        for(int i=EDITOR_NAMES.length-1;i>=0;i--){if(!show[i])continue;r.set(x-bh,top,x,top+bh);ui.button(c,r,EDITOR_ICONS[i],null,i==ed?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_ED+i);x-=bh+gap;}
         float right=x-dp(8);
         // title: the editor switcher (icon, name, chevron) or the project on the home screen
-        float tl=dp(50);
         if(ed>=0){
             String nm=EDITOR_NAMES[ed];float tw=Math.min(right-tl,ui.measure(nm,15,1)+dp(78));
             r.set(tl,top,tl+tw,top+bh);
@@ -198,7 +206,7 @@ public class EditorView extends View {
             ui.textMid(c,ui.ellipsize(nm,15,1,tw-dp(70)),r.left+dp(38),cy,15,Ui.TEXT,1,-1);
             ui.icon(c,Icons.CHEVRON_DOWN,r.right-dp(16),cy,15,Ui.TEXT_2);ui.hit(r,H_SWITCH);
             float px=r.right+dp(10);
-            if(right-px>dp(90))mapChip(c,px,top,right,bh,cy);
+            if(right-px>dp(70))mapChip(c,px,top,right,bh,cy);
         }else{
             float ib=dp(30);ui.logo(c,tl,cy-ib*.5f,ib);
             float tx=tl+ib+dp(10);
@@ -206,7 +214,7 @@ public class EditorView extends View {
             ui.text(c,ui.ellipsize((project.template==null||project.template.isEmpty()?"Project":project.template)+" · Home",10.5f,0,right-tx),tx,cy+dp(13),10.5f,Ui.TEXT_3,0,-1);
             r.set(tl,top,Math.min(right,tx+dp(160)),top+bh);ui.hit(r,H_SWITCH);
             float px=Math.max(tx+ui.measure(project.name,15,1),tx+ui.measure("Project · Home",10.5f,0))+dp(16);
-            if(right-px>dp(90))mapChip(c,px,top,right,bh,cy);
+            if(right-px>dp(70))mapChip(c,px,top,right,bh,cy);
         }
     }
     private static final int H_MAPS=3070;
@@ -286,12 +294,13 @@ public class EditorView extends View {
                 sv?"Battery saver: ON (tap to turn off)":"Battery saver: off (30 fps, still backdrops)",
                 Sprites.pixel?"Built-in sprites: Pixel art (tap for HD)":"Built-in sprites: HD (tap for pixel art)","Reset level…","Back to projects",
                 frontEnd()?"Play: splash + main menu ON (tap to start straight in the level)":"Play: starts straight in the level (tap for splash + main menu)",
-                "Play from the cursor (testing)"},-1,k->{
+                "Play from the cursor (testing)","Maps… (switch, add, rename, delete)"},-1,k->{
             if(k==0)showMapCheck();
             else if(k==1)save(true);
             else if(k==2){Perf.setSaver(getContext(),!sv);hint(!sv?"Battery saver on · 30 fps game and 3D, still previews":"Battery saver off · 60 fps");lastInteraction=System.currentTimeMillis();}
             else if(k==4)host.confirm("Reset the level?","This clears every sector and placed entity. Entity types, FSMs and sprites are kept.","Reset level",()->{resetLevel();invalidate();});
             else if(k==5){save(false);if(onExitToTitle!=null)onExitToTitle.run();}
+            else if(k==8){mapsMenu();return;}
             else if(k==7){playFrom=new float[]{cursorX,cursorY,level.facing};playThisMap=project.currentMap;
                 if(level.sectorAt(cursorX,cursorY)<0)hint("The cursor is outside every sector · starting at the player start");changeMode(PLAY);}
             else if(k==6){GameSettings.frontEnd=!GameSettings.frontEnd;GameSettings.save(getContext());hint(GameSettings.frontEnd?"Play opens with the splash screen and main menu":"Play starts straight in the level");}
