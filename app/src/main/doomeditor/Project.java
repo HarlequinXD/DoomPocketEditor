@@ -113,13 +113,19 @@ final class Project {
     Sprites.Sprite actorSprite(Actor a,int autoFrame,float worldTime,float viewDelta){
         CustomSprite cs=a.def!=null&&a.sprite==a.def.sprite?sprite(a.def.customSprite):null;
         int view=cs==null?CustomSprite.viewIndex(viewDelta,Sprites.VIEWS):CustomSprite.viewIndex(viewDelta,cs.angles);
+        float walkT=a.walkPhase/WALK_PACE;   // walking frames follow the distance covered, so faster movement = faster steps
         if(a.animClip!=null&&a.def!=null&&a.sprite==a.def.sprite){
-            if(cs!=null){CustomSprite.Clip c=cs.clip(a.animClip);if(c!=null&&!c.frames.isEmpty())return cs.frameAt(c,animIndex(c,a),view);}
-            return Sprites.get(a.sprite,builtinFrame(a.animClip,a.animTime),view);
+            boolean walkClip=isWalkClip(a.animClip)&&Math.hypot(a.vx,a.vy)>.25f;
+            if(cs!=null){CustomSprite.Clip c=cs.clip(a.animClip);if(c!=null&&!c.frames.isEmpty())return cs.frameAt(c,walkClip?(int)(walkT*c.fps)%c.frames.size():animIndex(c,a),view);}
+            return Sprites.get(a.sprite,builtinFrame(a.animClip,walkClip?walkT:a.animTime),view);
         }
-        if(cs!=null){Sprites.Sprite s=cs.frameFor(autoFrame,worldTime,a.deadTime,view);if(s!=null)return s;}
-        return Sprites.get(a.sprite,builtinCycle(a.sprite,autoFrame,worldTime,a.deadTime),view);
+        boolean walking=autoFrame==Sprites.F_WALK1||autoFrame==Sprites.F_WALK2;
+        if(cs!=null){Sprites.Sprite s=cs.frameFor(autoFrame,walking?walkT:worldTime,a.deadTime,view);if(s!=null)return s;}
+        return Sprites.get(a.sprite,builtinCycle(a.sprite,autoFrame,walking?walkT:worldTime,a.deadTime),view);
     }
+    /** Distance (units) that plays one second's worth of walk frames: at 3 units/s a 6 fps walk runs about twice as fast. */
+    static final float WALK_PACE=1.5f;
+    static boolean isWalkClip(String n){n=n.toLowerCase(java.util.Locale.US);return n.contains("walk")||n.contains("run")||n.contains("move");}
     static int animIndex(CustomSprite.Clip c,Actor a){int n=c.frames.size();int i=(int)(a.animTime*c.fps);boolean loop=a.animLoop<0?c.loop:a.animLoop==1;return loop?i%n:Math.min(n-1,i);}
     /**
      * Built-in sprites animate exactly like a custom sprite copied from them (CustomSprite.fromBuiltin):

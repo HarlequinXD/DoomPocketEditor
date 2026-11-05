@@ -134,9 +134,11 @@ final class Renderer {
                 wall(l,len,f.floor,f.ceiling,material(level,l,0,f.wallMaterial),L,id(ID_WALL,li<<1));
             }else{
                 Level.Sector k=level.sectors.get(l.back);
-                if(f.floor!=k.floor)wall(l,len,Math.min(f.floor,k.floor),Math.max(f.floor,k.floor),material(level,l,0,f.wallMaterial),L,id(ID_WALL,li<<1));
+                // doors and lifts carry their wall texture with them: pegged to the moving edge
+                boolean lift=f.special==Level.SP_LIFT||k.special==Level.SP_LIFT,door=f.special==Level.SP_DOOR||k.special==Level.SP_DOOR;
+                if(f.floor!=k.floor){float lo=Math.min(f.floor,k.floor),hi=Math.max(f.floor,k.floor);wall(l,len,lo,hi,material(level,l,0,f.wallMaterial),L,id(ID_WALL,li<<1),lift?hi:0);}
                 boolean bothSky=f.ceilingMaterial==Textures.SKY&&k.ceilingMaterial==Textures.SKY;
-                if(f.ceiling!=k.ceiling&&!bothSky)wall(l,len,Math.min(f.ceiling,k.ceiling),Math.max(f.ceiling,k.ceiling),material(level,l,1,f.wallMaterial),L,id(ID_WALL,(li<<1)|1));
+                if(f.ceiling!=k.ceiling&&!bothSky){float lo=Math.min(f.ceiling,k.ceiling),hi=Math.max(f.ceiling,k.ceiling);wall(l,len,lo,hi,material(level,l,1,f.wallMaterial),L,id(ID_WALL,(li<<1)|1),door?lo:0);}
             }
         }
         if(fx!=null&&!fx.splats.isEmpty())drawSplats(level);
@@ -164,13 +166,15 @@ final class Renderer {
         for(int i=0;i<3;i++){int v=idx[i];Level.Vertex w=level.vertices.get(v);p[0][i]=vx[v];p[1][i]=vz[v];p[2][i]=h;p[3][i]=w.x*.5f;p[4][i]=w.y*.5f;}
         polygon(3,mat,L,pid,sky);
     }
-    private void wall(Level.LineDef l,float len,float lo,float hi,int mat,int L,int pid){
+    private void wall(Level.LineDef l,float len,float lo,float hi,int mat,int L,int pid){wall(l,len,lo,hi,mat,L,pid,0);}
+    /** {@code peg}: height the texture is fixed to (0 = world-aligned); a door's wall uses its bottom edge so it rises with the door. */
+    private void wall(Level.LineDef l,float len,float lo,float hi,int mat,int L,int pid,float peg){
         if(hi-lo<.001f)return;
         float[][] p=pa;int A=l.from,B=l.to;
-        p[0][0]=vx[A];p[1][0]=vz[A];p[2][0]=hi;p[3][0]=0;p[4][0]=-hi*.5f;
-        p[0][1]=vx[B];p[1][1]=vz[B];p[2][1]=hi;p[3][1]=len*.5f;p[4][1]=-hi*.5f;
-        p[0][2]=vx[B];p[1][2]=vz[B];p[2][2]=lo;p[3][2]=len*.5f;p[4][2]=-lo*.5f;
-        p[0][3]=vx[A];p[1][3]=vz[A];p[2][3]=lo;p[3][3]=0;p[4][3]=-lo*.5f;
+        p[0][0]=vx[A];p[1][0]=vz[A];p[2][0]=hi;p[3][0]=0;p[4][0]=-(hi-peg)*.5f;
+        p[0][1]=vx[B];p[1][1]=vz[B];p[2][1]=hi;p[3][1]=len*.5f;p[4][1]=-(hi-peg)*.5f;
+        p[0][2]=vx[B];p[1][2]=vz[B];p[2][2]=lo;p[3][2]=len*.5f;p[4][2]=-(lo-peg)*.5f;
+        p[0][3]=vx[A];p[1][3]=vz[A];p[2][3]=lo;p[3][3]=0;p[4][3]=-(lo-peg)*.5f;
         polygon(4,mat,L,pid,false);
     }
     /** Clips the camera-space polygon in pa against the near and side planes. */
