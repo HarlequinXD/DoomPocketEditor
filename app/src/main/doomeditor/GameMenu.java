@@ -34,7 +34,7 @@ final class GameMenu {
     private float time,splashTime;private int optTab;
     private final RectF r=new RectF();
     private final ArrayList<Renderer.SpriteDraw> sprites=new ArrayList<>(),pool=new ArrayList<>();
-    private LinearGradient shade;private float shadeW;
+    private LinearGradient shade;private float shadeW;private int shadeKey=-1;
     // option rows registered while drawing (sliders need their track for dragging)
     private static final int ROW_LOOK=0,ROW_INVERT=1,ROW_TEXT=2,ROW_SHAKE=3,ROW_MUSIC=4,ROW_SOUND=5;
     private final RectF[] track=new RectF[8];
@@ -47,13 +47,19 @@ final class GameMenu {
     }
     private float dp(float v){return ui.dp(v);}
     /** Entering Play: splash first, then the main menu with the level music. */
-    void begin(){GameSettings.load(ctx);state=SPLASH;splashTime=0;paused=false;refreshSaves();startMenuMusic();}
+    void begin(){GameSettings.load(ctx);MenuStyle m=project.menu;state=m.splash||hasStudio()?SPLASH:MAIN;splashTime=0;paused=false;refreshSaves();startMenuMusic();}
+    /** UI Editor preview: the title menu without music or a splash. */
+    void preview(){state=MAIN;paused=false;refreshSaves();}
+    /** UI Editor preview of the splash, restarting it. */
+    void previewSplash(){state=SPLASH;splashTime=0;}
+    private boolean hasStudio(){return !project.menu.studio.trim().isEmpty()||!project.menu.studioPic.isEmpty();}
     void openPause(){state=MAIN;paused=true;refreshSaves();}
     boolean active(){return state!=OFF;}
     private void startMenuMusic(){
         sfx.start();
         sfx.useProject(project);applyVolumes();
-        project.ensureMaps();Song m=project.song(project.mapMusic(project.map(project.startMap)));
+        project.ensureMaps();String mm=project.menu.music;if(mm.equals("none"))return;
+        Song m=project.song(mm.isEmpty()?project.mapMusic(project.map(project.startMap)):mm);
         if(m!=null&&!sfx.musicPlaying())sfx.playMusic(m.compile(project),true,1.5f);
     }
     void applyVolumes(){sfx.musicVolume=project.musicVolume*GameSettings.musicVolume;sfx.sfxVolume=project.sfxVolume*GameSettings.soundVolume;}
@@ -77,29 +83,45 @@ final class GameMenu {
         return true;
     }
     private void drawSplash(Canvas c,float w,float h,float dt){
-        splashTime+=dt;
+        splashTime+=dt;MenuStyle m=project.menu;float sec=m.splashSeconds;
+        boolean studio=hasStudio();float total=(studio?sec:0)+(m.splash?sec:0);
         c.drawColor(0xff000000);
-        float t=splashTime,a=Math.min(1,Math.min(t/.6f,(SPLASH_SECONDS-t)/.6f));a=Math.max(0,a);
+        float t=splashTime;boolean first=studio&&t<sec;float local=first?t:t-(studio?sec:0);
+        float a=Math.max(0,Math.min(1,Math.min(local/.6f,(sec-local)/.6f)));int al=(int)(a*255);
         float s=Math.min(w,h)*.34f,cx=w*.5f,cy=h*.46f;
-        ui.logo(c,cx-s*.5f,cy-s*.5f,s);
-        int al=(int)(a*255);
-        ui.text(c,"Powered by",cx,cy+s*.5f+dp(30),12,(al<<24)|0xa6b0bd,1,0);
-        ui.text(c,"RPG Pocket Editor",cx,cy+s*.5f+dp(56),20,(al<<24)|(GOLD&0xffffff),2,0);
-        // fade the logo with a black veil (the logo bitmap itself is drawn opaque)
-        if(a<1)ui.rect(c,cx-s*.5f-2,cy-s*.5f-2,cx+s*.5f+2,cy+s*.5f+2,((int)((1-a)*255))<<24);
+        if(first){   // the game maker's own studio card
+            android.graphics.Bitmap b=m.studioPicture();float ty=cy;
+            if(b!=null){float bw=s*1.6f,bh=bw*b.getHeight()/Math.max(1,b.getWidth());if(bh>s){bh=s;bw=bh*b.getWidth()/Math.max(1,b.getHeight());}
+                r.set(cx-bw*.5f,cy-bh*.5f,cx+bw*.5f,cy+bh*.5f);p.setAlpha(al);c.drawBitmap(b,null,r,p);p.setAlpha(255);ty=cy+bh*.5f+dp(34);}
+            if(!m.studio.trim().isEmpty())ui.text(c,m.studio.trim(),cx,ty,24,(al<<24)|0xf0f0f0,2,0);
+            ui.text(c,"presents",cx,ty+dp(26),12,(al<<24)|0xa6b0bd,1,0);
+        }else{
+            ui.logo(c,cx-s*.5f,cy-s*.5f,s);
+            ui.text(c,"Powered by",cx,cy+s*.5f+dp(30),12,(al<<24)|0xa6b0bd,1,0);
+            ui.text(c,"RPG Pocket Editor",cx,cy+s*.5f+dp(56),20,(al<<24)|(GOLD&0xffffff),2,0);
+            // fade the logo with a black veil (the logo bitmap itself is drawn opaque)
+            if(a<1)ui.rect(c,cx-s*.5f-2,cy-s*.5f-2,cx+s*.5f+2,cy+s*.5f+2,((int)((1-a)*255))<<24);
+        }
         ui.hit(0,0,w,h,H_SPLASH);
-        if(splashTime>=SPLASH_SECONDS)state=MAIN;
+        if(splashTime>=total)state=MAIN;
     }
     private void drawBackdrop(Canvas c,float w,float h){
         RectF full=new RectF(0,0,w,h);
         project.ensureMaps();project.syncCurrent();Project.GameMap sm=project.map(project.startMap);Level level=sm!=null?sm.level:project.level;   // the start map
+        MenuStyle ms=project.menu;
         if(paused){renderer.present(c,full);}
+        else if(ms.background==MenuStyle.BG_PICTURE&&ms.picture()!=null){android.graphics.Bitmap b=ms.picture();
+            float sc=Math.max(w/b.getWidth(),h/b.getHeight()),bw=b.getWidth()*sc,bh=b.getHeight()*sc,drift=ms.pan>0?(float)Math.sin(time*.05f*ms.pan)*Math.max(0,bw-w)*.5f:0;
+            r.set((w-bw)*.5f+drift,(h-bh)*.5f,(w+bw)*.5f+drift,(h+bh)*.5f);p.setFilterBitmap(true);c.drawBitmap(b,null,r,p);}
+        else if(ms.background==MenuStyle.BG_GRADIENT){int[] g=MenuStyle.GRADIENT_COLS[ms.gradient];
+            p.setShader(new LinearGradient(0,0,w*.3f,h,g[0],g[1],Shader.TileMode.CLAMP));c.drawRect(0,0,w,h,p);p.setShader(null);}
+        else if(ms.background==MenuStyle.BG_THEME){th().backdrop(c,p,w,h,ui.dp);}
         else{
             int si=level.sectorAt(level.playerX,level.playerY);
             if(si<0)c.drawColor(0xff120c1a);
             else{
                 Level.Sector sec=level.sectors.get(si);
-                float ang=level.facing+(float)Math.sin(time*.12f)*.9f;
+                float ang=level.facing+(ms.background==MenuStyle.BG_STILL?0:(float)Math.sin(time*.12f*ms.pan)*.9f);
                 sprites.clear();int k=0;
                 for(Level.Thing th:level.things){EntityDef d=project.def(th.def);if(d==null||d.kind==EntityDef.PLAYER)continue;
                     while(pool.size()<=k)pool.add(new Renderer.SpriteDraw());
@@ -110,29 +132,51 @@ final class GameMenu {
             }
         }
         // darken towards the left so the title and buttons read clearly
-        if(shade==null||shadeW!=w){shadeW=w;shade=new LinearGradient(0,0,w*.75f,0,0xe0080510,0x20080510,Shader.TileMode.CLAMP);}
-        p.setShader(shade);p.setColor(0xffffffff);c.drawRect(0,0,w,h,p);p.setShader(null);
+        int strong=((int)(Math.min(1,ms.dim*1.4f)*255)<<24)|0x080510,weak=((int)(ms.dim*.25f*255)<<24)|0x080510;
+        int lay=paused?0:ms.layout;
+        if(lay==1){p.setColor(((int)(ms.dim*.8f*255)<<24)|0x080510);c.drawRect(0,0,w,h,p);}
+        else{int key=lay*100000+(int)(ms.dim*1000);
+            if(shade==null||shadeW!=w||shadeKey!=key){shadeW=w;shadeKey=key;
+                shade=lay==3?new LinearGradient(w,0,w*.25f,0,strong,weak,Shader.TileMode.CLAMP):lay==2?new LinearGradient(0,h,0,h*.2f,strong,weak,Shader.TileMode.CLAMP):new LinearGradient(0,0,w*.75f,0,strong,weak,Shader.TileMode.CLAMP);}
+            p.setShader(shade);p.setColor(0xffffffff);c.drawRect(0,0,w,h,p);p.setShader(null);}
     }
     private void drawMain(Canvas c,float w,float h){
-        float L=dp(36),y=dp(56);
-        String title=project.name==null||project.name.isEmpty()?"Untitled Adventure":project.name;
-        float size=Math.min(34,Math.max(20,(w*.55f)/Math.max(1,title.length())/ui.dp(1)*1.7f));
-        ui.text(c,ui.ellipsize(title,size,2,w*.6f),L+dp(2),y+dp(2),size,0xc0000000,2,-1);
-        int tc=UiTheme.luma(th().accent)<.35f?0xffe8c070:th().accent;ui.text(c,ui.ellipsize(title,size,2,w*.6f),L,y,size,tc,2,-1);
-        ui.rect(c,L,y+dp(12),L+Math.min(w*.4f,dp(220)),y+dp(14),UiTheme.alpha(tc,.5f));
-        // buttons: pause menu or title menu; Continue/Load appear once there is a save
+        MenuStyle ms=project.menu;int lay=paused?0:ms.layout;
+        String title=ms.titleFor(project);
+        float bw=Math.min(dp(280),w*.4f)*ms.buttonScale,size=ms.titleSize>0?ms.titleSize:Math.min(34,Math.max(20,(w*.55f)/Math.max(1,title.length())/ui.dp(1)*1.7f));
         java.util.ArrayList<Object[]> b=new java.util.ArrayList<>();
         if(paused){b.add(new Object[]{Icons.PLAY,"Continue",H_CONTINUE});b.add(new Object[]{Icons.SAVE,"Save game",H_SAVE});
-            if(latest!=null)b.add(new Object[]{Icons.FOLDER,"Load game",H_LOAD});b.add(new Object[]{Icons.FLAG,"Restart level",H_NEW});}
-        else{if(latest!=null)b.add(new Object[]{Icons.PLAY,"Continue",H_CONTINUE_SAVE});b.add(new Object[]{Icons.FLAG,"New Game",H_NEW});
-            if(latest!=null)b.add(new Object[]{Icons.FOLDER,"Load game",H_LOAD});}
-        b.add(new Object[]{Icons.MORE,"Options",H_OPTIONS});b.add(new Object[]{Icons.ARROW_LEFT,playerMode?"Quit":"Exit to editor",H_EXIT});
-        float by=y+dp(36),bw=Math.min(dp(280),w*.4f),gap=dp(8),bh=Math.max(dp(34),Math.min(dp(50),(h-by-dp(48))/b.size()-gap));
-        for(int i=0;i<b.size();i++){Object[] o=b.get(i);menuButton(c,L,by,bw,bh,(Integer)o[0],(String)o[1],(Integer)o[2],i==0);by+=bh+gap;}
-        if(!paused&&latest!=null){ui.text(c,ui.ellipsize(latestLabel(latest),11,1,w-L-bw-dp(40)),L+bw+dp(14),y+dp(36)+bh*.5f+dp(4),11,0xc0e8ecf1,1,-1);}
+            if(latest!=null)b.add(new Object[]{Icons.FOLDER,ms.lLoad,H_LOAD});b.add(new Object[]{Icons.FLAG,"Restart level",H_NEW});}
+        else{if(latest!=null)b.add(new Object[]{Icons.PLAY,ms.lContinue,H_CONTINUE_SAVE});b.add(new Object[]{Icons.FLAG,ms.lNew,H_NEW});
+            if(latest!=null&&ms.showLoad)b.add(new Object[]{Icons.FOLDER,ms.lLoad,H_LOAD});}
+        if(ms.showOptions||paused)b.add(new Object[]{Icons.MORE,ms.lOptions,H_OPTIONS});b.add(new Object[]{Icons.ARROW_LEFT,ms.quitLabel(playerMode),H_EXIT});
+        float gap=dp(8)*ms.buttonScale,bh=Math.max(dp(34),Math.min(dp(50)*ms.buttonScale,(h*.6f)/b.size()-gap)),listH=b.size()*(bh+gap)-gap;
+        boolean sub=!ms.subtitle.trim().isEmpty()&&!paused;float titleBlock=dp(14)+(sub?dp(22):0);
+        // where things go
+        float L,y,by;int align;
+        switch(lay){
+            case 1:L=w*.5f-bw*.5f;align=0;y=Math.max(dp(48),(h-listH-titleBlock-dp(40))*.42f+size*ui.dp(1)*.4f);by=y+titleBlock+dp(28);break;
+            case 2:L=dp(36);align=-1;by=h-dp(52)-listH;y=Math.max(dp(48),by-titleBlock-dp(18));break;
+            case 3:L=w-dp(36)-bw;align=1;y=dp(56);by=y+titleBlock+dp(22);break;
+            default:L=dp(36);align=-1;y=dp(56);by=y+titleBlock+dp(22);
+        }
+        float tx=align==0?w*.5f:align==1?w-dp(36):L;int tc=ms.titleColor(th());
+        String shown=ui.ellipsize(title,size,2,w*(lay==1?.9f:.6f));
+        switch(ms.titleStyle){
+            case 0:ui.text(c,shown,tx+dp(2),y+dp(2),size,0xc0000000,2,align);break;
+            case 1:{float o=dp(1.4f);for(int k=0;k<8;k++){double an=k*Math.PI/4;ui.text(c,shown,tx+(float)Math.cos(an)*o,y+(float)Math.sin(an)*o,size,0xe0000000,2,align);}break;}
+            case 2:{p.setShadowLayer(dp(10),0,0,UiTheme.alpha(tc,.9f));ui.text(c,shown,tx,y,size,tc,2,align);p.clearShadowLayer();break;}
+            default:
+        }
+        ui.text(c,shown,tx,y,size,tc,2,align);
+        float lw=Math.min(w*.4f,dp(220)),ll=align==0?w*.5f-lw*.5f:align==1?tx-lw:L;ui.rect(c,ll,y+dp(12),ll+lw,y+dp(14),UiTheme.alpha(tc,.5f));
+        if(sub)ui.text(c,ui.ellipsize(ms.subtitle.trim(),13,1,w*.8f),tx,y+dp(34),13,0xd0e8ecf1,1,align);
+        for(int i=0;i<b.size();i++){Object[] o=b.get(i);menuButton(c,L,by,bw,bh,(Integer)o[0],(String)o[1],(Integer)o[2],i==0,ms.buttonStyle,align);by+=bh+gap;}
+        if(!paused&&latest!=null&&lay!=1){String lab=ui.ellipsize(latestLabel(latest),11,1,w-bw-dp(80));float lx=lay==3?L-dp(14):L+bw+dp(14);
+            ui.text(c,lab,lx,(lay==2?h-dp(52)-listH:by-(b.size())*(bh+gap))+bh*.5f+dp(4),11,0xc0e8ecf1,1,lay==3?1:-1);}
         // small credit, bottom-left
-        float ls=dp(22);ui.logo(c,L,h-dp(16)-ls,ls);
-        ui.textMid(c,"Powered by RPG Pocket Editor",L+ls+dp(8),h-dp(16)-ls*.5f,10.5f,0xb0e8ecf1,1,-1);
+        if(ms.credit||paused){float ls=dp(22),cl=lay==2?w-dp(36)-ls-ui.measure("Powered by RPG Pocket Editor",10.5f,1)-dp(8):dp(36);ui.logo(c,cl,h-dp(16)-ls,ls);
+            ui.textMid(c,"Powered by RPG Pocket Editor",cl+ls+dp(8),h-dp(16)-ls*.5f,10.5f,0xb0e8ecf1,1,-1);}
     }
     private static String latestLabel(GameSave.Info i){return i.className+" · level "+i.level+(i.mapName.isEmpty()?"":" · "+i.mapName);}
     private void drawSlots(Canvas c,float w,float h){
@@ -162,8 +206,13 @@ final class GameMenu {
     private UiTheme th(){return project.theme;}
     /** Accent that reads on the panel (dark accents are lifted on dark panels and vice versa). */
     private int acc(){UiTheme t=th();return t.lightPanel()?(UiTheme.luma(t.accent)>.55f?UiTheme.shade(t.accent,.5f):t.accent):(UiTheme.luma(t.accent)<.35f?0xffe8c070:t.accent);}
-    private void menuButton(Canvas c,float l,float t,float bw,float bh,int icon,String label,int id,boolean primary){
+    private void menuButton(Canvas c,float l,float t,float bw,float bh,int icon,String label,int id,boolean primary){menuButton(c,l,t,bw,bh,icon,label,id,primary,0,-1);}
+    private void menuButton(Canvas c,float l,float t,float bw,float bh,int icon,String label,int id,boolean primary,int style,int align){
         r.set(l,t,l+bw,t+bh);
+        if(style==1){th().rectButton(c,p,ui,r,icon,label,primary?UiTheme.BTN_PRIMARY:UiTheme.BTN_NORMAL,ui.dp);ui.hit(r,id);return;}
+        if(style==2){int fg=primary?acc():th().text;float fs=Math.min(20,bh/ui.dp(1)*.42f);
+            float x=align==0?r.centerX():align==1?r.right:r.left;ui.text(c,label,x+dp(1.5f),r.centerY()+fs*ui.dp(1)*.36f+dp(1.5f),fs,0xb0000000,2,align);
+            ui.text(c,label,x,r.centerY()+fs*ui.dp(1)*.36f,fs,fg,2,align);ui.hit(r,id);return;}
         ui.round(c,r.left,r.top+dp(3),r.right,r.bottom+dp(3),dp(10),0x70000000);
         th().panel(c,p,r.left,r.top,r.right,r.bottom,ui.dp,primary?1f:.88f,false);
         if(primary){p.setStyle(Paint.Style.FILL);p.setColor(UiTheme.alpha(th().accent,.16f));c.drawRect(r.left+dp(3),r.top+dp(3),r.right-dp(3),r.bottom-dp(3),p);}

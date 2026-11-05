@@ -63,6 +63,8 @@ final class Project {
     }
     /** UI style for the HUD, menus and dialogue boxes, from the UI Editor's Theme page. */
     UiTheme theme=new UiTheme();
+    /** Main menu and splash look (UI Editor → Main Menu). */
+    final MenuStyle menu=new MenuStyle();
     String loadWarning;
 
     /** The open project; opens the last one used, or creates a starter project. */
@@ -156,7 +158,7 @@ final class Project {
                 JSONArray rh=new JSONArray();for(Rpg.Shop sh:shops)rh.put(Rpg.toJson(sh));o.put("shops",rh);break;}
             case SEC_DIALOGUE:{JSONArray dl=new JSONArray();for(Dialogue.Def d:dialogues)dl.put(Dialogue.toJson(d));o.put("dialogues",dl);
                 JSONArray qd=new JSONArray();for(Dialogue.QuestDef q:quests)qd.put(Dialogue.toJson(q));o.put("quests",qd);break;}
-            case SEC_UI:o.put("hud",hud.toJson());o.put("theme",theme.toJson());break;
+            case SEC_UI:o.put("hud",hud.toJson());o.put("theme",theme.toJson());o.put("menu",menu.toJson());break;
             case SEC_AUDIO:{JSONArray sn=new JSONArray();for(SoundAsset sa:sounds)sn.put(sa.toJson());o.put("sounds",sn);
                 JSONArray mu=new JSONArray();for(Song m2:songs)mu.put(m2.toJson());o.put("songs",mu);
                 JSONObject ov=new JSONObject();for(java.util.Map.Entry<String,String> e:soundOverrides.entrySet())ov.put(e.getKey(),e.getValue());o.put("overrides",ov);
@@ -182,7 +184,7 @@ final class Project {
                 JSONArray dl=o.getJSONArray("dialogues");dialogues.clear();for(int i=0;i<dl.length();i++)dialogues.add(Dialogue.fromJson(dl.getJSONObject(i)));
                 JSONArray qd=o.getJSONArray("quests");quests.clear();for(int i=0;i<qd.length();i++)quests.add(Dialogue.questFrom(qd.getJSONObject(i)));break;}
             case SEC_UI:{HudLayout h=HudLayout.fromJson(o.getJSONObject("hud"));System.arraycopy(h.e,0,hud.e,0,HudLayout.N);hud.joyFixed=h.joyFixed;
-                theme.read(o.getJSONObject("theme"));break;}
+                theme.read(o.getJSONObject("theme"));menu.read(o.optJSONObject("menu"));break;}
             case SEC_AUDIO:{
                 JSONArray sn=o.getJSONArray("sounds");sounds.clear();for(int i=0;i<sn.length();i++)sounds.add(SoundAsset.fromJson(sn.getJSONObject(i)));
                 JSONArray mu=o.getJSONArray("songs");songs.clear();for(int i=0;i<mu.length();i++)songs.add(Song.fromJson(mu.getJSONObject(i)));
@@ -225,7 +227,7 @@ final class Project {
         JSONArray dl=new JSONArray();for(Dialogue.Def d:dialogues)dl.put(Dialogue.toJson(d));o.put("dialogues",dl);
         JSONArray qd=new JSONArray();for(Dialogue.QuestDef q:quests)qd.put(Dialogue.toJson(q));o.put("quests",qd);
         JSONArray pf=new JSONArray();for(Prefab x:prefabs)pf.put(x.toJson());o.put("prefabs",pf);
-        JSONObject ui=new JSONObject();ui.put("hud",hud.toJson());ui.put("theme",theme.toJson());o.put("ui",ui);
+        JSONObject ui=new JSONObject();ui.put("hud",hud.toJson());ui.put("theme",theme.toJson());ui.put("menu",menu.toJson());o.put("ui",ui);
         return o;
     }
     static Project fromJson(JSONObject o)throws Exception{
@@ -257,7 +259,7 @@ final class Project {
         JSONArray dl=o.optJSONArray("dialogues");if(dl!=null)for(int i=0;i<dl.length();i++){JSONObject j=dl.optJSONObject(i);if(j!=null)p.dialogues.add(Dialogue.fromJson(j));}
         JSONArray qd=o.optJSONArray("quests");if(qd!=null)for(int i=0;i<qd.length();i++){JSONObject j=qd.optJSONObject(i);if(j!=null)p.quests.add(Dialogue.questFrom(j));}
         JSONArray pf=o.optJSONArray("prefabs");if(pf!=null)for(int i=0;i<pf.length();i++){JSONObject j=pf.optJSONObject(i);if(j!=null)p.prefabs.add(Prefab.fromJson(j));}
-        JSONObject ui=o.optJSONObject("ui");if(ui!=null){p.hud=HudLayout.fromJson(ui.optJSONObject("hud"));JSONObject th=ui.optJSONObject("theme");if(th!=null)p.theme=UiTheme.fromJson(th);}
+        JSONObject ui=o.optJSONObject("ui");if(ui!=null){p.hud=HudLayout.fromJson(ui.optJSONObject("hud"));JSONObject th=ui.optJSONObject("theme");if(th!=null)p.theme=UiTheme.fromJson(th);p.menu.read(ui.optJSONObject("menu"));}
         if(!p.level.isConsistent())throw new IllegalStateException("inconsistent map");
         p.fixUp();return p;
     }

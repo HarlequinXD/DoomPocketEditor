@@ -15,7 +15,7 @@ import android.view.View;
  * opacity and visibility, nudge it a step at a time, or apply a ready-made layout. Saved in the project.
  */
 public class UiEditorView extends View {
-    interface Host extends UiHost {void exit();void saved();}
+    interface Host extends UiHost {void exit();void saved();default void pickImage(java.util.function.Consumer<android.graphics.Bitmap> done){}}
     private static final int H_HEAD=1,H_COLLAPSE=2,H_PRESETS=3,H_GRID=4,H_RESET_ALL=5,H_SAVE=6,H_EXIT=7,H_SHOW=8,H_JOYMODE=9,H_RESET_ONE=10,
             H_NUDGE=20,H_SIZE=30,H_ALPHA=31,H_TAB=40,H_LIST=100,H_BACK=101,H_TOPSAVE=102,H_GUNDO=103,H_GREDO=104;
     static final String[] TABS={"HUD & Controls","Theme","Main Menu","Screens"};
@@ -39,7 +39,7 @@ public class UiEditorView extends View {
     private final Paint dash=new Paint(Paint.ANTI_ALIAS_FLAG);
 
     UiEditorView(Context c,Project project,Host host){
-        super(c);this.project=project;this.host=host;ui=new Ui(c);p=ui.p;
+        super(c);this.project=project;this.host=host;ui=new Ui(c);p=ui.p;menuUi=new Ui(c);
         hud=new GameHud(ui,project.hud);
         world=new World(project,null);
         dash.setStyle(Paint.Style.STROKE);dash.setPathEffect(new DashPathEffect(new float[]{ui.dp(6),ui.dp(4)},0));
@@ -63,6 +63,7 @@ public class UiEditorView extends View {
         ui.clearHits();
         c.drawColor(Ui.BG);
         if(tab==1){drawThemeTab(c);drawTopBar(c);drawHint(c);return;}
+        if(tab==2){drawMenuTab(c);drawTopBar(c);drawHint(c);return;}
         if(tab!=0){drawTopBar(c);drawComingSoon(c);return;}
         c.save();c.translate(offX,offY);c.scale(scale,scale);c.clipRect(0,0,w,h);
         drawBackdrop(c);
@@ -226,6 +227,117 @@ public class UiEditorView extends View {
         float avail=ux-tl-dp(4),tw=Math.min(dp(150),avail/TABS.length);
         for(int i=0;i<TABS.length;i++){r.set(tl+i*tw,top,tl+(i+1)*tw-dp(5),top+bh);ui.button(c,r,TAB_ICONS[i],TABS[i],i==tab?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_TAB+i);}
     }
+    // ================================================================== side-panel rows (Main Menu and Screens tabs)
+    private static final int H_ROW=400;
+    private static final class Row {String label,value;Runnable tap;int kind;boolean on;int swatch;}   // kind: 0 value, 1 toggle, 2 heading, 3 button
+    private final java.util.ArrayList<Row> rows=new java.util.ArrayList<>();
+    private Row row(int kind,String label,String value,Runnable tap){Row r2=new Row();r2.kind=kind;r2.label=label;r2.value=value;r2.tap=tap;rows.add(r2);return r2;}
+    private void head(String t){row(2,t,null,null);}
+    private void val(String label,String value,Runnable tap){row(0,label,value,tap);}
+    private void tog(String label,boolean on,Runnable tap){row(1,label,null,tap).on=on;}
+    private void btn(String label,Runnable tap){row(3,label,null,tap);}
+    private void drawRows(Canvas c,String heading,String sub){
+        ui.rect(c,side.left,side.top,side.right,side.bottom,Ui.SURFACE);ui.vline(c,side.left,side.top,side.bottom,Ui.BORDER);
+        c.save();c.clipRect(side);
+        float l=side.left+dp(12),rr=side.right-dp(12),y=side.top+dp(12)-sideScroll;
+        ui.text(c,heading,l,y+dp(14),15,Ui.TEXT,1,-1);ui.text(c,ui.ellipsize(sub,10.5f,1,rr-l),l,y+dp(30),10.5f,Ui.TEXT_3);y+=dp(40);
+        for(int i=0;i<rows.size();i++){Row q=rows.get(i);
+            if(q.kind==2){ui.caption(c,q.label,l,y+dp(14),Ui.TEXT_3);y+=dp(22);continue;}
+            if(q.kind==3){r.set(l,y,rr,y+dp(36));ui.button(c,r,Icons.PLAY,q.label,Ui.PRIMARY);sideHit(r,H_ROW+i);y+=dp(42);continue;}
+            if(q.kind==1){r.set(l,y,rr,y+dp(38));ui.round(c,r,dp(7),Ui.SURFACE_2);ui.textMid(c,ui.ellipsize(q.label,12.5f,1,rr-l-dp(64)),l+dp(10),y+dp(19),12.5f,Ui.TEXT,1,-1);
+                float tw=dp(38),th=dp(22),tl=rr-dp(10)-tw,tt=y+dp(8);ui.round(c,tl,tt,tl+tw,tt+th,th*.5f,q.on?Ui.ACCENT:Ui.SURFACE_3);p.setColor(0xffffffff);c.drawCircle(q.on?tl+tw-th*.5f:tl+th*.5f,tt+th*.5f,th*.38f,p);
+                sideHit(r,H_ROW+i);y+=dp(44);continue;}
+            r.set(l,y,rr,y+dp(40));ui.round(c,r,dp(7),Ui.SURFACE_2);
+            ui.text(c,q.label,l+dp(10),y+dp(15),10.5f,Ui.TEXT_3,1,-1);
+            float vx=l+dp(10);if(q.swatch!=0){ui.round(c,vx,y+dp(22),vx+dp(14),y+dp(36),dp(3),q.swatch);vx+=dp(20);}
+            ui.text(c,ui.ellipsize(q.value==null||q.value.isEmpty()?"–":q.value,12.5f,1,rr-vx-dp(30)),vx,y+dp(33),12.5f,Ui.TEXT,1,-1);ui.icon(c,Icons.CHEVRON_DOWN,rr-dp(14),y+dp(20),13,Ui.TEXT_3);
+            sideHit(r,H_ROW+i);y+=dp(46);}
+        sideContent=y+sideScroll-side.top+dp(10);c.restore();
+        float max=Math.max(0,sideContent-side.height());if(sideScroll>max||sideScroll<0){sideScroll=Math.max(0,Math.min(max,sideScroll));invalidate();}
+    }
+    private void rowTap(int hid){int i=hid-H_ROW;if(i>=0&&i<rows.size()&&rows.get(i).tap!=null){rows.get(i).tap.run();changed();history.commit();invalidate();}}
+    private void text(String title,String hint,String cur,java.util.function.Consumer<String> set){if(host!=null)host.prompt(title,hint,cur,false,t->{set.accept(t.trim());changed();});}
+    private void pick(String title,String[] items,int cur,java.util.function.IntConsumer set){if(host!=null)host.choose(title,items,cur,k->{set.accept(k);changed();});}
+
+    // ================================================================== Main Menu page
+    private GameMenu menuPreview;private final Ui menuUi;private final Renderer menuRenderer=new Renderer();private long menuFrame;
+    private static final String[] SIZES={"Fit automatically","24","28","32","40","48","56"};
+    private static final String[] PCT={"0%","20%","40%","60%","80%","100%"};
+    private static final String[] MOVES={"Off","Slow","Normal","Fast"};
+    private static final float[] MOVE_V={0,.5f,1,2};
+    private static final String[] SCALES={"80%","100%","120%","140%"};
+    private static final float[] SCALE_V={.8f,1,1.2f,1.4f};
+    private static final String[] SECS={"1.5 seconds","2 seconds","2.8 seconds","4 seconds","6 seconds"};
+    private static final float[] SEC_V={1.5f,2f,2.8f,4f,6f};
+    private static int nearest(float[] arr,float v){int b=0;for(int i=1;i<arr.length;i++)if(Math.abs(arr[i]-v)<Math.abs(arr[b]-v))b=i;return b;}
+    private GameMenu menuPreview(){
+        if(menuPreview==null){menuPreview=new GameMenu(getContext(),menuUi,project,menuRenderer,new SoundFx(),new GameMenu.Listener(){
+            public void newGame(){hint("New Game starts the start map");}public void resume(){}public void exitToEditor(){}public void restart(){}
+            public boolean saveGame(String slot){return false;}public boolean loadGame(String slot){return false;}});menuPreview.preview();}
+        return menuPreview;
+    }
+    private void drawMenuTab(Canvas c){
+        float sideW=Math.min(dp(300),vw*.42f);side.set(vw-sideW,barH,vw,vh);
+        float aw=vw-sideW-dp(12),ah=vh-barH-dp(8);
+        scale=Math.min(aw/w,ah/h);offX=dp(6)+(aw-w*scale)*.5f;offY=barH+dp(4);
+        long now=System.nanoTime();float dt=menuFrame==0?0:Math.min(.05f,(now-menuFrame)*1e-9f);menuFrame=now;
+        GameMenu gm=menuPreview();
+        c.save();c.translate(offX,offY);c.scale(scale,scale);c.clipRect(0,0,w,h);
+        gm.draw(c,w,h,dt);
+        c.restore();
+        ui.outline(c,offX,offY,offX+w*scale,offY+h*scale,0,Ui.BORDER,dp(1));
+        r.set(offX,offY,offX+w*scale,offY+h*scale);ui.hit(r,H_MPREVIEW);
+        // settings
+        MenuStyle m=project.menu;rows.clear();
+        head("Title");
+        val("Title text",m.title.isEmpty()?project.name+" (game name)":m.title,()->text("Menu title","Empty uses the game's name",m.title,t->m.title=t));
+        val("Subtitle",m.subtitle,()->text("Subtitle","A line under the title, e.g. \"Chapter One\"",m.subtitle,t->m.subtitle=t));
+        val("Size",m.titleSize==0?"Fit automatically":m.titleSize+"",()->pick("Title size",SIZES,0,k->m.titleSize=k==0?0:Integer.parseInt(SIZES[k])));
+        val("Colour",MenuStyle.TITLE_COLOR_NAMES[m.titleColor],()->pick("Title colour",MenuStyle.TITLE_COLOR_NAMES,m.titleColor,k->m.titleColor=k));rows.get(rows.size()-1).swatch=m.titleColor(project.theme);
+        val("Effect",MenuStyle.TITLE_STYLES[m.titleStyle],()->pick("Title effect",MenuStyle.TITLE_STYLES,m.titleStyle,k->m.titleStyle=k));
+        tog("ALL CAPITALS",m.upper,()->m.upper=!m.upper);
+        head("Layout and buttons");
+        val("Layout",MenuStyle.LAYOUTS[m.layout],()->pick("Menu layout",MenuStyle.LAYOUTS,m.layout,k->m.layout=k));
+        val("Button style",MenuStyle.BUTTON_STYLES[m.buttonStyle],()->pick("Button style",MenuStyle.BUTTON_STYLES,m.buttonStyle,k->m.buttonStyle=k));
+        val("Button size",SCALES[nearest(SCALE_V,m.buttonScale)],()->pick("Button size",SCALES,nearest(SCALE_V,m.buttonScale),k->m.buttonScale=SCALE_V[k]));
+        val("New game button",m.lNew,()->text("New game button",null,m.lNew,t->m.lNew=t.isEmpty()?"New Game":t));
+        val("Continue button",m.lContinue,()->text("Continue button","Shown once there is a save",m.lContinue,t->m.lContinue=t.isEmpty()?"Continue":t));
+        val("Load button",m.lLoad,()->text("Load button",null,m.lLoad,t->m.lLoad=t.isEmpty()?"Load game":t));
+        val("Options button",m.lOptions,()->text("Options button",null,m.lOptions,t->m.lOptions=t.isEmpty()?"Options":t));
+        val("Quit button",m.quitLabel(false),()->text("Quit button","Empty: \"Exit to editor\" while testing, \"Quit\" in the shared game",m.lQuit,t->m.lQuit=t));
+        tog("Show Load game",m.showLoad,()->m.showLoad=!m.showLoad);
+        tog("Show Options",m.showOptions,()->m.showOptions=!m.showOptions);
+        head("Background");
+        val("Background",MenuStyle.BACKGROUNDS[m.background],()->pick("Background",MenuStyle.BACKGROUNDS,m.background,k->{m.background=k;if(k==MenuStyle.BG_PICTURE&&m.picture.isEmpty())pickPicture(false);}));
+        if(m.background==MenuStyle.BG_PICTURE)val("Picture",m.picture.isEmpty()?"None · tap to choose":"Chosen · tap to change or remove",()->{if(m.picture.isEmpty())pickPicture(false);else pick("Background picture",new String[]{"Choose another picture…","Remove the picture"},-1,k->{if(k==0)pickPicture(false);else m.picture="";});});
+        if(m.background==MenuStyle.BG_GRADIENT){val("Gradient",MenuStyle.GRADIENTS[m.gradient],()->pick("Gradient",MenuStyle.GRADIENTS,m.gradient,k->m.gradient=k));rows.get(rows.size()-1).swatch=MenuStyle.GRADIENT_COLS[m.gradient][1];}
+        if(m.background==MenuStyle.BG_PAN||m.background==MenuStyle.BG_PICTURE)val("Movement",MOVES[nearest(MOVE_V,m.pan)],()->pick("Background movement",MOVES,nearest(MOVE_V,m.pan),k->m.pan=MOVE_V[k]));
+        val("Darkening behind the menu",PCT[Math.round(m.dim*5)],()->pick("Darkening",PCT,Math.round(m.dim*5),k->m.dim=k/5f));
+        head("Music");
+        String mus=m.music.equals("none")?"No music":m.music.isEmpty()?"Start map's music":project.songLabel(m.music);
+        val("Menu music",mus,this::pickMenuMusic);
+        head("Splash screens");
+        val("Studio name",m.studio.isEmpty()?"None":m.studio,()->text("Studio name","Shown as \"<name> presents\" before the game",m.studio,t->m.studio=t));
+        val("Studio logo",m.studioPic.isEmpty()?"None · tap to choose":"Chosen · tap to change or remove",()->{if(m.studioPic.isEmpty())pickPicture(true);else pick("Studio logo",new String[]{"Choose another picture…","Remove the logo"},-1,k->{if(k==0)pickPicture(true);else m.studioPic="";});});
+        tog("\"Powered by RPG Pocket Editor\" splash",m.splash,()->m.splash=!m.splash);
+        tog("Credit in the menu corner",m.credit,()->m.credit=!m.credit);
+        val("Each splash lasts",SECS[nearest(SEC_V,m.splashSeconds)],()->pick("Splash length",SECS,nearest(SEC_V,m.splashSeconds),k->m.splashSeconds=SEC_V[k]));
+        btn("Preview the splash",()->{menuPreview().previewSplash();});
+        drawRows(c,"Main Menu","Title, background, buttons, music and splash");
+        postInvalidateOnAnimation();
+    }
+    private static final int H_MPREVIEW=398;
+    private void pickPicture(boolean logo){
+        if(host==null)return;hint(logo?"Pick a logo picture (PNG keeps transparency)":"Pick a background picture");
+        host.pickImage(b->{String enc=MenuStyle.encode(b,logo?512:1280,logo);if(logo)project.menu.studioPic=enc;else{project.menu.picture=enc;project.menu.background=MenuStyle.BG_PICTURE;}changed();
+            hint(logo?"Studio logo set · preview the splash to see it":"Background picture set");});
+    }
+    private void pickMenuMusic(){
+        MenuStyle m=project.menu;String[] items=new String[project.songs.size()+2];items[0]="Start map's music";items[1]="No music";int cur=m.music.equals("none")?1:0;
+        for(int i=0;i<project.songs.size();i++){items[i+2]=project.songs.get(i).name;if(project.songs.get(i).id.equals(m.music))cur=i+2;}
+        pick("Menu music",items,cur,k->m.music=k==0?"":k==1?"none":project.songs.get(k-2).id);
+        if(project.songs.isEmpty())hint("Add songs in the Sound editor to pick one here");
+    }
     private void drawComingSoon(Canvas c){
         String[][] info={{},
             {},
@@ -308,6 +420,7 @@ public class UiEditorView extends View {
         int a=e.getActionMasked();float x=e.getX(),y=e.getY();
         if(a==MotionEvent.ACTION_DOWN){
             downX=x;downY=y;lastY=y;moved=false;mode=0;downHit=-1;
+            if((tab==2||tab==3)&&y>=barH&&x>=side.left){downHit=ui.hitAt(x,y);mode=8;return true;}
             if(tab==1&&y>=barH&&x>=side.left){downHit=ui.hitAt(x,y);mode=downHit==H_TEXTURE?7:6;if(mode==7)setTexture(x);return true;}
             if(y<barH||tab!=0){downHit=ui.hitAt(x,y);mode=5;return true;}
             if(panel.contains(x,y)){
@@ -330,11 +443,12 @@ public class UiEditorView extends View {
                 L().place(sel,cx,cy,w,h,ui.dp);if(wasFloating)hint("Joystick switched to a fixed position");}
             else if(mode==2){panelX=x-grabX;panelY=y-grabY;}
             else if(mode==3||mode==4)setSlider(mode,x);
-            else if(mode==6&&moved){sideScroll-=y-lastY;}
+            else if((mode==6||mode==8)&&moved){sideScroll-=y-lastY;}
             else if(mode==7)setTexture(x);
             lastY=y;invalidate();return true;
         }
         if(a==MotionEvent.ACTION_UP){
+            if(mode==8&&!moved){int hid=ui.hitAt(x,y);if(hid==downHit)rowTap(hid);}
             if((mode==5||mode==6)&&!moved){int hid=ui.hitAt(x,y);if(hid==downHit){if(mode==6)themeTap(hid);else tap(hid);}}
             if(mode==7)changed();
             if(mode==1||mode==3||mode==4)changed();
@@ -358,10 +472,11 @@ public class UiEditorView extends View {
     private void changed(){project.save(getContext());}
     private void tap(int hid){
         HudLayout.Elem el=sel>=0?L().e[sel]:null;
-        if(hid>=H_TAB&&hid<H_TAB+TABS.length){tab=hid-H_TAB;sel=-1;return;}
+        if(hid>=H_TAB&&hid<H_TAB+TABS.length){tab=hid-H_TAB;sel=-1;sideScroll=0;if(tab==2&&menuPreview!=null)menuPreview.preview();return;}
         switch(hid){
             case H_BACK:if(host!=null)host.exit();return;
             case H_TOPSAVE:if(host!=null)host.saved();return;
+            case H_MPREVIEW:if(menuPreview!=null&&menuPreview.state==GameMenu.SPLASH)menuPreview.preview();return;
             case H_GUNDO:case H_GREDO:undoRedo(hid==H_GUNDO);return;
             case H_COLLAPSE:collapsed=!collapsed;return;
             case H_GRID:grid=!grid;hint(grid?"Grid on · controls snap to it":"Grid off · free placement");return;
