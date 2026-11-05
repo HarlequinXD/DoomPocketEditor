@@ -104,7 +104,7 @@ public class EditorView extends View {
 
     EditorView(Context ctx){super(ctx);
         ui=new Ui(ctx);p=ui.p;pixelPaint.setFilterBitmap(false);
-        project=Project.get(ctx);level=project.level;sectorEditor=new SectorEditor(level);entityUndo.reset();
+        project=Project.get(ctx);level=project.level;entityUndo=new Undo(()->project.section(Project.SEC_ENTITIES),t->project.restoreSection(Project.SEC_ENTITIES,t));sectorEditor=new SectorEditor(level);entityUndo.reset();
         if(project.loadWarning!=null){message=project.loadWarning;messageUntil=System.currentTimeMillis()+5000;}
         cursorX=Math.round(level.playerX);cursorY=Math.round(level.playerY);viewX=cursorX;viewY=cursorY;
         setFocusable(true);
@@ -112,7 +112,7 @@ public class EditorView extends View {
     boolean exitPlay(){if(mode!=PLAY)return false;changeMode(returnMode);return true;}
     void onPause(){sfx.stop();flushSave();setKeepScreenOn(false);}
     /** Undo for entity types and placed entities on this map; sector shapes use the SectorEditor's own history. */
-    final Undo entityUndo=new Undo(()->this.project==null?null:this.project.section(Project.SEC_ENTITIES),t->this.project.restoreSection(Project.SEC_ENTITIES,t));
+    private Undo entityUndo;
     private void entityUndoRedo(boolean back){
         if(back?entityUndo.undo():entityUndo.redo()){
             if(project.def(selDef)==null)selDef=project.defs.size()>1?project.defs.get(1).id:project.defs.get(0).id;
