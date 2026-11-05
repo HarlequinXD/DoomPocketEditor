@@ -70,6 +70,16 @@ final class World {
     /** Re-centres the camera after the player was moved (loading a save). */
     void syncView(){viewZ=player.z+EYE;}
     /** Map being played, and a map change requested by an exit or the Go To Map action (applied by the screen). */
+    /** Smoke, embers and sparkles from entity emitters and the Emit Particles action. */
+    final Atmosphere.Particles particles=new Atmosphere.Particles();
+    /** Map atmosphere, changeable by FSM actions for this visit. */
+    int fog,tint,weather;
+    private void tickParticles(float dt){
+        particles.update(dt);
+        for(Actor a:actors){if(a.removed||a.def==null||a.def.particles<=0||!a.visible)continue;
+            if(Math.hypot(a.x-player.x,a.y-player.y)>22)continue;
+            a.emitAcc+=dt*Atmosphere.rate(a.def.particles);while(a.emitAcc>=1){a.emitAcc-=1;particles.emit(a.def.particles,a.x,a.y,a.z+Atmosphere.emitHeight(a.def.particles,a),1);}}
+    }
     /** Testing cheat from the debug panel. */
     boolean godMode;
     int mapNum;int pendingMap=-1;String pendingArrival="";
@@ -114,6 +124,7 @@ final class World {
             // keep the music going across a map change when both maps use the same song
             if(from==null||!song.equals(sfx.musicTag)||!sfx.musicPlaying()){playMusic(song,true,0);sfx.musicTag=song;}}
         level=live?p.level:gm.level.copy();
+        fog=gm.fog;tint=gm.tint;weather=gm.weather;
         lines=PortalTopology.build(level);geoSig=Renderer.signature(level);
         doorOpen=new float[level.sectors.size()];secretFound=new boolean[level.sectors.size()];
         for(int i=0;i<level.sectors.size();i++){Level.Sector s=level.sectors.get(i);
@@ -213,6 +224,7 @@ final class World {
         for(int i=floaters.size()-1;i>=0;i--){Floater f=floaters.get(i);f.t+=dt;f.z+=dt*.45f;if(f.t>1.1f)floaters.remove(i);}
         if(paused||dialogue!=null){input.endFrame();return;}
         if(session!=null)session.playTime+=dt;
+        tickParticles(dt);
         tickBlood(dt);
         if(hero!=null){if(hero.wardTime>0)hero.wardTime-=dt;weapon=hero.weaponOrFists().fp;}
         for(int i=0;i<actors.size();i++){Actor a=actors.get(i);if(a.removed)continue;

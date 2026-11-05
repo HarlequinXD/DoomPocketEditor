@@ -26,7 +26,9 @@ final class Project {
      * A map (level) of the game. {@link #level} is always the map open in the editor; the others live in
      * {@link #maps}. Maps are referred to by a number that never changes, so exits survive renames and deletes.
      */
-    static final class GameMap {int num;String name;Level level;String music="";GameMap(int num,String name,Level level){this.num=num;this.name=name;this.level=level;}}
+    static final class GameMap {int num;String name;Level level;String music="";
+        /** Atmosphere (Atmosphere.FOGS, TINTS, WEATHERS). */
+        int fog,tint,weather;GameMap(int num,String name,Level level){this.num=num;this.name=name;this.level=level;}}
     final ArrayList<GameMap> maps=new ArrayList<>();
     int currentMap=1,startMap=1;
     GameMap map(int num){for(GameMap m:maps)if(m.num==num)return m;return null;}
@@ -146,7 +148,7 @@ final class Project {
         o.put("level",level.toJson());
         // Every map; the open one's level is the "level" entry above (older versions only know that one).
         JSONArray ma=new JSONArray();
-        for(GameMap gm:maps){JSONObject j=new JSONObject();j.put("num",gm.num);j.put("name",gm.name);j.put("music",gm.music);if(gm.num!=currentMap)j.put("level",gm.level.toJson());ma.put(j);}
+        for(GameMap gm:maps){JSONObject j=new JSONObject();j.put("num",gm.num);j.put("name",gm.name);j.put("music",gm.music);j.put("fog",gm.fog);j.put("tint",gm.tint);j.put("weather",gm.weather);if(gm.num!=currentMap)j.put("level",gm.level.toJson());ma.put(j);}
         o.put("maps",ma);o.put("currentMap",currentMap);o.put("startMap",startMap);
         JSONArray a=new JSONArray();for(EntityDef d:defs)a.put(d.toJson());o.put("entities",a);
         JSONArray s=new JSONArray();for(CustomSprite cs:sprites)s.put(cs.toJson());o.put("sprites",s);
@@ -184,7 +186,7 @@ final class Project {
         if(ma!=null){p.currentMap=o.optInt("currentMap",1);p.startMap=o.optInt("startMap",1);
             for(int i=0;i<ma.length();i++){JSONObject j=ma.optJSONObject(i);if(j==null)continue;int num=j.optInt("num",i+1);
                 Level l;if(num==p.currentMap)l=p.level;else{JSONObject lj=j.optJSONObject("level");if(lj==null)continue;try{l=Level.fromJson(lj);if(!l.isConsistent())l=Templates.empty();}catch(Exception ex){l=Templates.empty();}}
-                GameMap gm=new GameMap(num,j.optString("name","Map "+num),l);gm.music=j.optString("music","");p.maps.add(gm);}
+                GameMap gm=new GameMap(num,j.optString("name","Map "+num),l);gm.music=j.optString("music","");gm.fog=j.optInt("fog",0);gm.tint=j.optInt("tint",0);gm.weather=j.optInt("weather",0);p.maps.add(gm);}
             if(p.map(p.currentMap)==null){p.maps.add(0,new GameMap(p.nextMapNum(),"Map",p.level));p.currentMap=p.maps.get(0).num;}}
         p.ensureMaps();
         JSONObject rpg=o.optJSONObject("rpg");

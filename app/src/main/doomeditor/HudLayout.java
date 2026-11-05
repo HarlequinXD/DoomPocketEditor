@@ -8,11 +8,11 @@ import org.json.JSONObject;
  * phone still fits another. Elements that were never moved use the built-in default spot.
  */
 final class HudLayout {
-    static final int ATTACK=0,CAST=1,JUMP=2,USE=3,POTION=4,BAG=5,MENU=6,JOYSTICK=7,QUEST=8,MESSAGE=9,STATUS=10,N=11;
-    static final String[] NAMES={"Attack","Cast spell","Jump","Use","Potion","Bag","Pause menu","Joystick","Quest tracker","Messages","Status bar"};
-    static final String[] KEYS={"attack","cast","jump","use","potion","bag","menu","joystick","quest","message","status"};
+    static final int ATTACK=0,CAST=1,JUMP=2,USE=3,POTION=4,BAG=5,MENU=6,JOYSTICK=7,QUEST=8,MESSAGE=9,STATUS=10,MINIMAP=11,N=12;
+    static final String[] NAMES={"Attack","Cast spell","Jump","Use","Potion","Bag","Pause menu","Joystick","Quest tracker","Messages","Status bar","Minimap"};
+    static final String[] KEYS={"attack","cast","jump","use","potion","bag","menu","joystick","quest","message","status","minimap"};
     /** Base radius (dp) of round controls. */
-    static final float[] RADIUS={38,28,24,25,24,22,18,56,0,0,0};
+    static final float[] RADIUS={38,28,24,25,24,22,18,56,0,0,0,0};
     static final float BAR_H=52;
 
     static final class Elem {boolean custom;float ax,ay,ox,oy;float scale=1,alpha=1;boolean visible=true;}
@@ -26,8 +26,8 @@ final class HudLayout {
     float barH(float dp){return e[STATUS].visible?BAR_H*dp:0;}
     float radius(int id,float dp){return RADIUS[id]*dp*e[id].scale;}
     /** Size of box elements (quest tracker, messages) in px. */
-    float boxW(int id,float w,float dp){float s=e[id].scale;return id==QUEST?Math.min(dp*260,w*.32f)*s:dp*260*s;}
-    float boxH(int id,float dp){float s=e[id].scale;return id==QUEST?dp*44*s:dp*24*s;}
+    float boxW(int id,float w,float dp){float s=e[id].scale;if(id==MINIMAP)return dp*104*s;return id==QUEST?Math.min(dp*260,w*.32f)*s:dp*260*s;}
+    float boxH(int id,float dp){float s=e[id].scale;if(id==MINIMAP)return dp*104*s;return id==QUEST?dp*44*s:dp*24*s;}
 
     /** Centre of an element on a w x h screen. */
     void center(int id,float w,float h,float dp,boolean caster,float[] out){
@@ -45,6 +45,7 @@ final class HudLayout {
             case MENU:out[0]=14*dp+18*dp;out[1]=14*dp+18*dp;break;
             case JOYSTICK:out[0]=120*dp;out[1]=h-bar-110*dp;break;
             case QUEST:{float qw=boxW(QUEST,w,dp);out[0]=w-70*dp-qw*.5f;out[1]=14*dp+boxH(QUEST,dp)*.5f;break;}
+            case MINIMAP:{float m=boxW(MINIMAP,w,dp);out[0]=w-16*dp-m*.5f;out[1]=70*dp+m*.5f;break;}
             case MESSAGE:out[0]=62*dp+boxW(MESSAGE,w,dp)*.5f;out[1]=13*dp+boxH(MESSAGE,dp)*.5f;break;
             default:out[0]=w*.5f;out[1]=h-bar*.5f;
         }
@@ -75,7 +76,7 @@ final class HudLayout {
                 e[QUEST].scale=.85f;e[MESSAGE].scale=.9f;break;
             case 3:for(int i=0;i<=POTION;i++)e[i].scale=1.25f;for(int i:new int[]{CAST,JUMP,USE,POTION}){center(i,w,h,dp,caster,pt);center(ATTACK,w,h,dp,caster,tmp);
                     place(i,tmp[0]+(pt[0]-tmp[0])*1.28f,tmp[1]+(pt[1]-tmp[1])*1.28f,w,h,dp);}break;
-            case 4:e[QUEST].visible=false;for(int i=0;i<=MENU;i++)e[i].alpha=.65f;e[STATUS].alpha=.8f;break;
+            case 4:e[QUEST].visible=false;e[MINIMAP].visible=false;for(int i=0;i<=MENU;i++)e[i].alpha=.65f;e[STATUS].alpha=.8f;break;
             default:
         }
     }

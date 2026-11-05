@@ -29,7 +29,7 @@ final class GameHud {
      */
     void drawControls(Canvas c,float w,float h,Hero hero,boolean[] down,boolean editing){
         boolean caster=hero!=null&&!hero.spells.isEmpty();
-        java.util.Arrays.fill(drawn,false);
+        java.util.Arrays.fill(drawn,HudLayout.ATTACK,HudLayout.JOYSTICK+1,false);
         int pots=hero==null?0:hero.potionCount();
         for(int id=HudLayout.ATTACK;id<=HudLayout.MENU;id++){
             HudLayout.Elem el=layout.e[id];
@@ -118,7 +118,41 @@ final class GameHud {
             layout.center(HudLayout.MESSAGE,w,h,ui.dp,false,pt);float bw=layout.boxW(HudLayout.MESSAGE,w,ui.dp),bh=layout.boxH(HudLayout.MESSAGE,ui.dp),l=pt[0]-bw*.5f,t=pt[1]-bh*.5f,base=t+dp(17)*s;
             ui.text(c,msg,l+dp(1),base+dp(1),13*s,((int)(a*200)<<24),1,-1);ui.text(c,msg,l,base,13*s,((int)(a*255)<<24)|0xffe2e2,1,-1);
             rects[HudLayout.MESSAGE].set(l,t,l+bw,t+bh);drawn[HudLayout.MESSAGE]=true;}
+        drawMinimap(c,w,h,world,editing);
         if(world.centerTime>0&&!world.center.isEmpty()){float a=Math.min(1,world.centerTime*2);ui.text(c,world.center,w*.5f+dp(2),h*.36f+dp(2),26,((int)(a*200)<<24),2,0);ui.text(c,world.center,w*.5f,h*.36f,26,((int)(a*255)<<24)|0xffe8b0,2,0);}
+    }
+    private final android.graphics.Path mp=new android.graphics.Path(),clip=new android.graphics.Path();
+    /** Round minimap that turns with the player: sectors near the hero, doors, exits, monsters and NPCs. */
+    private void drawMinimap(Canvas c,float w,float h,World world,boolean editing){
+        HudLayout.Elem el=layout.e[HudLayout.MINIMAP];if(!el.visible&&!editing)return;
+        Level lv=world.level;Actor pl=world.player;if(lv==null||pl==null)return;
+        float a=el.visible?el.alpha:.25f;layout.center(HudLayout.MINIMAP,w,h,ui.dp,false,pt);
+        float size=layout.boxW(HudLayout.MINIMAP,w,ui.dp),rad=size*.5f,cx=pt[0],cy=pt[1];
+        float range=9f,sc=rad/range;float ang=world.camAngle();float cs=(float)Math.cos(ang),sn=(float)Math.sin(ang);
+        theme.panel(c,p,cx-rad-dp(3),cy-rad-dp(3),cx+rad+dp(3),cy+rad+dp(3),ui.dp,a*.9f,false);
+        int save=c.save();clip.reset();clip.addCircle(cx,cy,rad,android.graphics.Path.Direction.CW);c.clipPath(clip);
+        p.setStyle(Paint.Style.FILL);p.setColor(alpha(0xd0101216,a));c.drawCircle(cx,cy,rad,p);
+        int here=lv.sectorAt(pl.x,pl.y);
+        for(int si=0;si<lv.sectors.size();si++){Level.Sector s=lv.sectors.get(si);if(s.loop.size()<3)continue;
+            mp.reset();boolean near=false;
+            for(int k=0;k<s.loop.size();k++){Level.Vertex v=lv.vertices.get(s.loop.get(k));float dx=v.x-pl.x,dy=v.y-pl.y;
+                if(Math.abs(dx)<range*1.6f&&Math.abs(dy)<range*1.6f)near=true;
+                float vx=-dx*sn+dy*cs,vz=dx*cs+dy*sn;float sx=cx+vx*sc,sy=cy-vz*sc;if(k==0)mp.moveTo(sx,sy);else mp.lineTo(sx,sy);}
+            if(!near)continue;mp.close();
+            int fill=si==here?0xff3a4250:s.special==Level.SP_EXIT?0xff2f5a3a:s.special==Level.SP_DOOR?0xff5a4a2c:s.special==Level.SP_DAMAGE?0xff5a2a2a:0xff262b33;
+            p.setStyle(Paint.Style.FILL);p.setColor(alpha(fill,a));c.drawPath(mp,p);
+            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(1.2f));p.setColor(alpha(theme.lightPanel()?0xff8a8f99:0xff6c7480,a));c.drawPath(mp,p);}
+        p.setStyle(Paint.Style.FILL);
+        for(Actor ac:world.actors){if(ac==pl||ac.removed||!ac.alive||ac.def==null||ac.projectileType>=0||!ac.visible)continue;
+            int col=ac.def.kind==EntityDef.MONSTER?0xffe05050:ac.def.kind==EntityDef.NPC?0xff60d080:ac.def.kind==EntityDef.PICKUP?0xffe8c050:0;if(col==0)continue;
+            float dx=ac.x-pl.x,dy=ac.y-pl.y;float vx=-dx*sn+dy*cs,vz=dx*cs+dy*sn;
+            p.setColor(alpha(col,a));c.drawCircle(cx+vx*sc,cy-vz*sc,dp(ac.def.kind==EntityDef.PICKUP?1.8f:2.6f),p);}
+        c.restoreToCount(save);
+        // player arrow, always facing up
+        mp.reset();mp.moveTo(cx,cy-dp(7));mp.lineTo(cx+dp(5),cy+dp(5));mp.lineTo(cx,cy+dp(2.5f));mp.lineTo(cx-dp(5),cy+dp(5));mp.close();
+        p.setColor(alpha(theme.accent|0xff000000,a));c.drawPath(mp,p);
+        ui.text(c,"N",cx-cs*(rad-dp(8)),cy+sn*(rad-dp(8))+dp(4),10,alpha(theme.textDim(),a),2,0);
+        rects[HudLayout.MINIMAP].set(cx-rad,cy-rad,cx+rad,cy+rad);drawn[HudLayout.MINIMAP]=true;
     }
     private void bar(Canvas c,float l,float t,float r,float b,float frac,int col,String text,float a){
         ui.round(c,l,t,r,b,(b-t)*.5f,alpha(0xff0e1013,a));float f=Math.max(0,Math.min(1,frac));

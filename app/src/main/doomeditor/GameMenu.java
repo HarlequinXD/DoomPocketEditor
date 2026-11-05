@@ -105,7 +105,7 @@ final class GameMenu {
                     while(pool.size()<=k)pool.add(new Renderer.SpriteDraw());
                     int s=level.sectorAt(th.x,th.y);float z=s<0?0:level.sectors.get(s).floor;
                     sprites.add(pool.get(k++).set(th.x,th.y,z,project.spriteFor(d,d.sprite,Sprites.F_IDLE,time,0,World.angleDiff((float)Math.atan2(level.playerY-th.y,level.playerX-th.x),th.angle)),-1,false));}
-                renderer.highlight=-1;renderer.fx=null;
+                renderer.highlight=-1;renderer.fx=null;Atmosphere.prepareStatic(renderer,project,sm,level,time);
                 renderer.render(c,level,level.playerX,level.playerY,Math.min(sec.ceiling-.1f,sec.floor+World.EYE),ang,0,full,sprites);
             }
         }

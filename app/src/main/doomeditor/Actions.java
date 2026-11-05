@@ -334,6 +334,14 @@ final class Actions {
             int num;try{num=Integer.parseInt(c.s("map"));}catch(NumberFormatException e){num=-1;}c.w.goToMap(num,c.s("arriveAt"));return DONE;},"map:P=","arriveAt:E=");
         def("is_map","Current Map Is","World",Icons.VALIDATE,"Sends one event if the hero is on a particular map, another if not.",c->{
             int num;try{num=Integer.parseInt(c.s("map"));}catch(NumberFormatException e){num=-1;}c.send(c.w.mapNum==num?"yesEvent":"noEvent");return DONE;},"map:P=","yesEvent:e=","noEvent:e=");
+        def("set_atmosphere","Set Atmosphere","World",Icons.SUN_DIM,"Changes the fog, colour tint and weather of this map until the hero leaves it (e.g. a storm starts).",c->{
+            c.w.fog=c.choice("fog",Sprites.join(Atmosphere.FOGS));c.w.tint=c.choice("tint",Sprites.join(Atmosphere.TINTS));c.w.weather=c.choice("weather",Sprites.join(Atmosphere.WEATHERS));return DONE;},
+            "fog:c("+Sprites.join(Atmosphere.FOGS)+")=No fog","tint:c("+Sprites.join(Atmosphere.TINTS)+")=No tint","weather:c("+Sprites.join(Atmosphere.WEATHERS)+")=Clear");
+        def("emit_particles","Emit Particles","Feedback",Icons.SPARKLE,"A burst of particles at this entity: smoke, embers, sparkles, dust, drips, bubbles or holy light.",c->{
+            c.w.particles.emit(c.choice("type",Sprites.join(Atmosphere.PARTICLES)),c.self.x,c.self.y,c.self.z+c.self.height*.5f,Math.max(1,Math.min(200,c.i("count"))));return DONE;},
+            "type:c("+Sprites.join(Atmosphere.PARTICLES)+")=Magic sparkles","count:i=25");
+        def("set_light","Set Light","Entities",Icons.SUN,"Changes the light this entity gives off (e.g. light a brazier, blow out a candle).",c->{
+            if(c.self.def!=null){c.self.lightOverride=c.choice("light",Sprites.join(Atmosphere.GLOWS));}return DONE;},"light:c("+Sprites.join(Atmosphere.GLOWS)+")=Torch (warm, flickers)");
         def("exit_level","Exit Level","World",Icons.FLAG,"Finishes the level and shows the results screen.",c->{c.w.exitLevel();return DONE;});
         def("restart_level","Restart Level","World",Icons.RESET,"Restarts the level from the beginning.",c->{c.w.requestRestart();return DONE;});
         def("in_sector_event","In Sector","World",Icons.SECTORS,"Sends an event while this entity is inside a sector.",c->{if(c.w.sectorIndex(c.self)==c.i("sector"))c.send("event");return c.doneOrRun();},"sector:X=0","event:e=","everyFrame:b=true");

@@ -46,7 +46,7 @@ final class Renderer {
     private void setup(float vw,float vh){
         int h=200,w=Math.max(160,Math.min(560,Math.round(h*vw/Math.max(1,vh))));
         if(w==W&&h==H&&pix!=null)return;
-        W=w;H=h;pix=new int[W*H];zb=new float[W*H];ids=new int[W*H];bmp=Bitmap.createBitmap(W,H,Bitmap.Config.ARGB_8888);skyU=new int[W];
+        W=w;H=h;pix=new int[W*H];zb=new float[W*H];ids=new int[W*H];skyPix=new boolean[W*H];bmp=Bitmap.createBitmap(W,H,Bitmap.Config.ARGB_8888);skyU=new int[W];
     }
     static long signature(Level l){
         long h=l.vertices.size()*1000003L+l.sectors.size();
@@ -108,7 +108,7 @@ final class Renderer {
         horizon=H*.5f+(float)Math.tan(Math.max(-.6f,Math.min(.6f,pitch)))*focal;
         // background: sky if any sector uses it, else dark
         boolean sky=false;for(Level.Sector s:level.sectors)if(s.ceilingMaterial==Textures.SKY){sky=true;break;}
-        Arrays.fill(zb,0f);Arrays.fill(ids,-1);
+        Arrays.fill(zb,0f);Arrays.fill(ids,-1);Arrays.fill(skyPix,false);
         if(sky)drawSky(angle);else Arrays.fill(pix,0xff0c0c10);
         // camera-space vertices
         int nv=level.vertices.size();if(vx.length<nv){vx=new float[nv];vz=new float[nv];}
@@ -142,6 +142,8 @@ final class Renderer {
         if(fx!=null&&!fx.splats.isEmpty())drawSplats(level);
         if(sprites!=null)for(SpriteDraw s:sprites)sprite(level,s);
         if(fx!=null&&!fx.drops.isEmpty())drawDrops(level);
+        if(particles!=null&&particles.n>0)drawParticles();
+        atmospherePass();
         if(highlight>=0)tintHighlight();
     }
     private int material(Level level,Level.LineDef l,int part,int fallback){
@@ -222,7 +224,7 @@ final class Renderer {
             float ox=xs+.5f-sx[0],oy=yc-sy[0];
             float iz=siz[0]+dIzdx*ox+dIzdy*oy,uz=suz[0]+dUdx*ox+dUdy*oy,vz=svz[0]+dVdx*ox+dVdy*oy;
             int o=y*W+xs,end=y*W+xe;
-            if(sky){for(;o<=end;o++){if(iz>zb[o]){zb[o]=iz;ids[o]=pid;}iz+=dIzdx;}continue;}
+            if(sky){for(;o<=end;o++){if(iz>zb[o]){zb[o]=iz;ids[o]=pid;skyPix[o]=true;}iz+=dIzdx;}continue;}
             for(;o<=end;o++){
                 if(iz>zb[o]){
                     float z=1f/iz;
@@ -261,6 +263,67 @@ final class Renderer {
                 }else pix[o]=lit|0xff000000;
                 zb[o]=iz;if(d.pickId>=0)ids[o]=d.pickId;
             }
+        }
+    }
+    // ------------------------------------------------------------------ atmosphere (Atmosphere.java)
+    private boolean[] skyPix=new boolean[0];
+    private static final int MAX_LIGHTS=10;
+    private final float[] lx=new float[MAX_LIGHTS],ly=new float[MAX_LIGHTS],lz=new float[MAX_LIGHTS],lr2=new float[MAX_LIGHTS],lcr=new float[MAX_LIGHTS],lcg=new float[MAX_LIGHTS],lcb=new float[MAX_LIGHTS];
+    private int lightCount;
+    private int fogR,fogG,fogB;private float fogStart,fogEnd,fogAmt;
+    private int tintR=255,tintG=255,tintB=255;private float tintAmt;
+    /** World-space particles drawn this frame (null for none). */
+    Atmosphere.Particles particles;
+    /** Adds a light for the next frame; the nearest lights to the camera are kept. */
+    void addLight(float x,float y,float z,float radius,float r,float g,float b){
+        float d=(x-lastCamX)*(x-lastCamX)+(y-lastCamY)*(y-lastCamY);if(d>(radius+24)*(radius+24))return;
+        int slot=lightCount;
+        if(lightCount>=MAX_LIGHTS){float worst=-1;slot=-1;for(int i=0;i<MAX_LIGHTS;i++){float di=(lx[i]-lastCamX)*(lx[i]-lastCamX)+(ly[i]-lastCamY)*(ly[i]-lastCamY);if(di>worst){worst=di;slot=i;}}if(worst<=d)return;}
+        else lightCount++;
+        lx[slot]=x;ly[slot]=y;lz[slot]=z;lr2[slot]=radius*radius;lcr[slot]=r;lcg[slot]=g;lcb[slot]=b;
+    }
+    void clearLights(){lightCount=0;}
+    /** Fog colour (0 = no fog), the distances where it starts and is full, and how thick it gets. */
+    void setFog(int color,float start,float end,float amount){if(color==0||amount<=0){fogAmt=0;return;}fogR=(color>>16)&255;fogG=(color>>8)&255;fogB=color&255;fogStart=start;fogEnd=Math.max(start+.5f,end);fogAmt=Math.min(1,amount);}
+    void setTint(int color,float amount){tintAmt=color==0?0:Math.max(0,Math.min(1,amount));tintR=(color>>16)&255;tintG=(color>>8)&255;tintB=color&255;}
+    /** Camera from the previous frame, used to cull far lights as they are added. */
+    private float lastCamX,lastCamY;
+    private void atmospherePass(){
+        lastCamX=camX;lastCamY=camY;
+        int nl=lightCount;lightCount=0;
+        if(nl==0&&fogAmt<=0&&tintAmt<=0)return;
+        float fs=fogStart,fe=fogEnd,fa=fogAmt,inv=1f/(fe-fs),ta=tintAmt;
+        float tr=1-ta+ta*tintR/255f,tg=1-ta+ta*tintG/255f,tb=1-ta+ta*tintB/255f;
+        float hw=W*.5f,invF=1f/focal;
+        for(int y=0;y<H;y++){
+            float ry=(horizon-(y+.5f))*invF;int o=y*W;
+            for(int x=0;x<W;x++,o++){
+                int c=pix[o];float R=(c>>16)&255,G=(c>>8)&255,B=c&255;
+                float iz=zb[o];boolean sky=iz<=0||skyPix[o];
+                if(!sky){
+                    float z=1f/iz;
+                    if(nl>0){
+                        float cx=(x+.5f-hw)*invF*z,wz=eye+ry*z,wx=camX+z*cs-cx*sn,wy=camY+z*sn+cx*cs;
+                        float ar=0,ag=0,ab=0;
+                        for(int k=0;k<nl;k++){float dx=wx-lx[k],dy=wy-ly[k],dz=wz-lz[k],d2=dx*dx+dy*dy+dz*dz;if(d2<lr2[k]){float f=1-d2/lr2[k];f*=f;ar+=lcr[k]*f;ag+=lcg[k]*f;ab+=lcb[k]*f;}}
+                        if(ar+ag+ab>0){R+=R*ar*1.6f+ar*30;G+=G*ag*1.6f+ag*30;B+=B*ab*1.6f+ab*30;}
+                    }
+                    if(fa>0&&z>fs){float f=Math.min(1,(z-fs)*inv)*fa;R+=(fogR-R)*f;G+=(fogG-G)*f;B+=(fogB-B)*f;}
+                }else if(fa>0){float f=fa*.6f;R+=(fogR-R)*f;G+=(fogG-G)*f;B+=(fogB-B)*f;}
+                if(ta>0){R*=tr;G*=tg;B*=tb;}
+                pix[o]=0xff000000|((int)Math.min(255,R)<<16)|((int)Math.min(255,G)<<8)|(int)Math.min(255,B);
+            }
+        }
+    }
+    private void drawParticles(){
+        Atmosphere.Particles ps=particles;
+        for(int i=0;i<ps.n;i++){
+            float dx=ps.x[i]-camX,dy=ps.y[i]-camY,cx=-dx*sn+dy*cs,cz=dx*cs+dy*sn;if(cz<NEAR*2)continue;
+            float sc=focal/cz;int sxp=(int)(W*.5f+cx*sc),syp=(int)(horizon-(ps.z[i]-eye)*sc);int rad=Math.max(0,(int)(ps.size[i]*sc*.5f));
+            float fade=Math.min(1,ps.life[i]/Math.max(.01f,ps.max[i])*2.2f);float iz=1f/cz;int col=ps.col[i];
+            for(int yy=syp-rad;yy<=syp+rad;yy++){if(yy<0||yy>=H)continue;for(int xx=sxp-rad;xx<=sxp+rad;xx++){if(xx<0||xx>=W)continue;int o=yy*W+xx;if(iz<=zb[o])continue;
+                int b=pix[o];float a=fade*(rad==0?.85f:.75f);
+                pix[o]=0xff000000|((int)(((col>>16)&255)*a+((b>>16)&255)*(1-a))<<16)|((int)(((col>>8)&255)*a+((b>>8)&255)*(1-a))<<8)|(int)((col&255)*a+(b&255)*(1-a));}}
         }
     }
     /** World whose blood droplets and splats are drawn this frame (null in the editor views). */

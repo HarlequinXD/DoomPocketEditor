@@ -236,7 +236,7 @@ public class EditorView extends View {
         java.util.ArrayList<String> items=new java.util.ArrayList<>();
         for(Project.GameMap gm:project.maps)items.add((gm.num==project.currentMap?"● ":"   ")+gm.name+(gm.num==project.startMap?"  (start map)":""));
         int base=project.maps.size();
-        String[] acts={"+ New map…","Duplicate this map","Rename this map","Music for this map…","Make this the start map","Play this map now","Delete this map…"};
+        String[] acts={"+ New map…","Duplicate this map","Rename this map","Music for this map…","Make this the start map","Play this map now","Delete this map…","Atmosphere for this map…"};
         for(String a:acts)items.add(a);
         host.choose("Maps · "+project.name,items.toArray(new String[0]),project.maps.indexOf(project.current()),k->{
             if(k<base){openMapLocal(project.maps.get(k).num);return;}
@@ -251,6 +251,10 @@ public class EditorView extends View {
                 case 3:{String[] songs=new String[project.songs.size()+1];songs[0]="Project level music";int ch=0;
                     for(int i=0;i<project.songs.size();i++){songs[i+1]=project.songs.get(i).name;if(project.songs.get(i).id.equals(cur.music))ch=i+1;}
                     host.choose("Music for "+cur.name,songs,ch,i->{cur.music=i==0?"":project.songs.get(i-1).id;autoSave();hint(i==0?"Uses the project's level music":"Music set");});break;}
+                case 7:host.choose("Atmosphere · "+cur.name,new String[]{"Fog: "+Atmosphere.FOGS[cur.fog],"Colour tint: "+Atmosphere.TINTS[cur.tint],"Weather: "+Atmosphere.WEATHERS[cur.weather]},0,a->{
+                    if(a==0)host.choose("Fog",Atmosphere.FOGS,cur.fog,v->{cur.fog=v;autoSave();invalidate();hint("Fog: "+Atmosphere.FOGS[v]);});
+                    else if(a==1)host.choose("Colour tint",Atmosphere.TINTS,cur.tint,v->{cur.tint=v;autoSave();invalidate();hint("Tint: "+Atmosphere.TINTS[v]);});
+                    else host.choose("Weather",Atmosphere.WEATHERS,cur.weather,v->{cur.weather=v;autoSave();hint("Weather: "+Atmosphere.WEATHERS[v]+" · shows in Play");});});break;
                 case 4:project.startMap=cur.num;autoSave();hint(cur.name+" is now where New Game starts");break;
                 case 5:playThisMap=cur.num;changeMode(PLAY);break;
                 case 6:if(project.maps.size()<=1){hint("A game needs at least one map");break;}
@@ -415,6 +419,7 @@ public class EditorView extends View {
         for(int i=0;i<level.things.size();i++){Level.Thing th=level.things.get(i);EntityDef d=project.def(th.def);if(d==null||d.kind==EntityDef.PLAYER)continue;
             homeSprites.add(sd(pool++).set(th.x,th.y,floorAtLevel(th.x,th.y),project.spriteFor(d,d.sprite,Sprites.F_IDLE,t,0,World.angleDiff((float)Math.atan2(level.playerY-th.y,level.playerX-th.x),th.angle)),-1,false));}
         renderer.highlight=-1;
+        Atmosphere.prepareStatic(renderer,project,project.current(),level,t);
         renderer.fx=null;renderer.render(c,level,level.playerX,level.playerY,Math.min(sec.ceiling-.1f,sec.floor+World.EYE),ang,0,rr,homeSprites);
         // soft vignette at the bottom for the label
         if(homeShade==null||homeShadeTop!=rr.bottom){homeShadeTop=rr.bottom;homeShade=new android.graphics.LinearGradient(0,rr.bottom-dp(60),0,rr.bottom,0x00000000,0xb0000000,android.graphics.Shader.TileMode.CLAMP);}
@@ -670,8 +675,9 @@ public class EditorView extends View {
     }
     private String[] propLabels(EntityDef d){
         if(d.kind==EntityDef.PLAYER)return new String[]{"Name","Type","Sprite","Health","Speed","Radius","Height","Solid","Shootable","Animations","Class","Starting level","Starting gold"};
-        return new String[]{"Name","Type","Sprite","Health","Speed","Radius","Height","Solid","Shootable","Animations"};}
-    private String propValue(EntityDef d,int i){switch(i){case 0:return d.name;case 1:return EntityDef.KIND_NAMES[d.kind];case 2:{CustomSprite cs=project.sprite(d.customSprite);return cs!=null?cs.name+" (custom)":Sprites.NAMES[Math.max(0,Math.min(Sprites.COUNT-1,d.sprite))];}
+        return new String[]{"Name","Type","Sprite","Health","Speed","Radius","Height","Solid","Shootable","Animations","Light","Light radius","Particles"};}
+    private String propValue(EntityDef d,int i){if(d.kind!=EntityDef.PLAYER&&i>=10)i+=3;switch(i){
+        case 13:return Atmosphere.GLOWS[d.glow].replaceAll(" \\(.*\\)","");case 14:return d.glowRadius>0?fmt(d.glowRadius):"Preset";case 15:return Atmosphere.PARTICLES[d.particles];case 0:return d.name;case 1:return EntityDef.KIND_NAMES[d.kind];case 2:{CustomSprite cs=project.sprite(d.customSprite);return cs!=null?cs.name+" (custom)":Sprites.NAMES[Math.max(0,Math.min(Sprites.COUNT-1,d.sprite))];}
         case 10:return Rpg.heroClass(d.heroClass).name;case 11:return String.valueOf(Math.max(1,Math.min(Rpg.MAX_LEVEL,d.level)));case 12:return d.startGold+" gp";
         case 3:return String.valueOf(d.health);case 4:return fmt(d.speed);case 5:return fmt(d.radius);case 6:return fmt(d.height);case 7:return d.solid?"Yes":"No";case 8:return d.shootable?"Yes":"No";default:{CustomSprite cs=project.sprite(d.customSprite);return cs==null?"Built-in poses":cs.clips.size()+" clips";}}}
     private void drawPropertyPanel(Canvas c,float x0,float l,float rr){
@@ -907,7 +913,11 @@ public class EditorView extends View {
         if(i==8){d.shootable=!d.shootable;changed(null);return;}
         if(i==9){openSprites(d.id);return;}
         if(host==null)return;
+        if(d.kind!=EntityDef.PLAYER&&i>=10)i+=3;
         switch(i){
+            case 13:host.choose("Light for "+d.name,Atmosphere.GLOWS,d.glow,k->{d.glow=k;changed(k==0?"Torches and braziers glow automatically":null);});break;
+            case 14:host.prompt("Light radius","0 = the preset's size",fmt(d.glowRadius),true,t->{try{d.glowRadius=Math.max(0,Math.min(20,Float.parseFloat(t)));changed(null);}catch(NumberFormatException ignored){}});break;
+            case 15:host.choose("Particles from "+d.name,Atmosphere.PARTICLES,d.particles,k->{d.particles=k;changed(null);});break;
             case 0:host.prompt("Entity name",null,d.name,false,t->{if(!t.trim().isEmpty()){d.name=t.trim();changed(null);}});break;
             case 1:if(d.kind==EntityDef.PLAYER){hint("The player type can't be changed");return;}
                 String[] kinds={"Monster","Pickup","Decoration","Trigger","NPC"};host.choose("Type",kinds,Math.max(0,d.kind-1),k->{d.kind=k+1;if(d.kind==EntityDef.MONSTER){d.countKill=true;d.shootable=true;}if(d.kind==EntityDef.PICKUP){d.countItem=true;d.solid=false;}changed(null);});break;
@@ -967,6 +977,7 @@ public class EditorView extends View {
         spriteList.clear();int pool=0;
         for(int i=0;i<level.things.size();i++){Level.Thing t=level.things.get(i);EntityDef d=project.def(t.def);if(d==null)continue;
             spriteList.add(sd(pool++).set(t.x,t.y,floorAtLevel(t.x,t.y),project.spriteFor(d,d.sprite,Sprites.F_IDLE,walker.time,0,World.angleDiff((float)Math.atan2(cam.y-t.y,cam.x-t.x),t.angle)),Renderer.id(Renderer.ID_SPRITE,i),false));}
+        Atmosphere.prepareStatic(renderer,project,project.current(),level,walker.time);
         renderer.fx=null;renderer.render(c,level,cam.x,cam.y,walker.viewZ,cam.angle,cam.pitch,view3d,spriteList);
         // crosshair
         float cx=view3d.centerX(),cy=view3d.centerY();p.setColor(0xccffffff);c.drawCircle(cx,cy,dp(2),p);
@@ -1089,7 +1100,7 @@ public class EditorView extends View {
         world.paused=true;world.input.clear();for(int i=0;i<buttonPointer.length;i++)buttonPointer[i]=-1;joyPointer=lookPointer=-1;joyVisible=false;moveX=moveY=0;
         menu().openPause();
     }
-    private float mapFade;private int playThisMap=-1;
+    private float mapFade;private int playThisMap=-1;private final Atmosphere.Weather weather=new Atmosphere.Weather();
     private void startPlay(){startPlay(project.startMap);}
     private void startPlay(int mapNum){bagOpen=false;mapFade=0;world=new World(project,sfx,mapNum,null,"");sfx.start();for(int i=0;i<buttonPointer.length;i++)buttonPointer[i]=-1;joyPointer=lookPointer=-1;joyVisible=false;}
     private void drawPlay(Canvas c,float dt){
@@ -1118,12 +1129,19 @@ public class EditorView extends View {
         for(World.Effect e:world.effects){int f=Math.min(2,(int)(e.t/e.life*3));spriteList.add(sd(pool++).set(e.x,e.y,e.z-.2f,Sprites.effect(e.type,f,true),-1,e.type!=Sprites.FX_BLOOD));}
         view3d.set(0,0,w,h);
         renderer.highlight=-1;
+        // atmosphere: map fog/tint, entity and projectile lights, particles
+        Atmosphere.apply(renderer,world.fog,world.tint);renderer.clearLights();
+        for(Actor a:world.actors){if(a.removed)continue;
+            if(a.projectileType>=0){renderer.addLight(a.x,a.y,a.z,3.5f,a.projectileType==2?.35f:1f,a.projectileType==2?.55f:.55f,a.projectileType==2?1f:.2f);continue;}
+            if(a.def==null||!a.visible||a.isPlayer)continue;float[] g=Atmosphere.glowFor(a.def,a.sprite,a.lightOverride);if(g!=null)Atmosphere.addLight(renderer,a.x,a.y,a.z+a.height*.8f,g,world.time,a.thingIndex*7+3);}
+        renderer.particles=world.particles;
         renderer.fx=world;renderer.renderScene(world.level,cx,cy,world.camZ(),world.camAngle(),world.camPitch(),w,h,spriteList);
         if(pl.alive&&!tp){float b=world.bob();int si=world.sectorIndex(pl);renderer.weapon(world.weapon,(float)Math.cos(world.bobPhase*Math.PI*.5f)*Math.min(1,(float)Math.hypot(pl.vx,pl.vy)/6f),b*8,world.weaponRaise,world.weaponFlash>0,si<0?160:world.level.sectors.get(si).light);}
         if(world.damageFlash>0)renderer.tint(0xffff2020,world.damageFlash*.6f);
         if(world.pickupFlash>0)renderer.tint(world.flashColor,world.pickupFlash*.35f);
         if(!pl.alive)renderer.tint(0xff800000,.35f);
         renderer.present(c,view3d);
+        if(world.weather>0)weather.draw(c,p,world.weather,w,h,Math.min(dt,.05f),world.camAngle(),ui.dp);
         if(mapFade>0){ui.rect(c,0,0,w,h,((int)(Math.min(1,mapFade)*255))<<24);mapFade-=dt*2.2f;}
         if(tp&&pl.alive){float mx=w*.5f,my=h*.5f;p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(1.5f));p.setColor(0xccffffff);
             c.drawCircle(mx,my,dp(6),p);p.setStyle(Paint.Style.FILL);c.drawCircle(mx,my,dp(1.5f),p);}

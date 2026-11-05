@@ -23,13 +23,15 @@ final class EntityDef {
     int ac=10,attackBonus=3,damageType=Rpg.SLASHING,xp=0;String hitDice="",damage="1d6";
     int[] abilities={10,10,10,10,10,10};
     FSMGraph fsm=new FSMGraph();
+    /** Atmosphere: light preset (Atmosphere.GLOWS, 0 = automatic), radius override (0 = preset) and particle emitter (Atmosphere.PARTICLES). */
+    int glow=Atmosphere.G_AUTO;float glowRadius;int particles;
     /** Sets creature stats in one go (used by the default content). */
     EntityDef stats(int ac,String hitDice,int attackBonus,String damage,int damageType,int xp){this.ac=ac;this.hitDice=hitDice;this.attackBonus=attackBonus;this.damage=damage;this.damageType=damageType;this.xp=xp;return this;}
     EntityDef scores(int... a){for(int i=0;i<6&&i<a.length;i++)abilities[i]=a[i];return this;}
 
     EntityDef(String id,String name,int kind,int sprite){this.id=id;this.name=name;this.kind=kind;this.sprite=sprite;}
     EntityDef copy(String newId,String newName){
-        EntityDef d=new EntityDef(newId,newName,kind,sprite);d.health=health;d.radius=radius;d.height=height;d.speed=speed;d.solid=solid;d.shootable=shootable;d.countKill=countKill;d.countItem=countItem;d.heroClass=heroClass;d.level=level;d.startGold=startGold;d.customAbilities=customAbilities;d.ac=ac;d.hitDice=hitDice;d.attackBonus=attackBonus;d.damage=damage;d.damageType=damageType;d.xp=xp;d.abilities=abilities.clone();d.customSprite=customSprite;d.fsm=fsm.copy();return d;
+        EntityDef d=new EntityDef(newId,newName,kind,sprite);d.health=health;d.radius=radius;d.height=height;d.speed=speed;d.solid=solid;d.shootable=shootable;d.countKill=countKill;d.countItem=countItem;d.heroClass=heroClass;d.level=level;d.startGold=startGold;d.customAbilities=customAbilities;d.ac=ac;d.hitDice=hitDice;d.attackBonus=attackBonus;d.damage=damage;d.damageType=damageType;d.xp=xp;d.abilities=abilities.clone();d.customSprite=customSprite;d.fsm=fsm.copy();d.glow=glow;d.glowRadius=glowRadius;d.particles=particles;return d;
     }
     JSONObject toJson()throws Exception{
         JSONObject o=new JSONObject();o.put("id",id);o.put("name",name);o.put("kind",kind);o.put("sprite",sprite);o.put("health",health);
@@ -37,6 +39,7 @@ final class EntityDef {
         JSONObject r=new JSONObject();r.put("class",heroClass);r.put("level",level);r.put("gold",startGold);r.put("customAbilities",customAbilities);
         r.put("ac",ac);r.put("hitDice",hitDice);r.put("attack",attackBonus);r.put("damage",damage);r.put("damageType",damageType);r.put("xp",xp);
         org.json.JSONArray ab=new org.json.JSONArray();for(int v:abilities)ab.put(v);r.put("abilities",ab);o.put("rpg",r);
+        o.put("glow",glow);o.put("glowRadius",(double)glowRadius);o.put("particles",particles);
         o.put("fsm",fsm.toJson());return o;
     }
     static EntityDef fromJson(JSONObject o){
@@ -48,6 +51,7 @@ final class EntityDef {
             d.ac=r.optInt("ac",10);d.hitDice=r.optString("hitDice","");d.attackBonus=r.optInt("attack",3);d.damage=r.optString("damage","1d6");d.damageType=r.optInt("damageType",0);d.xp=r.optInt("xp",0);
             org.json.JSONArray ab=r.optJSONArray("abilities");if(ab!=null)for(int i=0;i<6&&i<ab.length();i++)d.abilities[i]=ab.optInt(i,10);}
         else if(d.kind==MONSTER){d.xp=Math.max(10,d.health);d.ac=11;d.attackBonus=3;}   // older projects: give monsters sensible defaults
+        d.glow=Math.max(0,Math.min(Atmosphere.GLOWS.length-1,o.optInt("glow",Atmosphere.G_AUTO)));d.glowRadius=(float)o.optDouble("glowRadius",0);d.particles=Math.max(0,Math.min(Atmosphere.PARTICLES.length-1,o.optInt("particles",0)));
         JSONObject f=o.optJSONObject("fsm");if(f!=null)d.fsm=FSMGraph.fromJson(f);
         return d;
     }

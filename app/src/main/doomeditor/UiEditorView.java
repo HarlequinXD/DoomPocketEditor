@@ -90,7 +90,7 @@ public class UiEditorView extends View {
             if(backdrop!=null)backdrop.recycle();backdrop=Bitmap.createBitmap(Math.max(1,W),Math.max(1,H),Bitmap.Config.ARGB_8888);bw=W;bh=H;
             Canvas bc=new Canvas(backdrop);Level level=project.level;int si=level.sectorAt(level.playerX,level.playerY);
             if(si<0)bc.drawColor(0xff1a1e23);
-            else{Level.Sector sec=level.sectors.get(si);renderer.highlight=-1;renderer.fx=null;
+            else{Level.Sector sec=level.sectors.get(si);renderer.highlight=-1;renderer.fx=null;Atmosphere.prepareStatic(renderer,project,project.current(),level,0);
                 renderer.render(bc,level,level.playerX,level.playerY,Math.min(sec.ceiling-.1f,sec.floor+World.EYE),level.facing,0,new RectF(0,0,W,H),new java.util.ArrayList<Renderer.SpriteDraw>());}
             bc.drawColor(0x40000000);
         }
@@ -340,7 +340,7 @@ public class UiEditorView extends View {
     private boolean isCaster(){return world.hero!=null&&!world.hero.spells.isEmpty();}
     /** Topmost element under a point: buttons, joystick, then quest/messages, then the status bar. */
     private int elementAt(float x,float y){
-        int[] order={HudLayout.MENU,HudLayout.BAG,HudLayout.ATTACK,HudLayout.CAST,HudLayout.JUMP,HudLayout.USE,HudLayout.POTION,HudLayout.JOYSTICK,HudLayout.QUEST,HudLayout.MESSAGE,HudLayout.STATUS};
+        int[] order={HudLayout.MENU,HudLayout.BAG,HudLayout.ATTACK,HudLayout.CAST,HudLayout.JUMP,HudLayout.USE,HudLayout.POTION,HudLayout.JOYSTICK,HudLayout.QUEST,HudLayout.MESSAGE,HudLayout.MINIMAP,HudLayout.STATUS};
         for(int id:order){RectF q=hud.rects[id];if((hud.drawn[id]||id==HudLayout.JOYSTICK)&&q.contains(x,y))return id;}
         return -1;
     }

@@ -15,6 +15,9 @@ final class Actor {
     FsmRuntime fsm;
     /** Index of the placed thing this actor came from (-1 for the player, projectiles and spawned actors). */
     int thingIndex=-1;
+    float emitAcc;
+    /** Light preset set by the Set Light action (-1 = the entity type's). */
+    int lightOverride=-1;
     // Projectiles
     int projectileType=-1;Actor owner;int dmgMin,dmgMax;
     int maxHealth;
