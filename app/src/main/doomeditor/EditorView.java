@@ -674,7 +674,7 @@ public class EditorView extends View {
         if(maxScroll>0){float bar=(bottom-top)*(bottom-top)/(bottom-top+maxScroll);float by=top+(bottom-top-bar)*defScroll/maxScroll;ui.round(c,pw-dp(5),by,pw-dp(2),by+bar,dp(2),0x33ffffff);}
     }
     private String[] propLabels(EntityDef d){
-        if(d.kind==EntityDef.PLAYER)return new String[]{"Name","Type","Sprite","Health","Speed","Radius","Height","Solid","Shootable","Animations","Class","Starting level","Starting gold"};
+        if(d.kind==EntityDef.PLAYER)return new String[]{"Name","Type","Sprite","Health","Speed","Radius","Height","Solid","Shootable","Animations","Class","Starting level","Starting gold","Light","Light radius","Particles"};
         return new String[]{"Name","Type","Sprite","Health","Speed","Radius","Height","Solid","Shootable","Animations","Light","Light radius","Particles"};}
     private String propValue(EntityDef d,int i){if(d.kind!=EntityDef.PLAYER&&i>=10)i+=3;switch(i){
         case 13:return Atmosphere.GLOWS[d.glow].replaceAll(" \\(.*\\)","");case 14:return d.glowRadius>0?fmt(d.glowRadius):"Preset";case 15:return Atmosphere.PARTICLES[d.particles];case 0:return d.name;case 1:return EntityDef.KIND_NAMES[d.kind];case 2:{CustomSprite cs=project.sprite(d.customSprite);return cs!=null?cs.name+" (custom)":Sprites.NAMES[Math.max(0,Math.min(Sprites.COUNT-1,d.sprite))];}
@@ -1133,7 +1133,7 @@ public class EditorView extends View {
         Atmosphere.apply(renderer,world.fog,world.tint);renderer.clearLights();
         for(Actor a:world.actors){if(a.removed)continue;
             if(a.projectileType>=0){renderer.addLight(a.x,a.y,a.z,3.5f,a.projectileType==2?.35f:1f,a.projectileType==2?.55f:.55f,a.projectileType==2?1f:.2f);continue;}
-            if(a.def==null||!a.visible||a.isPlayer)continue;float[] g=Atmosphere.glowFor(a.def,a.sprite,a.lightOverride);if(g!=null)Atmosphere.addLight(renderer,a.x,a.y,a.z+a.height*.8f,g,world.time,a.thingIndex*7+3);}
+            if(a.def==null||(!a.visible&&!a.isPlayer))continue;float[] g=Atmosphere.glowFor(a.def,a.sprite,a.lightOverride);if(g!=null)Atmosphere.addLight(renderer,a.x,a.y,a.z+a.height*.8f,g,world.time,a.thingIndex*7+3);}
         renderer.particles=world.particles;
         renderer.fx=world;renderer.renderScene(world.level,cx,cy,world.camZ(),world.camAngle(),world.camPitch(),w,h,spriteList);
         if(pl.alive&&!tp){float b=world.bob();int si=world.sectorIndex(pl);renderer.weapon(world.weapon,(float)Math.cos(world.bobPhase*Math.PI*.5f)*Math.min(1,(float)Math.hypot(pl.vx,pl.vy)/6f),b*8,world.weaponRaise,world.weaponFlash>0,si<0?160:world.level.sectors.get(si).light);}

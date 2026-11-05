@@ -76,7 +76,7 @@ final class World {
     int fog,tint,weather;
     private void tickParticles(float dt){
         particles.update(dt);
-        for(Actor a:actors){if(a.removed||a.def==null||a.def.particles<=0||!a.visible)continue;
+        for(Actor a:actors){if(a.removed||a.def==null||a.def.particles<=0||(!a.visible&&!a.isPlayer))continue;
             if(Math.hypot(a.x-player.x,a.y-player.y)>22)continue;
             a.emitAcc+=dt*Atmosphere.rate(a.def.particles);while(a.emitAcc>=1){a.emitAcc-=1;particles.emit(a.def.particles,a.x,a.y,a.z+Atmosphere.emitHeight(a.def.particles,a),1);}}
     }
