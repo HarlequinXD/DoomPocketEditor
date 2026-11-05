@@ -10,7 +10,7 @@ import java.util.LinkedHashMap;
  */
 final class Actions {
     private Actions(){}
-    static final int T_FLOAT=0,T_INT=1,T_BOOL=2,T_TEXT=3,T_EVENT=4,T_VAR=5,T_CHOICE=6,T_ENTITY=7,T_MATERIAL=8,T_SECTOR=9,T_CLIP=10,T_SOUND=11,T_SONG=12,T_MAP=13;
+    static final int T_FLOAT=0,T_INT=1,T_BOOL=2,T_TEXT=3,T_EVENT=4,T_VAR=5,T_CHOICE=6,T_ENTITY=7,T_MATERIAL=8,T_SECTOR=9,T_CLIP=10,T_SOUND=11,T_SONG=12,T_MAP=13,T_ITEM=14,T_SPELL=15,T_CLASS=16,T_LOOT=17,T_SHOP=18;
     static final int DONE=0,RUNNING=1;
     static final String CAM_STYLES="Orbit|Shoulder|Chase";
     static final String[] CATEGORIES={"Flow","Animation","Variables","Input","Combat","Character","Inventory","Dialogue","Quests","Health","Movement","Camera","AI","World","Entities","Feedback","Audio"};
@@ -47,7 +47,7 @@ final class Actions {
         int colon=spec.indexOf(':'),eq=spec.indexOf('=',colon);
         String key=spec.substring(0,colon),type=spec.substring(colon+1,eq<0?spec.length():eq),def=eq<0?"":spec.substring(eq+1);
         if(type.startsWith("c(")){String[] opts=type.substring(2,type.length()-1).split("\\|");return new Param(key,T_CHOICE,def.isEmpty()?opts[0]:def,opts);}
-        int t;switch(type){case "f":t=T_FLOAT;break;case "i":t=T_INT;break;case "b":t=T_BOOL;break;case "e":t=T_EVENT;break;case "v":t=T_VAR;break;case "E":t=T_ENTITY;break;case "M":t=T_MATERIAL;break;case "A":t=T_CLIP;break;case "X":t=T_SECTOR;break;case "S":t=T_SOUND;break;case "U":t=T_SONG;break;case "P":t=T_MAP;break;default:t=T_TEXT;}
+        int t;switch(type){case "f":t=T_FLOAT;break;case "i":t=T_INT;break;case "b":t=T_BOOL;break;case "e":t=T_EVENT;break;case "v":t=T_VAR;break;case "E":t=T_ENTITY;break;case "M":t=T_MATERIAL;break;case "A":t=T_CLIP;break;case "X":t=T_SECTOR;break;case "S":t=T_SOUND;break;case "U":t=T_SONG;break;case "P":t=T_MAP;break;case "I":t=T_ITEM;break;case "W":t=T_SPELL;break;case "C":t=T_CLASS;break;case "L":t=T_LOOT;break;case "H":t=T_SHOP;break;default:t=T_TEXT;}
         return new Param(key,t,def,null);
     }
     private static void def(String id,String name,String cat,int icon,String desc,Impl impl,String... params){
@@ -168,7 +168,7 @@ final class Actions {
             if(c.m[0]==0){if(!c.w.weaponReady())return RUNNING;String n=c.s("spell");Rpg.Spell sp=n.equalsIgnoreCase("Selected")||n.isEmpty()?(c.w.hero==null?null:c.w.hero.currentSpell()):Rpg.spell(n);
                 if(sp==null){c.w.message("You don't know any spells",1.5f);c.send("failEvent");return DONE;}
                 if(c.w.castSpell(sp,false)==World.FIRE_NO_POWER){c.send("failEvent");return DONE;}c.m[0]=1;return RUNNING;}
-            if(c.w.weaponReady()){c.send("readyEvent");return DONE;}return RUNNING;},"spell:c(Selected|"+Rpg.SPELLS_JOINED+")=Selected","readyEvent:e=READY","failEvent:e=READY");
+            if(c.w.weaponReady()){c.send("readyEvent");return DONE;}return RUNNING;},"spell:W=Selected","readyEvent:e=READY","failEvent:e=READY");
         def("next_spell","Select Next Spell","Combat",Icons.CHEVRON_RIGHT,"Cycles the hero's selected spell.",c->{Hero h=c.w.hero;if(h!=null&&!h.spells.isEmpty()){h.selectedSpell=(h.selectedSpell+1)%h.spells.size();c.w.message("Spell: "+h.currentSpell().name+" ("+Rpg.spellCost(h.currentSpell().level)+" SP)",1.5f);}return DONE;});
         def("next_weapon","Next Weapon","Combat",Icons.CHEVRON_RIGHT,"Equips the next weapon in the hero's pack.",c->{c.w.nextWeapon();return DONE;});
         def("weapon_ready_event","Weapon Ready","Combat",Icons.CHECK,"Sends an event once the hero can attack again.",c->{if(c.w.weaponReady()){c.send("event");return DONE;}return RUNNING;},"event:e=READY");
@@ -176,7 +176,7 @@ final class Actions {
             if(!c.w.meleeAttack(c.self,c.f("reach")))c.send("outOfReachEvent");return DONE;},"reach:f=1.3","outOfReachEvent:e=");
         def("creature_ranged","Creature Ranged Attack","Combat",Icons.CROSSHAIR,"Shoots an arrow, fire bolt or arcane bolt at the target using this creature's attack bonus and damage dice.",c->{
             int t=c.choice("projectile","Fire Bolt|Arrow|Arcane");c.w.rangedAttack(c.self,t==1?World.P_ARROW:t==2?World.P_MAGIC:World.P_FIRE);return DONE;},"projectile:c(Fire Bolt|Arrow|Arcane)=Arrow");
-        def("creature_cast","Creature Casts Spell","Combat",Icons.SPARKLE,"This creature casts a spell at its target (spell attack = its attack bonus, save DC = 8 + attack bonus).",c->{c.w.monsterCast(c.self,Rpg.spell(c.s("spell")));return DONE;},"spell:c("+Rpg.SPELLS_JOINED+")=Fire Bolt");
+        def("creature_cast","Creature Casts Spell","Combat",Icons.SPARKLE,"This creature casts a spell at its target (spell attack = its attack bonus, save DC = 8 + attack bonus).",c->{c.w.monsterCast(c.self,Rpg.spell(c.s("spell")));return DONE;},"spell:W=Fire Bolt");
         def("roll_dice","Roll Dice","Combat",Icons.DICE,"Rolls dice like 1d20, 2d6+3 or 4d8 and stores the total. Sends the success event if it meets the target.",c->{
             int r=Rpg.Dice.parse(c.s("dice")).roll(c.w.rng);c.setVar("store",r);if(r>=c.i("target"))c.send("successEvent");else c.send("failEvent");return DONE;},"dice:t=1d20","store:v=roll","target:i=10","successEvent:e=","failEvent:e=");
         def("ability_check","Ability Check","Combat",Icons.DICE,"d20 + ability modifier against a difficulty class (the hero adds proficiency for their class's main ability).",c->{
@@ -196,21 +196,25 @@ final class Actions {
                 default:v=h.scores[c.choice("stat","HP|Max HP|SP|Max SP|AC|Level|XP|Gold|STR|DEX|CON|INT|WIS|CHA")-8];}
             c.setVar("store",v);return c.doneOrRun();},"stat:c(HP|Max HP|SP|Max SP|AC|Level|XP|Gold|STR|DEX|CON|INT|WIS|CHA)=Level","store:v=stat","everyFrame:b=false");
         def("level_at_least","Level At Least","Character",Icons.VALIDATE,"Sends an event depending on whether the hero has reached a level.",c->{if(c.w.hero!=null&&c.w.hero.level>=c.i("level"))c.send("yesEvent");else c.send("noEvent");return DONE;},"level:i=3","yesEvent:e=","noEvent:e=");
-        def("is_class","Hero Class Is","Character",Icons.PERSON,"Sends an event if the hero is a particular class.",c->{if(c.w.hero!=null&&c.w.hero.cls.name.equalsIgnoreCase(c.s("class")))c.send("yesEvent");else c.send("noEvent");return DONE;},"class:c("+Rpg.CLASSES_JOINED+")=Fighter","yesEvent:e=","noEvent:e=");
+        def("is_class","Hero Class Is","Character",Icons.PERSON,"Sends an event if the hero is a particular class.",c->{if(c.w.hero!=null&&c.w.hero.cls.name.equalsIgnoreCase(c.s("class")))c.send("yesEvent");else c.send("noEvent");return DONE;},"class:C=Fighter","yesEvent:e=","noEvent:e=");
         def("long_rest","Rest","Character",Icons.MOON,"Fully restores the hero's hit points and spell points (e.g. at an inn or shrine).",c->{Hero h=c.w.hero;if(h!=null){c.w.heal(c.w.player,h.maxHp);h.sp=h.maxSp;c.w.sound(SoundFx.HEAL,c.w.player);c.w.message("You feel rested",2);}return DONE;});
         def("restore_sp","Restore Spell Points","Character",Icons.SPARKLE,"Gives the hero spell points (up to their maximum).",c->{Hero h=c.w.hero;if(h!=null)h.sp=Math.min(h.maxSp,h.sp+c.i("amount"));return DONE;},"amount:i=4");
         def("open_character","Open Character Sheet","Character",Icons.PERSON,"Opens the hero's inventory and character sheet (pauses the game).",c->{c.w.menuRequested=true;return DONE;});
 
         // ------------------------------------------------------------------ Inventory
-        def("give_item","Give Item","Inventory",Icons.PACKAGE,"Puts an item in the hero's pack (weapons and armour are equipped if that slot is empty).",c->{Rpg.Item it=Rpg.itemByName(c.s("item"));if(it==null||!c.w.giveItem(it,Math.max(1,c.i("count"))))c.send("failEvent");return DONE;},"item:c("+Rpg.ITEMS_JOINED+")=Potion of Healing","count:i=1","failEvent:e=");
-        def("take_item","Take Item","Inventory",Icons.MINUS,"Removes items from the hero's pack; sends the fail event if they don't have enough.",c->{Rpg.Item it=Rpg.itemByName(c.s("item"));if(c.w.hero==null||it==null||!c.w.hero.remove(it,Math.max(1,c.i("count"))))c.send("failEvent");else c.send("doneEvent");return DONE;},"item:c("+Rpg.ITEMS_JOINED+")=Gemstone","count:i=1","doneEvent:e=","failEvent:e=");
-        def("has_item","Has Item","Inventory",Icons.VALIDATE,"Checks whether the hero carries at least a number of an item.",c->{Rpg.Item it=Rpg.itemByName(c.s("item"));if(c.w.hero!=null&&it!=null&&c.w.hero.count(it)>=Math.max(1,c.i("count")))c.send("yesEvent");else c.send("noEvent");return DONE;},"item:c("+Rpg.ITEMS_JOINED+")=Gemstone","count:i=1","yesEvent:e=","noEvent:e=");
-        def("equip_item","Equip Item","Inventory",Icons.SHIELD,"Equips a weapon, armour or shield the hero carries.",c->{Rpg.Item it=Rpg.itemByName(c.s("item"));if(c.w.hero==null||it==null||c.w.hero.count(it)==0||c.w.hero.equip(it)!=null)c.send("failEvent");return DONE;},"item:c("+Rpg.itemNames(Rpg.I_WEAPON)+"|"+Rpg.itemNames(Rpg.I_ARMOR)+"|Shield)=Longsword","failEvent:e=");
+        def("give_item","Give Item","Inventory",Icons.PACKAGE,"Puts an item in the hero's pack (weapons and armour are equipped if that slot is empty).",c->{Rpg.Item it=Rpg.itemByName(c.s("item"));if(it==null||!c.w.giveItem(it,Math.max(1,c.i("count"))))c.send("failEvent");return DONE;},"item:I=Potion of Healing","count:i=1","failEvent:e=");
+        def("take_item","Take Item","Inventory",Icons.MINUS,"Removes items from the hero's pack; sends the fail event if they don't have enough.",c->{Rpg.Item it=Rpg.itemByName(c.s("item"));if(c.w.hero==null||it==null||!c.w.hero.remove(it,Math.max(1,c.i("count"))))c.send("failEvent");else c.send("doneEvent");return DONE;},"item:I=Gemstone","count:i=1","doneEvent:e=","failEvent:e=");
+        def("has_item","Has Item","Inventory",Icons.VALIDATE,"Checks whether the hero carries at least a number of an item.",c->{Rpg.Item it=Rpg.itemByName(c.s("item"));if(c.w.hero!=null&&it!=null&&c.w.hero.count(it)>=Math.max(1,c.i("count")))c.send("yesEvent");else c.send("noEvent");return DONE;},"item:I=Gemstone","count:i=1","yesEvent:e=","noEvent:e=");
+        def("equip_item","Equip Item","Inventory",Icons.SHIELD,"Equips a weapon, armour or shield the hero carries.",c->{Rpg.Item it=Rpg.itemByName(c.s("item"));if(c.w.hero==null||it==null||c.w.hero.count(it)==0||c.w.hero.equip(it)!=null)c.send("failEvent");return DONE;},"item:I=Longsword","failEvent:e=");
+        def("give_loot","Give Loot","Inventory",Icons.PACKAGE,"Rolls a loot table from the Content editor: each item drops with its chance, plus the gold dice. Sends the found event if anything dropped.",c->{
+            String got=c.w.giveLoot(Rpg.loot(c.s("table")));c.send(got.isEmpty()?"emptyEvent":"foundEvent");return DONE;},"table:L=chest","foundEvent:e=","emptyEvent:e=");
+        def("open_shop","Open Shop","Inventory",Icons.COIN,"Opens a shop from the Content editor: the hero buys its stock and sells their own items. Sends the closed event when they leave.",c->{
+            if(c.enter){c.w.openShop(Rpg.shop(c.s("shop")),c.self,c.s("closedEvent"));}return c.w.shop!=null?RUNNING:DONE;},"shop:H=general","closedEvent:e=CLOSED");
         def("give_gold","Give Gold","Inventory",Icons.COIN,"Gives the hero gold pieces.",c->{c.w.giveGold(Rpg.Dice.parse(c.s("amount")).roll(c.w.rng));return DONE;},"amount:t=2d6");
         def("pay_gold","Pay Gold","Inventory",Icons.COIN,"Takes gold from the hero; sends the fail event (and takes nothing) if they can't afford it.",c->{Hero h=c.w.hero;int a=c.i("amount");if(h==null||h.gold<a){c.send("failEvent");return DONE;}h.gold-=a;c.w.sound(SoundFx.COIN,c.w.player);c.send("paidEvent");return DONE;},"amount:i=10","paidEvent:e=","failEvent:e=");
         def("sell_item","Sell Item To Hero","Inventory",Icons.COIN,"A shop sale: if the hero can pay the price they get the item.",c->{Hero h=c.w.hero;Rpg.Item it=Rpg.itemByName(c.s("item"));int price=c.i("price");
             if(h==null||it==null||h.gold<price){c.w.message("You can't afford that",2);c.send("failEvent");return DONE;}h.gold-=price;c.w.giveItem(it,1);c.w.sound(SoundFx.COIN,c.w.player);c.w.message("Bought "+it.name,2);c.send("boughtEvent");return DONE;},
-            "item:c("+Rpg.ITEMS_JOINED+")=Potion of Healing","price:i=50","boughtEvent:e=","failEvent:e=");
+            "item:I=Potion of Healing","price:i=50","boughtEvent:e=","failEvent:e=");
         def("has_gold","Has Gold","Inventory",Icons.COIN,"Checks whether the hero has at least an amount of gold.",c->{if(c.w.hero!=null&&c.w.hero.gold>=c.i("amount"))c.send("yesEvent");else c.send("noEvent");return DONE;},"amount:i=10","yesEvent:e=","noEvent:e=");
         def("give_key","Give Key","Inventory",Icons.TAG,"Gives the hero a door key.",c->{if(!c.w.giveKey(c.choice("key",KEYS)))c.send("failEvent");return DONE;},"key:c("+KEYS+")=Bronze","failEvent:e=");
         def("has_key","Has Key","Inventory",Icons.VALIDATE,"Checks whether the hero has a key.",c->{if(c.w.hasKey(c.choice("key",KEYS)))c.send("yesEvent");else c.send("noEvent");return DONE;},"key:c("+KEYS+")=Bronze","yesEvent:e=","noEvent:e=");

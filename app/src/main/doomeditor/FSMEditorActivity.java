@@ -35,6 +35,12 @@ public class FSMEditorActivity extends Activity implements FSMGraphView.Host {
     @Override public void choose(String title, String[] items, int checked, java.util.function.IntConsumer done) { MainActivity.choose(this, title, items, checked, done, view::invalidate); }
     @Override public void confirm(String title, String message, String ok, Runnable yes) { MainActivity.confirm(this, title, message, ok, yes, view::invalidate); }
     @Override public void openFsm(String defId) { EntityDef d = project.def(defId); if (d != null) view.selectDef(d); }
+    @Override public void openContent(int tab) {
+        project.save(this);
+        android.content.Intent i = new android.content.Intent(this, ContentEditorActivity.class);
+        i.putExtra("tab", tab);
+        startActivity(i);
+    }
     @Override public void openSound(int tab) {
         project.save(this);
         android.content.Intent i = new android.content.Intent(this, SoundEditorActivity.class);

@@ -60,7 +60,7 @@ final class Rpg {
     /** First-person weapon models. */
     static final int FP_FIST=0,FP_SWORD=1,FP_MACE=2,FP_BOW=3,FP_STAFF=4,FP_DAGGER=5,FP_AXE=6;
     static final class Item {
-        final String id,name;final int kind,sprite,value;
+        String id,name;int kind,sprite,value;
         // weapons
         Dice damage=new Dice(1,4,0);int damageType=BLUDGEONING,fp=FP_FIST;boolean finesse,ranged,twoHanded;float reach=1.5f,cooldown=.7f;
         // armour / shield
@@ -87,7 +87,8 @@ final class Rpg {
             }
         }
     }
-    static final ArrayList<Item> ITEMS=new ArrayList<>();
+    /** The active project's items (the built-in set until a project is opened). */
+    static ArrayList<Item> ITEMS=new ArrayList<>();
     private static Item add(Item i){ITEMS.add(i);return i;}
     static{
         add(new Item("fists","Bare hands",I_WEAPON,-1,0).weapon("1d2",BLUDGEONING,FP_FIST,.5f).desc("Better than nothing."));
@@ -121,6 +122,8 @@ final class Rpg {
         add(new Item("gem","Gemstone",I_MISC,Sprites.ROCKETBOX,100).desc("Worth a fair sum to a merchant."));
         add(new Item("idol","Golden idol",I_MISC,Sprites.ROCKETBOX,250));
     }
+    static final ArrayList<Item> DEFAULT_ITEMS=new ArrayList<>(ITEMS);
+    static final String[] FP_NAMES={"Fists","Sword","Mace","Bow","Staff","Dagger","Axe"};
     static Item item(String id){if(id==null)return null;for(Item i:ITEMS)if(i.id.equals(id))return i;return null;}
     static String itemNames(int kind){StringBuilder b=new StringBuilder();for(Item i:ITEMS)if(kind<0||i.kind==kind){if(b.length()>0)b.append('|');b.append(i.name);}return b.toString();}
     static Item itemByName(String name){for(Item i:ITEMS)if(i.name.equalsIgnoreCase(name)||i.id.equalsIgnoreCase(name))return i;return null;}
@@ -130,12 +133,13 @@ final class Rpg {
     // ------------------------------------------------------------------ spells
     static final int S_BOLT=0,S_MISSILE=1,S_AREA=2,S_HEAL=3,S_WARD=4,S_SAVE_TARGET=5,S_CONE=6;
     static final class Spell {
-        final String id,name;final int level,kind;final Dice dice;final int damageType;float range=20,radius;String desc;
+        String id,name;int level,kind;Dice dice;int damageType;float range=20,radius;String desc;
         Spell(String id,String name,int level,int kind,String dice,int type,String desc){this.id=id;this.name=name;this.level=level;this.kind=kind;this.dice=Dice.parse(dice);damageType=type;this.desc=desc;}
         Spell radius(float r){radius=r;return this;}
         Spell range(float r){range=r;return this;}
     }
-    static final ArrayList<Spell> SPELLS=new ArrayList<>();
+    static final String[] SPELL_KINDS={"Bolt (spell attack)","Missiles (never miss)","Area blast (DEX save)","Heal self","Ward (+AC)","Flame on target (DEX save)","Cone (DEX save)"};
+    static ArrayList<Spell> SPELLS=new ArrayList<>();
     static{
         SPELLS.add(new Spell("fire_bolt","Fire Bolt",0,S_BOLT,"1d10",FIRE,"Hurl a mote of fire: ranged spell attack."));
         SPELLS.add(new Spell("sacred_flame","Sacred Flame",0,S_SAVE_TARGET,"1d8",RADIANT,"Radiant flame on the target you face; DEX save negates.").range(14));
@@ -145,27 +149,130 @@ final class Rpg {
         SPELLS.add(new Spell("burning_hands","Burning Hands",1,S_CONE,"3d6",FIRE,"A sheet of flame in front of you; DEX save for half.").range(3));
         SPELLS.add(new Spell("fireball","Fireball",3,S_AREA,"8d6",FIRE,"An explosion of flame where the bolt lands; DEX save for half.").radius(2.5f));
     }
+    static final ArrayList<Spell> DEFAULT_SPELLS=new ArrayList<>(SPELLS);
     static Spell spell(String id){if(id==null)return null;for(Spell s:SPELLS)if(s.id.equals(id)||s.name.equalsIgnoreCase(id))return s;return null;}
     static String spellNames(){StringBuilder b=new StringBuilder();for(Spell s:SPELLS){if(b.length()>0)b.append('|');b.append(s.name);}return b.toString();}
     static final String SPELLS_JOINED=spellNames();
 
     // ------------------------------------------------------------------ classes
     static final class HeroClass {
-        final String name;final int hitDie,primary,castAbility;final int[] scores;final String[] gear,spells;final String desc;final boolean heavyArmour;
+        String name;int hitDie,primary,castAbility;int[] scores;String[] gear,spells;String desc;boolean heavyArmour;
         HeroClass(String name,int hitDie,int primary,int cast,int[] scores,String[] gear,String[] spells,boolean heavy,String desc){
             this.name=name;this.hitDie=hitDie;this.primary=primary;castAbility=cast;this.scores=scores;this.gear=gear;this.spells=spells;heavyArmour=heavy;this.desc=desc;}
     }
     /** Ability scores use the standard array (15, 14, 13, 12, 10, 8) arranged for each class. */
-    static final HeroClass[] CLASSES={
+    static final HeroClass[] BUILTIN_CLASSES={
         new HeroClass("Fighter",10,STR,-1,new int[]{15,13,14,8,12,10},new String[]{"longsword","shield","chainmail","healing_potion"},new String[0],true,"Tough front-line warrior: heavy armour, shield and steel."),
         new HeroClass("Ranger",10,DEX,WIS,new int[]{12,15,13,8,14,10},new String[]{"longbow","shortsword","leather","healing_potion"},new String[]{"cure_wounds"},false,"Deadly archer who can mend their own wounds."),
         new HeroClass("Rogue",8,DEX,-1,new int[]{10,15,13,12,8,14},new String[]{"shortsword","dagger","leather","healing_potion","healing_potion"},new String[0],false,"Quick and sneaky: sneak attacks deal extra damage to unaware foes."),
         new HeroClass("Wizard",6,INT,INT,new int[]{8,14,13,15,12,10},new String[]{"quarterstaff","mana_potion","healing_potion"},new String[]{"fire_bolt","magic_missile","shield","burning_hands","fireball"},false,"Fragile master of arcane fire and force."),
         new HeroClass("Cleric",8,WIS,WIS,new int[]{13,10,14,8,15,12},new String[]{"mace","shield","scalemail","healing_potion"},new String[]{"sacred_flame","cure_wounds","shield"},true,"Armoured healer who smites with radiant light."),
     };
+    static ArrayList<HeroClass> CLASSES=new ArrayList<>(java.util.Arrays.asList(BUILTIN_CLASSES));
     static final String CLASSES_JOINED;
-    static{String[] n=new String[CLASSES.length];for(int i=0;i<n.length;i++)n[i]=CLASSES[i].name;CLASSES_JOINED=Sprites.join(n);}
-    static HeroClass heroClass(String name){for(HeroClass c:CLASSES)if(c.name.equalsIgnoreCase(name))return c;return CLASSES[0];}
+    static{String[] n=new String[BUILTIN_CLASSES.length];for(int i=0;i<n.length;i++)n[i]=BUILTIN_CLASSES[i].name;CLASSES_JOINED=Sprites.join(n);}
+    static HeroClass heroClass(String name){for(HeroClass c:CLASSES)if(c.name.equalsIgnoreCase(name))return c;return CLASSES.isEmpty()?BUILTIN_CLASSES[0]:CLASSES.get(0);}
     /** Level at which each of a class's spells becomes available (spell level 3 needs character level 5). */
     static int levelForSpell(Spell s){return s.level<=1?1:s.level==2?3:s.level==3?5:7;}
+
+    // ------------------------------------------------------------------ loot tables and shops
+    /** One possible drop: an item, the chance it drops and how many (dice). */
+    static final class LootEntry {String item="";int chance=100;String count="1";}
+    static final class LootTable {String id,name;String gold="0";final ArrayList<LootEntry> entries=new ArrayList<>();
+        LootTable add(String item,int chance,String count){LootEntry e=new LootEntry();e.item=item;e.chance=chance;e.count=count;entries.add(e);return this;}}
+    /** A shop line: an item, its price (0 = the item's value) and stock (-1 = unlimited). */
+    static final class ShopEntry {String item="";int price;int stock=-1;}
+    static final class Shop {String id,name;int sellRate=50;String greeting="Take a look at my wares.";final ArrayList<ShopEntry> stock=new ArrayList<>();
+        Shop add(String item,int price){ShopEntry e=new ShopEntry();e.item=item;e.price=price;stock.add(e);return this;}}
+    static ArrayList<LootTable> LOOT=defaultLoot();
+    static ArrayList<Shop> SHOPS=defaultShops();
+    static LootTable loot(String id){if(id==null)return null;for(LootTable t:LOOT)if(t.id.equals(id)||t.name.equalsIgnoreCase(id))return t;return null;}
+    static Shop shop(String id){if(id==null)return null;for(Shop t:SHOPS)if(t.id.equals(id)||t.name.equalsIgnoreCase(id))return t;return null;}
+    static int price(ShopEntry e){Item it=item(e.item);return e.price>0?e.price:it==null?0:Math.max(1,it.value);}
+    static ArrayList<LootTable> defaultLoot(){
+        ArrayList<LootTable> l=new ArrayList<>();LootTable t;
+        t=new LootTable();t.id="chest";t.name="Treasure chest";t.gold="3d6";t.add("healing_potion",60,"1").add("gem",25,"1").add("scroll_cure",15,"1");l.add(t);
+        t=new LootTable();t.id="skeleton";t.name="Skeleton remains";t.gold="1d6";t.add("small_healing",30,"1").add("dagger",10,"1");l.add(t);
+        t=new LootTable();t.id="hoard";t.name="Boss hoard";t.gold="10d10";t.add("greater_healing",100,"1").add("scroll_fireball",50,"1").add("idol",50,"1").add("plate",10,"1");l.add(t);
+        return l;
+    }
+    static ArrayList<Shop> defaultShops(){
+        ArrayList<Shop> l=new ArrayList<>();Shop s;
+        s=new Shop();s.id="general";s.name="General store";s.add("small_healing",0).add("healing_potion",0).add("mana_potion",0).add("scroll_cure",0).add("dagger",0);l.add(s);
+        s=new Shop();s.id="blacksmith";s.name="Blacksmith";s.greeting="Steel and leather, finest in the land.";s.sellRate=40;
+        s.add("shortsword",0).add("longsword",0).add("mace",0).add("battleaxe",0).add("leather",0).add("chainshirt",0).add("chainmail",0).add("shield",0);l.add(s);
+        return l;
+    }
+    /** Points the catalogue at a project's own content. */
+    static void use(Project p){
+        if(p==null)return;p.ensureContent();
+        ITEMS=p.items;SPELLS=p.spells;CLASSES=p.classes;LOOT=p.loot;SHOPS=p.shops;
+        if(item("fists")==null)ITEMS.add(0,copy(DEFAULT_ITEMS.get(0)));   // the engine's unarmed attack must exist
+    }
+    static String uniqueItemId(String base){String b=slug(base,"item"),id=b;int n=2;while(item(id)!=null)id=b+"_"+(n++);return id;}
+    static String uniqueSpellId(String base){String b=slug(base,"spell"),id=b;int n=2;while(spell(id)!=null)id=b+"_"+(n++);return id;}
+    static String uniqueLootId(String base){String b=slug(base,"loot"),id=b;int n=2;while(loot(id)!=null)id=b+"_"+(n++);return id;}
+    static String uniqueShopId(String base){String b=slug(base,"shop"),id=b;int n=2;while(shop(id)!=null)id=b+"_"+(n++);return id;}
+    private static String slug(String s,String def){String b=s.toLowerCase(java.util.Locale.US).replaceAll("[^a-z0-9]+","_").replaceAll("^_|_$","");return b.isEmpty()?def:b;}
+
+    // ------------------------------------------------------------------ json
+    static org.json.JSONObject toJson(Item i)throws Exception{
+        org.json.JSONObject o=new org.json.JSONObject();o.put("id",i.id);o.put("name",i.name);o.put("kind",i.kind);o.put("sprite",i.sprite);o.put("value",i.value);
+        o.put("damage",i.damage.toString());o.put("damageType",i.damageType);o.put("fp",i.fp);o.put("finesse",i.finesse);o.put("ranged",i.ranged);o.put("twoHanded",i.twoHanded);
+        o.put("reach",(double)i.reach);o.put("cooldown",(double)i.cooldown);o.put("baseAC",i.baseAC);o.put("maxDex",i.maxDex);o.put("heavy",i.heavy);o.put("strReq",i.strReq);
+        o.put("heal",i.heal==null?"":i.heal.toString());o.put("spellPoints",i.spellPoints);o.put("spell",i.spell==null?"":i.spell);o.put("key",i.key);o.put("desc",i.desc==null?"":i.desc);
+        return o;
+    }
+    static Item itemFrom(org.json.JSONObject o){
+        Item i=new Item(o.optString("id","item"),o.optString("name","Item"),Math.max(0,Math.min(ITEM_KINDS.length-1,o.optInt("kind",I_MISC))),o.optInt("sprite",-1),Math.max(0,o.optInt("value",0)));
+        i.damage=Dice.parse(o.optString("damage","1d4"));i.damageType=Math.max(0,Math.min(DAMAGE_TYPES.length-1,o.optInt("damageType",BLUDGEONING)));i.fp=Math.max(0,Math.min(FP_NAMES.length-1,o.optInt("fp",FP_FIST)));
+        i.finesse=o.optBoolean("finesse",false);i.ranged=o.optBoolean("ranged",false);i.twoHanded=o.optBoolean("twoHanded",false);i.reach=(float)o.optDouble("reach",1.5);i.cooldown=(float)o.optDouble("cooldown",.7);
+        i.baseAC=o.optInt("baseAC",0);i.maxDex=o.optInt("maxDex",99);i.heavy=o.optBoolean("heavy",false);i.strReq=o.optInt("strReq",0);
+        String h=o.optString("heal","");i.heal=h.isEmpty()?null:Dice.parse(h);i.spellPoints=o.optInt("spellPoints",0);String sp=o.optString("spell","");i.spell=sp.isEmpty()?null:sp;i.key=o.optInt("key",-1);i.desc=o.optString("desc","");
+        return i;
+    }
+    static Item copy(Item i){try{return itemFrom(toJson(i));}catch(Exception e){return i;}}
+    static org.json.JSONObject toJson(Spell s)throws Exception{
+        org.json.JSONObject o=new org.json.JSONObject();o.put("id",s.id);o.put("name",s.name);o.put("level",s.level);o.put("kind",s.kind);o.put("dice",s.dice.toString());
+        o.put("damageType",s.damageType);o.put("range",(double)s.range);o.put("radius",(double)s.radius);o.put("desc",s.desc==null?"":s.desc);return o;
+    }
+    static Spell spellFrom(org.json.JSONObject o){
+        Spell s=new Spell(o.optString("id","spell"),o.optString("name","Spell"),Math.max(0,Math.min(9,o.optInt("level",1))),Math.max(0,Math.min(SPELL_KINDS.length-1,o.optInt("kind",S_BOLT))),
+                o.optString("dice","1d6"),Math.max(0,Math.min(DAMAGE_TYPES.length-1,o.optInt("damageType",FIRE))),o.optString("desc",""));
+        s.range=(float)o.optDouble("range",20);s.radius=(float)o.optDouble("radius",0);return s;
+    }
+    static Spell copy(Spell s){try{return spellFrom(toJson(s));}catch(Exception e){return s;}}
+    static org.json.JSONObject toJson(HeroClass c)throws Exception{
+        org.json.JSONObject o=new org.json.JSONObject();o.put("name",c.name);o.put("hitDie",c.hitDie);o.put("primary",c.primary);o.put("cast",c.castAbility);o.put("heavy",c.heavyArmour);o.put("desc",c.desc==null?"":c.desc);
+        org.json.JSONArray a=new org.json.JSONArray();for(int v:c.scores)a.put(v);o.put("scores",a);
+        org.json.JSONArray g=new org.json.JSONArray();for(String v:c.gear)g.put(v);o.put("gear",g);
+        org.json.JSONArray sp=new org.json.JSONArray();for(String v:c.spells)sp.put(v);o.put("spells",sp);return o;
+    }
+    static HeroClass classFrom(org.json.JSONObject o){
+        int[] sc={10,10,10,10,10,10};org.json.JSONArray a=o.optJSONArray("scores");if(a!=null)for(int i=0;i<6&&i<a.length();i++)sc[i]=Math.max(1,Math.min(30,a.optInt(i,10)));
+        return new HeroClass(o.optString("name","Adventurer"),Math.max(4,Math.min(12,o.optInt("hitDie",8))),Math.max(0,Math.min(5,o.optInt("primary",STR))),Math.max(-1,Math.min(5,o.optInt("cast",-1))),sc,
+                strings(o.optJSONArray("gear")),strings(o.optJSONArray("spells")),o.optBoolean("heavy",false),o.optString("desc",""));
+    }
+    static HeroClass copy(HeroClass c){try{return classFrom(toJson(c));}catch(Exception e){return c;}}
+    private static String[] strings(org.json.JSONArray a){if(a==null)return new String[0];String[] r=new String[a.length()];for(int i=0;i<r.length;i++)r[i]=a.optString(i,"");return r;}
+    static org.json.JSONObject toJson(LootTable t)throws Exception{
+        org.json.JSONObject o=new org.json.JSONObject();o.put("id",t.id);o.put("name",t.name);o.put("gold",t.gold);
+        org.json.JSONArray a=new org.json.JSONArray();for(LootEntry e:t.entries){org.json.JSONObject j=new org.json.JSONObject();j.put("item",e.item);j.put("chance",e.chance);j.put("count",e.count);a.put(j);}o.put("entries",a);return o;
+    }
+    static LootTable lootFrom(org.json.JSONObject o){
+        LootTable t=new LootTable();t.id=o.optString("id","loot");t.name=o.optString("name","Loot");t.gold=o.optString("gold","0");
+        org.json.JSONArray a=o.optJSONArray("entries");if(a!=null)for(int i=0;i<a.length();i++){org.json.JSONObject j=a.optJSONObject(i);if(j!=null)t.add(j.optString("item",""),Math.max(0,Math.min(100,j.optInt("chance",100))),j.optString("count","1"));}
+        return t;
+    }
+    static LootTable copy(LootTable t){try{return lootFrom(toJson(t));}catch(Exception e){return t;}}
+    static org.json.JSONObject toJson(Shop s)throws Exception{
+        org.json.JSONObject o=new org.json.JSONObject();o.put("id",s.id);o.put("name",s.name);o.put("sellRate",s.sellRate);o.put("greeting",s.greeting);
+        org.json.JSONArray a=new org.json.JSONArray();for(ShopEntry e:s.stock){org.json.JSONObject j=new org.json.JSONObject();j.put("item",e.item);j.put("price",e.price);j.put("stock",e.stock);a.put(j);}o.put("stock",a);return o;
+    }
+    static Shop shopFrom(org.json.JSONObject o){
+        Shop s=new Shop();s.id=o.optString("id","shop");s.name=o.optString("name","Shop");s.sellRate=Math.max(0,Math.min(100,o.optInt("sellRate",50)));s.greeting=o.optString("greeting","");
+        org.json.JSONArray a=o.optJSONArray("stock");if(a!=null)for(int i=0;i<a.length();i++){org.json.JSONObject j=a.optJSONObject(i);if(j==null)continue;ShopEntry e=new ShopEntry();e.item=j.optString("item","");e.price=Math.max(0,j.optInt("price",0));e.stock=j.optInt("stock",-1);s.stock.add(e);}
+        return s;
+    }
+    static Shop copy(Shop s){try{return shopFrom(toJson(s));}catch(Exception e){return s;}}
 }

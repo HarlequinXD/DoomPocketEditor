@@ -700,6 +700,39 @@ final class World {
         if(it.kind==Rpg.I_SHIELD&&hero.shield==null)hero.equip(it);
         return true;
     }
+    // ------------------------------------------------------------------ loot and shops (Content editor)
+    /** Rolls a loot table into the hero's pack; returns what was found ("" if nothing). */
+    String giveLoot(Rpg.LootTable t){
+        if(t==null||hero==null)return "";
+        StringBuilder b=new StringBuilder();
+        int g=Math.max(0,Rpg.Dice.parse(t.gold).roll(rng));
+        for(Rpg.LootEntry e:t.entries){if(rng.nextInt(100)>=e.chance)continue;Rpg.Item it=Rpg.item(e.item);if(it==null)continue;
+            int n=Math.max(1,Rpg.Dice.parse(e.count).roll(rng));if(giveItem(it,n)){if(b.length()>0)b.append(", ");b.append(n>1?n+"× "+it.name:it.name);}}
+        if(g>0){giveGold(g);if(b.length()>0)b.append(", ");b.append(g).append(" gold");}
+        if(b.length()>0)message("Found: "+b,3);
+        return b.toString();
+    }
+    /** Shop open over the game (drawn by the play screen), the entity that opened it and its close event. */
+    Rpg.Shop shop;Actor shopOwner;String shopClosedEvent="";
+    void openShop(Rpg.Shop s,Actor owner,String closedEvent){if(s==null||hero==null)return;shop=s;shopOwner=owner;shopClosedEvent=closedEvent==null?"":closedEvent;paused=true;}
+    void closeShop(){if(shop==null)return;shop=null;paused=false;if(shopOwner!=null&&shopOwner.fsm!=null&&!shopClosedEvent.isEmpty())shopOwner.fsm.send(shopClosedEvent);shopOwner=null;}
+    /** Units left of a shop line this game (-1 = unlimited). */
+    int stockLeft(Rpg.Shop s,int line){Rpg.ShopEntry e=s.stock.get(line);if(e.stock<0)return -1;Integer v=session==null?null:session.shopStock.get(s.id+":"+line);return v==null?e.stock:v;}
+    String buy(Rpg.Shop s,int line){
+        if(hero==null||line<0||line>=s.stock.size())return "";
+        Rpg.ShopEntry e=s.stock.get(line);Rpg.Item it=Rpg.item(e.item);if(it==null)return "That item no longer exists";
+        int left=stockLeft(s,line);if(left==0)return "Sold out";
+        int price=Rpg.price(e);if(hero.gold<price)return "Not enough gold ("+price+" needed)";
+        if(!giveItem(it,1))return "You can't carry that";
+        hero.gold-=price;sound(SoundFx.COIN,player);if(left>0&&session!=null)session.shopStock.put(s.id+":"+line,left-1);
+        return "Bought "+it.name+" for "+price+" gold";
+    }
+    int sellPrice(Rpg.Shop s,Rpg.Item it){return it==null||it.value<=0?0:Math.max(1,it.value*s.sellRate/100);}
+    String sell(Rpg.Shop s,Rpg.Item it){
+        if(hero==null||it==null)return "";int price=sellPrice(s,it);if(price<=0)return "The merchant won't buy that";
+        if(hero.isEquipped(it)&&hero.count(it)<=1)return "Unequip it first – it's in use";
+        if(!hero.remove(it,1))return "";hero.gold+=price;sound(SoundFx.COIN,player);return "Sold "+it.name+" for "+price+" gold";
+    }
     void giveGold(int g){if(hero==null||g==0)return;hero.gold=Math.max(0,hero.gold+g);if(g>0){floater(player,"+"+g+" gold",0xffffd040);sound(SoundFx.COIN,player);}}
     /** Uses an inventory item: drink a potion, read a scroll, equip gear. Returns a message. */
     String useItem(Rpg.Item it){

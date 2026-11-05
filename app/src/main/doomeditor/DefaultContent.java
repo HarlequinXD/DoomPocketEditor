@@ -178,13 +178,9 @@ final class DefaultContent {
         EntityDef d=new EntityDef("merchant","Merchant",EntityDef.NPC,Sprites.VILLAGER);
         d.health=10;d.radius=.4f;d.height=1.4f;d.speed=1f;d.solid=true;d.shootable=false;
         FSMGraph g=d.fsm;
-        FSMGraph.Node idle=g.add("Idle",0,0),shop=g.add("Shop",260,0),potion=g.add("Buy Potion",560,-100),arcana=g.add("Buy Arcana",560,40);
+        FSMGraph.Node idle=g.add("Idle",0,0),shop=g.add("Shop",280,0);
         idle.on("USED",shop);
-        shop.add("say").set("text","Finest wares in the realm! What'll it be?")
-            .set("answer1","Potion of Healing (50 gold)").set("event1","POTION").set("answer2","Potion of Arcana (60 gold)").set("event2","ARCANA").set("answer3","Nothing, thanks.").set("event3","BYE");
-        shop.on("POTION",potion).on("ARCANA",arcana).on("BYE",idle);
-        potion.add("sell_item").set("item","Potion of Healing").set("price","50");potion.on("FINISHED",idle);
-        arcana.add("sell_item").set("item","Potion of Arcana").set("price","60");arcana.on("FINISHED",idle);
+        shop.add("open_shop").set("shop","general").set("closedEvent","CLOSED");shop.on("CLOSED",idle);
         g.start=idle.id;
         return d;
     }

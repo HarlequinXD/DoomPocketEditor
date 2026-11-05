@@ -21,7 +21,7 @@ final class GameSave {
     static final class ThingState {boolean gone,alive=true,visible=true;float x,y,angle;int health,sprite;String state="";HashMap<String,Float> vars;}
     static final class MapState {ThingState[] things;boolean[] secrets;int kills,items,secretCount;}
     /** What a running game remembers across maps. */
-    static final class Session {final HashMap<Integer,MapState> maps=new HashMap<>();float playTime;}
+    static final class Session {final HashMap<Integer,MapState> maps=new HashMap<>();final HashMap<String,Integer> shopStock=new HashMap<>();float playTime;}
 
     /** Short description shown on a slot. */
     static final class Info {String slot,className,mapName;int level,gold;long time;float playTime;boolean exists;}
@@ -70,6 +70,7 @@ final class GameSave {
         if(w.session!=null)for(Map.Entry<Integer,MapState> e:w.session.maps.entrySet())if(e.getKey()!=w.mapNum)maps.put(String.valueOf(e.getKey()),mapJson(e.getValue()));
         maps.put(String.valueOf(w.mapNum),mapJson(w.captureMapState()));
         o.put("maps",maps);
+        JSONObject st=new JSONObject();if(w.session!=null)for(Map.Entry<String,Integer> e:w.session.shopStock.entrySet())st.put(e.getKey(),(int)e.getValue());o.put("shopStock",st);
         return o;
     }
     private static World fromJson(Project p,SoundFx sfx,JSONObject o)throws Exception{
@@ -78,6 +79,7 @@ final class GameSave {
         Session ses=new Session();
         JSONObject maps=o.optJSONObject("maps");
         if(maps!=null){Iterator<String> k=maps.keys();while(k.hasNext()){String key=k.next();try{ses.maps.put(Integer.parseInt(key),readMap(maps.getJSONObject(key)));}catch(Exception ignored){}}}
+        JSONObject st=o.optJSONObject("shopStock");if(st!=null){Iterator<String> k=st.keys();while(k.hasNext()){String key=k.next();ses.shopStock.put(key,st.optInt(key,0));}}
         JSONObject meta=o.optJSONObject("meta");if(meta!=null)ses.playTime=(float)meta.optDouble("playTime",0);
         World w=new World(p,sfx,mapNum,null,"",ses);
         Hero h=readHero(o.optJSONObject("hero"),p);if(h!=null){w.hero=h;w.weapon=h.weaponOrFists().fp;}

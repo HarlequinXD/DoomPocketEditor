@@ -41,6 +41,15 @@ final class Project {
     String mapName(int num){GameMap m=map(num);return m==null?"Map "+num+"?":m.name;}
     /** Music for a map: its own song, or the project's level music. */
     String mapMusic(GameMap m){return m!=null&&!m.music.isEmpty()&&song(m.music)!=null?m.music:levelMusic;}
+    /** The game's RPG content (Content editor): starts as a copy of the built-in catalogue. */
+    ArrayList<Rpg.Item> items;ArrayList<Rpg.Spell> spells;ArrayList<Rpg.HeroClass> classes;ArrayList<Rpg.LootTable> loot;ArrayList<Rpg.Shop> shops;
+    void ensureContent(){
+        if(items==null){items=new ArrayList<>();for(Rpg.Item i:Rpg.DEFAULT_ITEMS)items.add(Rpg.copy(i));}
+        if(spells==null){spells=new ArrayList<>();for(Rpg.Spell s:Rpg.DEFAULT_SPELLS)spells.add(Rpg.copy(s));}
+        if(classes==null){classes=new ArrayList<>();for(Rpg.HeroClass c:Rpg.BUILTIN_CLASSES)classes.add(Rpg.copy(c));}
+        if(loot==null)loot=Rpg.defaultLoot();
+        if(shops==null)shops=Rpg.defaultShops();
+    }
     /** UI style for the HUD, menus and dialogue boxes, from the UI Editor's Theme page. */
     UiTheme theme=new UiTheme();
     String loadWarning;
@@ -50,15 +59,15 @@ final class Project {
         if(instance!=null)return instance;
         ProjectStore.migrate(ctx);
         String id=ProjectStore.currentId(ctx);
-        if(id!=null){try{instance=ProjectStore.load(ctx,id);return instance;}catch(Exception e){/* fall through */}}
+        if(id!=null){try{instance=ProjectStore.load(ctx,id);Rpg.use(instance);return instance;}catch(Exception e){/* fall through */}}
         java.util.ArrayList<ProjectStore.Meta> all=ProjectStore.list(ctx);
-        for(ProjectStore.Meta m:all){try{instance=ProjectStore.load(ctx,m.id);ProjectStore.setCurrent(ctx,m.id);return instance;}catch(Exception ignored){}}
-        instance=ProjectStore.create(ctx,"My First Game",0);return instance;
+        for(ProjectStore.Meta m:all){try{instance=ProjectStore.load(ctx,m.id);ProjectStore.setCurrent(ctx,m.id);Rpg.use(instance);return instance;}catch(Exception ignored){}}
+        instance=ProjectStore.create(ctx,"My First Game",0);Rpg.use(instance);return instance;
     }
     static boolean isOpen(){return instance!=null;}
-    static Project open(Context ctx,String id)throws Exception{Project p=ProjectStore.load(ctx,id);instance=p;ProjectStore.setCurrent(ctx,id);return p;}
+    static Project open(Context ctx,String id)throws Exception{Project p=ProjectStore.load(ctx,id);instance=p;Rpg.use(p);ProjectStore.setCurrent(ctx,id);return p;}
     static void reset(){instance=null;}
-    static void set(Project p){instance=p;}
+    static void set(Project p){instance=p;Rpg.use(p);}
 
     EntityDef def(String id){if(id==null)return null;for(EntityDef d:defs)if(d.id.equals(id))return d;return null;}
     CustomSprite sprite(String id){if(id==null||id.isEmpty())return null;for(CustomSprite s:sprites)if(s.id.equals(id))return s;return null;}
@@ -140,6 +149,14 @@ final class Project {
         JSONObject au=new JSONObject();JSONObject ov=new JSONObject();for(java.util.Map.Entry<String,String> e:soundOverrides.entrySet())ov.put(e.getKey(),e.getValue());
         au.put("overrides",ov);au.put("levelMusic",levelMusic);au.put("musicVolume",(double)musicVolume);au.put("sfxVolume",(double)sfxVolume);o.put("audio",au);
         // UI Editor data. Keep this when changing the save format.
+        ensureContent();
+        JSONObject rpg=new JSONObject();
+        JSONArray ri=new JSONArray();for(Rpg.Item i:items)ri.put(Rpg.toJson(i));rpg.put("items",ri);
+        JSONArray rs=new JSONArray();for(Rpg.Spell sp:spells)rs.put(Rpg.toJson(sp));rpg.put("spells",rs);
+        JSONArray rc=new JSONArray();for(Rpg.HeroClass hc:classes)rc.put(Rpg.toJson(hc));rpg.put("classes",rc);
+        JSONArray rl=new JSONArray();for(Rpg.LootTable lt:loot)rl.put(Rpg.toJson(lt));rpg.put("loot",rl);
+        JSONArray rh=new JSONArray();for(Rpg.Shop sh:shops)rh.put(Rpg.toJson(sh));rpg.put("shops",rh);
+        o.put("rpg",rpg);
         JSONObject ui=new JSONObject();ui.put("hud",hud.toJson());ui.put("theme",theme.toJson());o.put("ui",ui);
         return o;
     }
@@ -161,6 +178,14 @@ final class Project {
                 GameMap gm=new GameMap(num,j.optString("name","Map "+num),l);gm.music=j.optString("music","");p.maps.add(gm);}
             if(p.map(p.currentMap)==null){p.maps.add(0,new GameMap(p.nextMapNum(),"Map",p.level));p.currentMap=p.maps.get(0).num;}}
         p.ensureMaps();
+        JSONObject rpg=o.optJSONObject("rpg");
+        if(rpg!=null){
+            JSONArray ri=rpg.optJSONArray("items");if(ri!=null){p.items=new ArrayList<>();for(int i=0;i<ri.length();i++){JSONObject j=ri.optJSONObject(i);if(j!=null)p.items.add(Rpg.itemFrom(j));}}
+            JSONArray rs=rpg.optJSONArray("spells");if(rs!=null){p.spells=new ArrayList<>();for(int i=0;i<rs.length();i++){JSONObject j=rs.optJSONObject(i);if(j!=null)p.spells.add(Rpg.spellFrom(j));}}
+            JSONArray rc=rpg.optJSONArray("classes");if(rc!=null&&rc.length()>0){p.classes=new ArrayList<>();for(int i=0;i<rc.length();i++){JSONObject j=rc.optJSONObject(i);if(j!=null)p.classes.add(Rpg.classFrom(j));}}
+            JSONArray rl=rpg.optJSONArray("loot");if(rl!=null){p.loot=new ArrayList<>();for(int i=0;i<rl.length();i++){JSONObject j=rl.optJSONObject(i);if(j!=null)p.loot.add(Rpg.lootFrom(j));}}
+            JSONArray rh=rpg.optJSONArray("shops");if(rh!=null){p.shops=new ArrayList<>();for(int i=0;i<rh.length();i++){JSONObject j=rh.optJSONObject(i);if(j!=null)p.shops.add(Rpg.shopFrom(j));}}}
+        p.ensureContent();
         JSONObject ui=o.optJSONObject("ui");if(ui!=null){p.hud=HudLayout.fromJson(ui.optJSONObject("hud"));JSONObject th=ui.optJSONObject("theme");if(th!=null)p.theme=UiTheme.fromJson(th);}
         if(!p.level.isConsistent())throw new IllegalStateException("inconsistent map");
         p.fixUp();return p;

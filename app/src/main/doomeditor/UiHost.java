@@ -11,4 +11,6 @@ interface UiHost {
     default void openSound(int tab){}
     /** Opens the UI Editor (HUD & controls layout). */
     default void openUi(){}
+    /** Opens the Content editor (0 items, 1 spells, 2 classes, 3 loot, 4 shops). */
+    default void openContent(int tab){}
 }

@@ -360,7 +360,7 @@ public class FSMGraphView extends View {
             if(pm.type==Actions.T_FLOAT&&v.equals("0")&&b.length()>0)continue;
             if(b.length()>0)b.append(" · ");
             if(pm.type==Actions.T_BOOL)b.append(pm.label);else if(pm.type==Actions.T_EVENT)b.append("→ ").append(v);
-            else if(pm.type==Actions.T_CHOICE||pm.type==Actions.T_CLIP||pm.type==Actions.T_ENTITY||pm.type==Actions.T_MATERIAL||pm.type==Actions.T_SECTOR||pm.type==Actions.T_TEXT||pm.type==Actions.T_SOUND||pm.type==Actions.T_SONG||pm.type==Actions.T_MAP)b.append(display(pm,v));
+            else if(pm.type==Actions.T_CHOICE||pm.type==Actions.T_CLIP||pm.type==Actions.T_ENTITY||pm.type==Actions.T_MATERIAL||pm.type==Actions.T_SECTOR||pm.type==Actions.T_TEXT||pm.type>=Actions.T_SOUND)b.append(display(pm,v));
             else b.append(pm.label.toLowerCase()).append(' ').append(display(pm,v));
             if(b.length()>60)break;}
         return b.length()==0?s.category:b.toString();
@@ -374,6 +374,10 @@ public class FSMGraphView extends View {
             case Actions.T_SOUND:return v.isEmpty()?"none":project.soundLabel(v);
             case Actions.T_SONG:return v.isEmpty()?"none":project.songLabel(v);
             case Actions.T_MAP:{try{return project.mapName(Integer.parseInt(v));}catch(NumberFormatException e){return "choose a map";}}
+            case Actions.T_ITEM:{Rpg.Item it=Rpg.itemByName(v);return v.isEmpty()?"none":it==null?v+"?":it.name;}
+            case Actions.T_SPELL:{if(v.equalsIgnoreCase("Selected"))return "Selected spell";Rpg.Spell sp=Rpg.spell(v);return v.isEmpty()?"none":sp==null?v+"?":sp.name;}
+            case Actions.T_LOOT:{Rpg.LootTable t=Rpg.loot(v);return v.isEmpty()?"none":t==null?v+"?":t.name;}
+            case Actions.T_SHOP:{Rpg.Shop t=Rpg.shop(v);return v.isEmpty()?"none":t==null?v+"?":t.name;}
             default:return v;
         }
     }
@@ -392,7 +396,7 @@ public class FSMGraphView extends View {
             if(pm.type==Actions.T_BOOL){boolean on=v.equals("true");float tx=rr-dp(44),ty=iy+dp(15);ui.round(c,tx,ty,tx+dp(32),ty+dp(16),dp(8),on?Ui.ACCENT:Ui.SURFACE_3);p.setColor(0xffffffff);c.drawCircle(on?tx+dp(24):tx+dp(8),ty+dp(8),dp(6),p);
                 ui.text(c,on?"Yes":"No",l+dp(10),iy+dp(36),12.5f,Ui.TEXT,1,-1);}
             else{String shown=display(pm,v);boolean empty=v.isEmpty();ui.text(c,ui.ellipsize(empty?(pm.type==Actions.T_EVENT?"No event":"Not set"):shown,12.5f,1,rr-l-dp(44)),l+dp(10),iy+dp(36),12.5f,empty?Ui.TEXT_3:pm.type==Actions.T_EVENT?Ui.AMBER:Ui.TEXT,1,-1);
-                ui.icon(c,pm.type==Actions.T_CHOICE||pm.type==Actions.T_CLIP||pm.type==Actions.T_EVENT||pm.type==Actions.T_ENTITY||pm.type==Actions.T_MATERIAL||pm.type==Actions.T_VAR||pm.type==Actions.T_SOUND||pm.type==Actions.T_SONG||pm.type==Actions.T_MAP?Icons.CHEVRON_DOWN:Icons.PEN,rr-dp(16),iy+dp(23),13,Ui.TEXT_3);}
+                ui.icon(c,pm.type==Actions.T_CHOICE||pm.type==Actions.T_CLIP||pm.type==Actions.T_EVENT||pm.type==Actions.T_ENTITY||pm.type==Actions.T_MATERIAL||pm.type==Actions.T_VAR||pm.type>=Actions.T_SOUND?Icons.CHEVRON_DOWN:Icons.PEN,rr-dp(16),iy+dp(23),13,Ui.TEXT_3);}
             ihit(r,H_PARAM+i);iy+=dp(52);}
         iy+=dp(4);
         float half=(rr-l-dp(6))/2f;
@@ -588,6 +592,24 @@ public class FSMGraphView extends View {
                 names.add("Make or edit sounds in the Sound Editor…");
                 String[] arr=names.toArray(new String[0]);int cur=vals.indexOf(v);
                 host.choose(pm.label,arr,cur,k->{if(k==arr.length-1)host.openSound(0);else a.params.put(pm.key,vals.get(k));});break;}
+            case Actions.T_ITEM:{java.util.ArrayList<Rpg.Item> list=new java.util.ArrayList<>();for(Rpg.Item it:Rpg.ITEMS)if(!it.id.equals("fists"))list.add(it);
+                String[] arr=new String[list.size()+1];int cur=-1;Rpg.Item now=Rpg.itemByName(v);
+                for(int k=0;k<list.size();k++){Rpg.Item it=list.get(k);arr[k]=it.name+"  ·  "+Rpg.ITEM_KINDS[it.kind];if(it==now)cur=k;}
+                arr[arr.length-1]="Create or edit items in the Content editor…";
+                host.choose(pm.label,arr,cur,k->{if(k==list.size())host.openContent(0);else a.params.put(pm.key,list.get(k).id);});break;}
+            case Actions.T_SPELL:{boolean sel=pm.def.equalsIgnoreCase("Selected");int off=sel?1:0;String[] arr=new String[Rpg.SPELLS.size()+off+1];int cur=-1;
+                if(sel){arr[0]="Selected spell (the one readied in the Bag)";if(v.equalsIgnoreCase("Selected"))cur=0;}
+                Rpg.Spell now=Rpg.spell(v);for(int k=0;k<Rpg.SPELLS.size();k++){Rpg.Spell sp=Rpg.SPELLS.get(k);arr[k+off]=sp.name+"  ·  "+(sp.level==0?"cantrip":"level "+sp.level);if(sp==now)cur=k+off;}
+                arr[arr.length-1]="Create or edit spells in the Content editor…";
+                host.choose(pm.label,arr,cur,k->{if(k==arr.length-1)host.openContent(1);else if(sel&&k==0)a.params.put(pm.key,"Selected");else a.params.put(pm.key,Rpg.SPELLS.get(k-off).id);});break;}
+            case Actions.T_CLASS:{String[] arr=new String[Rpg.CLASSES.size()];int cur=-1;for(int k=0;k<arr.length;k++){arr[k]=Rpg.CLASSES.get(k).name;if(arr[k].equalsIgnoreCase(v))cur=k;}
+                host.choose(pm.label,arr,cur,k->a.params.put(pm.key,Rpg.CLASSES.get(k).name));break;}
+            case Actions.T_LOOT:{String[] arr=new String[Rpg.LOOT.size()+1];int cur=-1;Rpg.LootTable now=Rpg.loot(v);for(int k=0;k<Rpg.LOOT.size();k++){arr[k]=Rpg.LOOT.get(k).name;if(Rpg.LOOT.get(k)==now)cur=k;}
+                arr[arr.length-1]="Create or edit loot tables in the Content editor…";
+                host.choose(pm.label,arr,cur,k->{if(k==Rpg.LOOT.size())host.openContent(3);else a.params.put(pm.key,Rpg.LOOT.get(k).id);});break;}
+            case Actions.T_SHOP:{String[] arr=new String[Rpg.SHOPS.size()+1];int cur=-1;Rpg.Shop now=Rpg.shop(v);for(int k=0;k<Rpg.SHOPS.size();k++){arr[k]=Rpg.SHOPS.get(k).name;if(Rpg.SHOPS.get(k)==now)cur=k;}
+                arr[arr.length-1]="Create or edit shops in the Content editor…";
+                host.choose(pm.label,arr,cur,k->{if(k==Rpg.SHOPS.size())host.openContent(4);else a.params.put(pm.key,Rpg.SHOPS.get(k).id);});break;}
             case Actions.T_MAP:{project.ensureMaps();String[] arr=new String[project.maps.size()];int cur=-1;
                 for(int k=0;k<arr.length;k++){Project.GameMap gm=project.maps.get(k);arr[k]=gm.name+(gm.num==project.startMap?"  (start)":"");if(String.valueOf(gm.num).equals(v))cur=k;}
                 host.choose(pm.label,arr,cur,k->a.params.put(pm.key,String.valueOf(project.maps.get(k).num)));break;}
