@@ -22,6 +22,25 @@ final class Project {
     float musicVolume=.8f,sfxVolume=1f;
     /** On-screen controls and HUD positions from the UI Editor. */
     HudLayout hud=new HudLayout();
+    /**
+     * A map (level) of the game. {@link #level} is always the map open in the editor; the others live in
+     * {@link #maps}. Maps are referred to by a number that never changes, so exits survive renames and deletes.
+     */
+    static final class GameMap {int num;String name;Level level;String music="";GameMap(int num,String name,Level level){this.num=num;this.name=name;this.level=level;}}
+    final ArrayList<GameMap> maps=new ArrayList<>();
+    int currentMap=1,startMap=1;
+    GameMap map(int num){for(GameMap m:maps)if(m.num==num)return m;return null;}
+    /** The map open in the editor (creates the first map for older projects). */
+    GameMap current(){ensureMaps();GameMap m=map(currentMap);if(m==null){m=maps.get(0);currentMap=m.num;}return m;}
+    void ensureMaps(){if(maps.isEmpty()){maps.add(new GameMap(1,"Map 1",level));currentMap=startMap=1;}if(map(startMap)==null)startMap=maps.get(0).num;}
+    /** Keeps the current map's entry pointing at the level being edited (undo/reset replace the Level object). */
+    void syncCurrent(){current().level=level;}
+    void switchMap(int num){syncCurrent();GameMap m=map(num);if(m!=null){currentMap=num;level=m.level;}}
+    int nextMapNum(){int n=1;for(GameMap m:maps)n=Math.max(n,m.num+1);return n;}
+    GameMap addMap(String name,Level l){ensureMaps();GameMap m=new GameMap(nextMapNum(),name,l);maps.add(m);return m;}
+    String mapName(int num){GameMap m=map(num);return m==null?"Map "+num+"?":m.name;}
+    /** Music for a map: its own song, or the project's level music. */
+    String mapMusic(GameMap m){return m!=null&&!m.music.isEmpty()&&song(m.music)!=null?m.music:levelMusic;}
     /** UI style for the HUD, menus and dialogue boxes, from the UI Editor's Theme page. */
     UiTheme theme=new UiTheme();
     String loadWarning;
@@ -107,7 +126,12 @@ final class Project {
     JSONObject toJson()throws Exception{
         JSONObject o=new JSONObject();o.put("version",7);
         JSONObject m=new JSONObject();m.put("name",name);m.put("template",template);m.put("created",(double)created);o.put("meta",m);
+        syncCurrent();
         o.put("level",level.toJson());
+        // Every map; the open one's level is the "level" entry above (older versions only know that one).
+        JSONArray ma=new JSONArray();
+        for(GameMap gm:maps){JSONObject j=new JSONObject();j.put("num",gm.num);j.put("name",gm.name);j.put("music",gm.music);if(gm.num!=currentMap)j.put("level",gm.level.toJson());ma.put(j);}
+        o.put("maps",ma);o.put("currentMap",currentMap);o.put("startMap",startMap);
         JSONArray a=new JSONArray();for(EntityDef d:defs)a.put(d.toJson());o.put("entities",a);
         JSONArray s=new JSONArray();for(CustomSprite cs:sprites)s.put(cs.toJson());o.put("sprites",s);
         // Sound & Music editor data. Keep these when changing the save format, or sounds and songs vanish on reload.
@@ -130,14 +154,22 @@ final class Project {
         JSONObject au=o.optJSONObject("audio");
         if(au!=null){JSONObject ov=au.optJSONObject("overrides");if(ov!=null){java.util.Iterator<String> k=ov.keys();while(k.hasNext()){String key=k.next();p.soundOverrides.put(key,ov.optString(key));}}
             p.levelMusic=au.optString("levelMusic","");p.musicVolume=(float)Math.max(0,Math.min(1,au.optDouble("musicVolume",.8)));p.sfxVolume=(float)Math.max(0,Math.min(1,au.optDouble("sfxVolume",1)));}
+        JSONArray ma=o.optJSONArray("maps");
+        if(ma!=null){p.currentMap=o.optInt("currentMap",1);p.startMap=o.optInt("startMap",1);
+            for(int i=0;i<ma.length();i++){JSONObject j=ma.optJSONObject(i);if(j==null)continue;int num=j.optInt("num",i+1);
+                Level l;if(num==p.currentMap)l=p.level;else{JSONObject lj=j.optJSONObject("level");if(lj==null)continue;try{l=Level.fromJson(lj);if(!l.isConsistent())l=Templates.empty();}catch(Exception ex){l=Templates.empty();}}
+                GameMap gm=new GameMap(num,j.optString("name","Map "+num),l);gm.music=j.optString("music","");p.maps.add(gm);}
+            if(p.map(p.currentMap)==null){p.maps.add(0,new GameMap(p.nextMapNum(),"Map",p.level));p.currentMap=p.maps.get(0).num;}}
+        p.ensureMaps();
         JSONObject ui=o.optJSONObject("ui");if(ui!=null){p.hud=HudLayout.fromJson(ui.optJSONObject("hud"));JSONObject th=ui.optJSONObject("theme");if(th!=null)p.theme=UiTheme.fromJson(th);}
         if(!p.level.isConsistent())throw new IllegalStateException("inconsistent map");
         p.fixUp();return p;
     }
     private void fixUp(){
-        playerDef();
-        if(defs.size()>1)for(Level.Thing t:level.things)if(def(t.def)==null)t.def=defs.get(1).id;
-        level.things.removeIf(t->def(t.def)==null);
+        playerDef();ensureMaps();
+        for(GameMap gm:maps){Level l=gm.level;
+            if(defs.size()>1)for(Level.Thing t:l.things)if(def(t.def)==null)t.def=defs.get(1).id;
+            l.things.removeIf(t->def(t.def)==null);}
     }
     /** Saves in the background so editing never stutters. */
     void save(Context ctx){

@@ -14,7 +14,7 @@ import java.util.ArrayList;
  * with game and audio settings. The same menu doubles as the pause menu, with Continue on top.
  */
 final class GameMenu {
-    interface Listener {void newGame();void resume();void exitToEditor();}
+    interface Listener {void newGame();void resume();void exitToEditor();void restart();}
     static final int OFF=0,SPLASH=1,MAIN=2,OPTIONS=3;
     private static final float SPLASH_SECONDS=2.8f;
     private static final int GOLD=0xffe8c070,GOLD_DARK=0xff8a6a2a;
@@ -46,7 +46,7 @@ final class GameMenu {
     private void startMenuMusic(){
         sfx.start();
         sfx.useProject(project);applyVolumes();
-        Song m=project.song(project.levelMusic);
+        project.ensureMaps();Song m=project.song(project.mapMusic(project.map(project.startMap)));
         if(m!=null&&!sfx.musicPlaying())sfx.playMusic(m.compile(project),true,1.5f);
     }
     void applyVolumes(){sfx.musicVolume=project.musicVolume*GameSettings.musicVolume;sfx.sfxVolume=project.sfxVolume*GameSettings.soundVolume;}
@@ -83,7 +83,7 @@ final class GameMenu {
     }
     private void drawBackdrop(Canvas c,float w,float h){
         RectF full=new RectF(0,0,w,h);
-        Level level=project.level;
+        project.ensureMaps();project.syncCurrent();Project.GameMap sm=project.map(project.startMap);Level level=sm!=null?sm.level:project.level;   // the start map
         if(paused){renderer.present(c,full);}
         else{
             int si=level.sectorAt(level.playerX,level.playerY);
@@ -193,7 +193,7 @@ final class GameMenu {
     private void tap(int hid){
         switch(hid){
             case H_CONTINUE:state=OFF;listener.resume();return;
-            case H_NEW:state=OFF;paused=false;listener.newGame();return;
+            case H_NEW:state=OFF;boolean wasPaused=paused;paused=false;if(wasPaused)listener.restart();else listener.newGame();return;
             case H_OPTIONS:state=OPTIONS;return;
             case H_EXIT:state=OFF;GameSettings.save(ctx);listener.exitToEditor();return;
             case H_BACK:state=MAIN;GameSettings.save(ctx);return;

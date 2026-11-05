@@ -197,15 +197,63 @@ public class EditorView extends View {
             float ib=dp(24);ui.round(c,r.left+dp(5),cy-ib*.5f,r.left+dp(5)+ib,cy+ib*.5f,dp(6),EDITOR_COLORS[ed]);ui.icon(c,EDITOR_ICONS[ed],r.left+dp(5)+ib*.5f,cy,15,0xffffffff);
             ui.textMid(c,ui.ellipsize(nm,15,1,tw-dp(70)),r.left+dp(38),cy,15,Ui.TEXT,1,-1);
             ui.icon(c,Icons.CHEVRON_DOWN,r.right-dp(16),cy,15,Ui.TEXT_2);ui.hit(r,H_SWITCH);
-            float px=r.right+dp(12);String pn=ui.ellipsize(project.name,12,0,right-px);
-            if(right-px>dp(60))ui.textMid(c,pn,px,cy,12,Ui.TEXT_3,0,-1);
+            float px=r.right+dp(10);
+            if(right-px>dp(90))mapChip(c,px,top,right,bh,cy);
         }else{
             float ib=dp(30);ui.logo(c,tl,cy-ib*.5f,ib);
             float tx=tl+ib+dp(10);
             ui.text(c,ui.ellipsize(project.name,15,1,right-tx),tx,cy-dp(1),15,Ui.TEXT,1,-1);
             ui.text(c,ui.ellipsize((project.template==null||project.template.isEmpty()?"Project":project.template)+" · Home",10.5f,0,right-tx),tx,cy+dp(13),10.5f,Ui.TEXT_3,0,-1);
             r.set(tl,top,Math.min(right,tx+dp(160)),top+bh);ui.hit(r,H_SWITCH);
+            float px=Math.max(tx+ui.measure(project.name,15,1),tx+ui.measure("Project · Home",10.5f,0))+dp(16);
+            if(right-px>dp(90))mapChip(c,px,top,right,bh,cy);
         }
+    }
+    private static final int H_MAPS=3070;
+    /** "Map: Town ▾" chip in the header: switch, add and manage the game's maps. */
+    private void mapChip(Canvas c,float px,float top,float right,float bh,float cy){
+        Project.GameMap gm=project.current();String label=gm.name+(project.maps.size()>1?"  ·  "+(project.maps.indexOf(gm)+1)+"/"+project.maps.size():"");
+        float cw=Math.min(right-px,ui.measure(label,12,1)+dp(58));
+        r.set(px,top+dp(3),px+cw,top+bh-dp(3));ui.round(c,r,dp(8),0xff1c2a24);ui.outline(c,r,dp(8),0x553ecf8e,dp(1));
+        ui.icon(c,Icons.SECTORS,r.left+dp(15),cy,13,Ui.GREEN);
+        ui.textMid(c,ui.ellipsize(label,12,1,cw-dp(52)),r.left+dp(28),cy,12,Ui.TEXT,1,-1);ui.icon(c,Icons.CHEVRON_DOWN,r.right-dp(13),cy,13,Ui.TEXT_2);
+        ui.hit(r,H_MAPS);
+    }
+    private void openMapLocal(int num){
+        save(false);project.switchMap(num);level=project.level;sectorEditor=new SectorEditor(level);walker=null;
+        selThing=-1;selKind=0;pending.clear();renderer.invalidate();autoSave();hint("Editing map: "+project.mapName(num));invalidate();
+    }
+    private void mapsMenu(){
+        if(host==null)return;project.ensureMaps();project.syncCurrent();
+        java.util.ArrayList<String> items=new java.util.ArrayList<>();
+        for(Project.GameMap gm:project.maps)items.add((gm.num==project.currentMap?"● ":"   ")+gm.name+(gm.num==project.startMap?"  (start map)":""));
+        int base=project.maps.size();
+        String[] acts={"+ New map…","Duplicate this map","Rename this map","Music for this map…","Make this the start map","Play this map now","Delete this map…"};
+        for(String a:acts)items.add(a);
+        host.choose("Maps · "+project.name,items.toArray(new String[0]),project.maps.indexOf(project.current()),k->{
+            if(k<base){openMapLocal(project.maps.get(k).num);return;}
+            Project.GameMap cur=project.current();
+            switch(k-base){
+                case 0:host.choose("New map",new String[]{"Empty map","Two rooms with people","Open arena","Courtyard","Copy of this map"},0,t->{
+                    Level l=t==0?Templates.empty():t==1?new Level():t==2?Templates.arena():t==3?Templates.courtyard():cur.level.copy();
+                    host.prompt("Map name",null,"Map "+(project.maps.size()+1),false,n->{Project.GameMap gm=project.addMap(n.trim().isEmpty()?"Map "+(project.maps.size()+1):n.trim(),l);openMapLocal(gm.num);
+                        hint("New map · link it with an Exit sector or a Map exit entity");});});break;
+                case 1:{Project.GameMap gm=project.addMap(cur.name+" copy",cur.level.copy());gm.music=cur.music;openMapLocal(gm.num);break;}
+                case 2:host.prompt("Rename map",null,cur.name,false,n->{if(!n.trim().isEmpty())cur.name=n.trim();autoSave();invalidate();});break;
+                case 3:{String[] songs=new String[project.songs.size()+1];songs[0]="Project level music";int ch=0;
+                    for(int i=0;i<project.songs.size();i++){songs[i+1]=project.songs.get(i).name;if(project.songs.get(i).id.equals(cur.music))ch=i+1;}
+                    host.choose("Music for "+cur.name,songs,ch,i->{cur.music=i==0?"":project.songs.get(i-1).id;autoSave();hint(i==0?"Uses the project's level music":"Music set");});break;}
+                case 4:project.startMap=cur.num;autoSave();hint(cur.name+" is now where New Game starts");break;
+                case 5:playThisMap=cur.num;changeMode(PLAY);break;
+                case 6:if(project.maps.size()<=1){hint("A game needs at least one map");break;}
+                    host.confirm("Delete "+cur.name+"?","Its sectors and placed entities are removed. Exits leading here will finish the game instead.","Delete",()->{
+                        int num=cur.num;project.maps.remove(cur);
+                        for(Project.GameMap gm:project.maps)for(Level.Sector sc:gm.level.sectors)if(sc.special==Level.SP_EXIT&&sc.tag==num)sc.tag=0;
+                        if(project.startMap==num)project.startMap=project.maps.get(0).num;
+                        Project.GameMap nx=project.maps.get(0);project.currentMap=nx.num;project.level=nx.level;level=project.level;sectorEditor=new SectorEditor(level);walker=null;selThing=-1;selKind=0;pending.clear();renderer.invalidate();
+                        autoSave();hint("Map deleted");invalidate();});break;
+            }
+            invalidate();});
     }
     /** Opens an editor by index (see EDITOR_NAMES); -1 is the home screen. */
     private void openEditor(int i){
@@ -264,7 +312,7 @@ public class EditorView extends View {
     }
     private String tileStat(int i){
         switch(i){
-            case 0:return level.sectors.size()+(level.sectors.size()==1?" sector":" sectors");
+            case 0:return level.sectors.size()+(level.sectors.size()==1?" sector":" sectors")+(project.maps.size()>1?" · "+project.maps.size()+" maps":"");
             case 1:return level.things.size()+" placed · "+project.defs.size()+" types";
             case 2:return "First-person editing";
             case 3:return statWarnings==0?"Ready to play":statWarnings+" map warning"+(statWarnings==1?"":"s");
@@ -569,7 +617,7 @@ public class EditorView extends View {
         if(selKind==2){float[] e=edgeCoords(selSector,selEdge);if(e!=null){ui.caption(c,"Edge · sector "+(selSector+1),l+dp(10),ct+dp(18),Ui.TEXT_3);
             stat(c,l+dp(10),ct+dp(46),fmt((float)Math.hypot(e[2]-e[0],e[3]-e[1])),"Length");return;}}
         if(s>=0){Level.Sector sec=level.sectors.get(s);
-            ui.caption(c,(selKind==1?"Sector ":"Under cursor · sector ")+(s+1)+(sec.special!=0?" · "+Level.SPECIAL_NAMES[sec.special]:""),l+dp(10),ct+dp(18),Ui.TEXT_3);
+            ui.caption(c,(selKind==1?"Sector ":"Under cursor · sector ")+(s+1)+(sec.special!=0?" · "+Level.SPECIAL_NAMES[sec.special]+(sec.special==Level.SP_EXIT&&sec.tag>0?" → "+project.mapName(sec.tag):""):""),l+dp(10),ct+dp(18),Ui.TEXT_3);
             float cw=(rr-l-dp(20))/3f;
             stat(c,l+dp(10),ct+dp(46),fmt(sec.floor),"Floor");stat(c,l+dp(10)+cw,ct+dp(46),fmt(sec.ceiling),"Ceiling");stat(c,l+dp(10)+cw*2,ct+dp(46),String.valueOf(sec.light),"Light");
         }else{ui.caption(c,"Nothing selected",l+dp(10),ct+dp(18),Ui.TEXT_3);
@@ -774,6 +822,12 @@ public class EditorView extends View {
         Level.Sector sec=level.sectors.get(s);
         host.choose("Sector "+(s+1)+" special",Level.SPECIAL_NAMES,sec.special,i->{sec.special=i;
             if(i==Level.SP_DOOR){host.choose("Door needs a key?",Level.KEY_NAMES,sec.tag,k->{sec.tag=k;changed("Door"+(k>0?" ("+Level.KEY_NAMES[k]+")":""));});}
+            else if(i==Level.SP_EXIT){project.ensureMaps();java.util.ArrayList<Project.GameMap> others=new java.util.ArrayList<>();for(Project.GameMap gm:project.maps)if(gm.num!=project.currentMap)others.add(gm);
+                String[] items=new String[others.size()+2];items[0]="Finish the game (results screen)";for(int k=0;k<others.size();k++)items[k+1]="Go to map: "+others.get(k).name;items[items.length-1]="+ New map to go to…";
+                host.choose("Exit leads to",items,0,k->{
+                    if(k==0){sec.tag=0;changed("Exit · finishes the game");}
+                    else if(k==items.length-1){Project.GameMap gm=project.addMap("Map "+(project.maps.size()+1),Templates.empty());sec.tag=gm.num;changed("Exit → "+gm.name+" (new, empty)");}
+                    else{sec.tag=others.get(k-1).num;changed("Exit → "+others.get(k-1).name);}});}
             else{sec.tag=0;changed(Level.SPECIAL_NAMES[i]);}});
     }
     private void changed(String msg){autoSave();if(msg!=null)hint(msg);renderer.invalidate();invalidate();}
@@ -992,6 +1046,7 @@ public class EditorView extends View {
         if(menu==null)menu=new GameMenu(getContext(),ui,project,renderer,sfx,new GameMenu.Listener(){
             @Override public void newGame(){startPlay();hint("Left: move · right: look · Attack, Cast, Use and Potion on the right · Bag top right");}
             @Override public void resume(){if(world==null)startPlay();else{world.paused=bagOpen;}}
+            @Override public void restart(){if(world!=null)startPlay(world.mapNum);else startPlay();}
             @Override public void exitToEditor(){changeMode(returnMode);}
         });
         return menu;
@@ -1003,14 +1058,19 @@ public class EditorView extends View {
         world.paused=true;world.input.clear();for(int i=0;i<buttonPointer.length;i++)buttonPointer[i]=-1;joyPointer=lookPointer=-1;joyVisible=false;moveX=moveY=0;
         menu().openPause();
     }
-    private void startPlay(){bagOpen=false;world=new World(project,sfx);sfx.start();for(int i=0;i<buttonPointer.length;i++)buttonPointer[i]=-1;joyPointer=lookPointer=-1;joyVisible=false;}
+    private float mapFade;private int playThisMap=-1;
+    private void startPlay(){startPlay(project.startMap);}
+    private void startPlay(int mapNum){bagOpen=false;mapFade=0;world=new World(project,sfx,mapNum,null,"");sfx.start();for(int i=0;i<buttonPointer.length;i++)buttonPointer[i]=-1;joyPointer=lookPointer=-1;joyVisible=false;}
     private void drawPlay(Canvas c,float dt){
         if(menu!=null&&menu.active()){menu.draw(c,w,h,dt);nextFrame();return;}
         if(world==null)startPlay();
-        if(world.restartRequested){startPlay();hint("Level restarted");}
+        if(world.restartRequested){startPlay(world.mapNum);hint("Level restarted");}
         Input in=world.input;
         in.moveX=joyVisible?moveX:0;in.moveY=joyVisible?moveY:0;
         world.tick(dt);
+        if(world.pendingMap>0){   // exit sector or Go To Map: load the next map, carrying the hero over
+            World next=new World(project,sfx,world.pendingMap,world,world.pendingArrival);world=next;mapFade=1f;bagOpen=false;
+            world.centerPrint(project.mapName(world.mapNum),2.2f);in=world.input;}
         Actor pl=world.player;
         spriteList.clear();int pool=0;
         boolean tp=world.thirdPerson();
@@ -1032,6 +1092,7 @@ public class EditorView extends View {
         if(world.pickupFlash>0)renderer.tint(world.flashColor,world.pickupFlash*.35f);
         if(!pl.alive)renderer.tint(0xff800000,.35f);
         renderer.present(c,view3d);
+        if(mapFade>0){ui.rect(c,0,0,w,h,((int)(Math.min(1,mapFade)*255))<<24);mapFade-=dt*2.2f;}
         if(tp&&pl.alive){float mx=w*.5f,my=h*.5f;p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(1.5f));p.setColor(0xccffffff);
             c.drawCircle(mx,my,dp(6),p);p.setStyle(Paint.Style.FILL);c.drawCircle(mx,my,dp(1.5f),p);}
         drawFloaters(c);
@@ -1219,7 +1280,8 @@ public class EditorView extends View {
         cancelStage();entStage=0;
         mode=next;pending.clear();joyVisible=false;joyPointer=lookPointer=upPointer=downPointer=-1;moveX=moveY=0;flyUp=flyDown=false;dpadPointer=-1;
         lastFrame=System.nanoTime();
-        if(next==PLAY){if(frontEnd()){world=null;menu().begin();}else startPlay();}
+        if(next==PLAY){project.syncCurrent();if(playThisMap>0){int m=playThisMap;playThisMap=-1;if(menu!=null)menu.state=GameMenu.OFF;startPlay(m);}
+            else if(frontEnd()){world=null;menu().begin();}else startPlay(project.currentMap);}
         setKeepScreenOn(next==PLAY);   // the screen may sleep normally while editing
         if(next!=HOME&&!(next==PLAY&&frontEnd()))hint(next==PLAY?"Left: move · right: look · Attack, Cast, Use and Potion on the right · Bag top right":next==POLY?"Pick a tool, move the cursor, tap Apply":next==THINGS?"Pick an entity type, then Apply to place it":"Left: move · right: look · double-tap a surface to texture it");
     }
@@ -1232,6 +1294,7 @@ public class EditorView extends View {
     private boolean toolbarTap(int hid){
         if(hid>=H_ED&&hid<H_ED+EDITOR_NAMES.length){openEditor(hid-H_ED);return true;}
         if(hid==H_SWITCH){launcherOpen=true;return true;}
+        if(hid==H_MAPS){mapsMenu();return true;}
         if(hid==H_MORE){moreMenu();return true;}
         if(hid==H_LOGO){if(mode!=HOME){changeMode(HOME);return true;}save(false);if(onExitToTitle!=null)onExitToTitle.run();return true;}
         if(hid==H_SAVE){save(true);return true;}
@@ -1360,7 +1423,7 @@ public class EditorView extends View {
         int id=e.getPointerId(idx);
         if(a==MotionEvent.ACTION_DOWN||a==MotionEvent.ACTION_POINTER_DOWN){
             int hid=ui.hitAt(x,y);
-            if(world.levelComplete){if(hid==H_RETRY)startPlay();else if(hid==H_BACK){if(frontEnd()){world=null;menu().paused=false;menu().state=GameMenu.MAIN;}else changeMode(returnMode);}return true;}
+            if(world.levelComplete){if(hid==H_RETRY)startPlay(world.mapNum);else if(hid==H_BACK){if(frontEnd()){world=null;menu().paused=false;menu().state=GameMenu.MAIN;}else changeMode(returnMode);}return true;}
             if(bagOpen){bagTap(hid);bagDragY=y;bagDragged=false;return true;}
             if(world.dialogue!=null){if(hid>=H_DLG&&hid<H_DLG+3)world.chooseDialogue(hid-H_DLG);return true;}
             if(hid==H_EXITPLAY){pauseToMenu();return true;}

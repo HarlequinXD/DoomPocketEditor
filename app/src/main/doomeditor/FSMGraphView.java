@@ -360,7 +360,7 @@ public class FSMGraphView extends View {
             if(pm.type==Actions.T_FLOAT&&v.equals("0")&&b.length()>0)continue;
             if(b.length()>0)b.append(" · ");
             if(pm.type==Actions.T_BOOL)b.append(pm.label);else if(pm.type==Actions.T_EVENT)b.append("→ ").append(v);
-            else if(pm.type==Actions.T_CHOICE||pm.type==Actions.T_CLIP||pm.type==Actions.T_ENTITY||pm.type==Actions.T_MATERIAL||pm.type==Actions.T_SECTOR||pm.type==Actions.T_TEXT||pm.type==Actions.T_SOUND||pm.type==Actions.T_SONG)b.append(display(pm,v));
+            else if(pm.type==Actions.T_CHOICE||pm.type==Actions.T_CLIP||pm.type==Actions.T_ENTITY||pm.type==Actions.T_MATERIAL||pm.type==Actions.T_SECTOR||pm.type==Actions.T_TEXT||pm.type==Actions.T_SOUND||pm.type==Actions.T_SONG||pm.type==Actions.T_MAP)b.append(display(pm,v));
             else b.append(pm.label.toLowerCase()).append(' ').append(display(pm,v));
             if(b.length()>60)break;}
         return b.length()==0?s.category:b.toString();
@@ -373,6 +373,7 @@ public class FSMGraphView extends View {
             case Actions.T_EVENT:return v.isEmpty()?"—":v;
             case Actions.T_SOUND:return v.isEmpty()?"none":project.soundLabel(v);
             case Actions.T_SONG:return v.isEmpty()?"none":project.songLabel(v);
+            case Actions.T_MAP:{try{return project.mapName(Integer.parseInt(v));}catch(NumberFormatException e){return "choose a map";}}
             default:return v;
         }
     }
@@ -391,7 +392,7 @@ public class FSMGraphView extends View {
             if(pm.type==Actions.T_BOOL){boolean on=v.equals("true");float tx=rr-dp(44),ty=iy+dp(15);ui.round(c,tx,ty,tx+dp(32),ty+dp(16),dp(8),on?Ui.ACCENT:Ui.SURFACE_3);p.setColor(0xffffffff);c.drawCircle(on?tx+dp(24):tx+dp(8),ty+dp(8),dp(6),p);
                 ui.text(c,on?"Yes":"No",l+dp(10),iy+dp(36),12.5f,Ui.TEXT,1,-1);}
             else{String shown=display(pm,v);boolean empty=v.isEmpty();ui.text(c,ui.ellipsize(empty?(pm.type==Actions.T_EVENT?"No event":"Not set"):shown,12.5f,1,rr-l-dp(44)),l+dp(10),iy+dp(36),12.5f,empty?Ui.TEXT_3:pm.type==Actions.T_EVENT?Ui.AMBER:Ui.TEXT,1,-1);
-                ui.icon(c,pm.type==Actions.T_CHOICE||pm.type==Actions.T_CLIP||pm.type==Actions.T_EVENT||pm.type==Actions.T_ENTITY||pm.type==Actions.T_MATERIAL||pm.type==Actions.T_VAR||pm.type==Actions.T_SOUND||pm.type==Actions.T_SONG?Icons.CHEVRON_DOWN:Icons.PEN,rr-dp(16),iy+dp(23),13,Ui.TEXT_3);}
+                ui.icon(c,pm.type==Actions.T_CHOICE||pm.type==Actions.T_CLIP||pm.type==Actions.T_EVENT||pm.type==Actions.T_ENTITY||pm.type==Actions.T_MATERIAL||pm.type==Actions.T_VAR||pm.type==Actions.T_SOUND||pm.type==Actions.T_SONG||pm.type==Actions.T_MAP?Icons.CHEVRON_DOWN:Icons.PEN,rr-dp(16),iy+dp(23),13,Ui.TEXT_3);}
             ihit(r,H_PARAM+i);iy+=dp(52);}
         iy+=dp(4);
         float half=(rr-l-dp(6))/2f;
@@ -587,6 +588,9 @@ public class FSMGraphView extends View {
                 names.add("Make or edit sounds in the Sound Editor…");
                 String[] arr=names.toArray(new String[0]);int cur=vals.indexOf(v);
                 host.choose(pm.label,arr,cur,k->{if(k==arr.length-1)host.openSound(0);else a.params.put(pm.key,vals.get(k));});break;}
+            case Actions.T_MAP:{project.ensureMaps();String[] arr=new String[project.maps.size()];int cur=-1;
+                for(int k=0;k<arr.length;k++){Project.GameMap gm=project.maps.get(k);arr[k]=gm.name+(gm.num==project.startMap?"  (start)":"");if(String.valueOf(gm.num).equals(v))cur=k;}
+                host.choose(pm.label,arr,cur,k->a.params.put(pm.key,String.valueOf(project.maps.get(k).num)));break;}
             case Actions.T_SONG:{
                 String[] arr=new String[project.songs.size()+2];arr[0]="(none)";int cur=0;
                 for(int k=0;k<project.songs.size();k++){arr[k+1]=project.songs.get(k).name;if(project.songs.get(k).id.equals(v))cur=k+1;}

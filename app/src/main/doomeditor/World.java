@@ -60,9 +60,14 @@ final class World {
     /** Moves a floor or ceiling to a target, optionally waits and returns (doors, lifts). */
     static final class Mover {int sector;boolean ceiling;float target,speed,wait,returnTo;boolean returning;float delay;}
 
-    World(Project p,SoundFx sfx){this(p,sfx,false);}
+    World(Project p,SoundFx sfx){this(p,sfx,false,p.currentMap,null,"");}
+    /** Plays map {@code mapNum}. When {@code from} is given the hero, quests and global variables carry over from it. */
+    World(Project p,SoundFx sfx,int mapNum,World from,String arrival){this(p,sfx,false,mapNum,from,arrival);}
+    /** Map being played, and a map change requested by an exit or the Go To Map action (applied by the screen). */
+    int mapNum;int pendingMap=-1;String pendingArrival="";
+    void goToMap(int num,String arrival){if(levelComplete||pendingMap>0||project.map(num)==null)return;pendingMap=num;pendingArrival=arrival==null?"":arrival;paused=true;}
     /** Editor camera body: walks the live level (no copy, no entities, doors left as drawn). */
-    static World walker(Project p){return new World(p,null,true);}
+    static World walker(Project p){return new World(p,null,true,p.currentMap,null,"");}
     private long geoSig;
     final boolean live;
     /** Rebuilds collision lines if the live level's shape changed. */
@@ -70,18 +75,27 @@ final class World {
     /** Physics only, for the editor camera. */
     void walkerTick(float dt){dt=Math.min(dt,.05f);time+=dt;syncGeometry();physics(player,dt);
         float target=player.z+EYE;if(player.noGravity)viewZ=target;else if(target>viewZ)viewZ+=Math.min(target-viewZ,Math.max(dt*4f,(target-viewZ)*dt*12f));else viewZ=target;}
-    private World(Project p,SoundFx sfx,boolean live){
+    private World(Project p,SoundFx sfx,boolean live,int mapNum,World from,String arrival){
         project=p;this.sfx=sfx;this.live=live;
-        if(sfx!=null&&!live){sfx.stopSounds();sfx.useProject(p);playMusic(p.levelMusic,true,0);}
-        level=live?p.level:p.level.copy();
+        p.syncCurrent();
+        Project.GameMap gm=p.map(mapNum);if(gm==null)gm=p.current();this.mapNum=gm.num;
+        if(sfx!=null&&!live){sfx.stopSounds();sfx.useProject(p);String song=p.mapMusic(gm);
+            // keep the music going across a map change when both maps use the same song
+            if(from==null||!song.equals(sfx.musicTag)||!sfx.musicPlaying()){playMusic(song,true,0);sfx.musicTag=song;}}
+        level=live?p.level:gm.level.copy();
         lines=PortalTopology.build(level);geoSig=Renderer.signature(level);
         doorOpen=new float[level.sectors.size()];secretFound=new boolean[level.sectors.size()];
         for(int i=0;i<level.sectors.size();i++){Level.Sector s=level.sectors.get(i);
             if(s.special==Level.SP_DOOR&&!live){doorOpen[i]=s.ceiling;s.ceiling=s.floor;}   // doors start closed
             if(s.special==Level.SP_SECRET)totalSecrets++;}
         EntityDef pd=p.playerDef();
-        player=makeActor(pd,level.playerX,level.playerY,level.facing);player.isPlayer=true;
-        hero=Hero.create(pd);player.sprite=pd.lookSprite();player.health=hero.maxHp;weapon=hero.weaponOrFists().fp;
+        float sx=level.playerX,sy=level.playerY,sa=level.facing;
+        if(arrival!=null&&!arrival.isEmpty())for(Level.Thing t:level.things)if(arrival.equals(t.def)){sx=t.x;sy=t.y;sa=t.angle;break;}
+        player=makeActor(pd,sx,sy,sa);player.isPlayer=true;
+        if(from!=null&&from.hero!=null){hero=from.hero;player.sprite=from.player.sprite;player.health=Math.max(1,from.player.health);
+            quests.putAll(from.quests);globals.putAll(from.globals);}
+        else{hero=Hero.create(pd);player.sprite=pd.lookSprite();player.health=hero.maxHp;}
+        weapon=hero.weaponOrFists().fp;
         player.z=floorAt(player.x,player.y);viewZ=player.z+EYE;
         actors.add(player);
         if(live){player.fsm=null;return;}
@@ -754,7 +768,7 @@ final class World {
         Level.Sector s=level.sectors.get(ps);
         boolean onFloor=player.z<=s.floor+.05f;
         if(s.special==Level.SP_DAMAGE&&onFloor&&damageTick<=0){damageTick=1;damage(player,10,null);}
-        if(s.special==Level.SP_EXIT&&onFloor)exitLevel();
+        if(s.special==Level.SP_EXIT&&onFloor){if(s.tag>0&&project.map(s.tag)!=null)goToMap(s.tag,"");else exitLevel();}
         if(s.special==Level.SP_SECRET&&!secretFound[ps]){secretFound[ps]=true;secrets++;centerPrint("A secret is revealed!",2.5f);sound(SoundFx.SECRET,player);}
     }
 
@@ -819,6 +833,7 @@ final class World {
     void stopSounds(){if(sfx!=null)sfx.stopSounds();}
     void setSoundVolume(float v){if(sfx!=null)sfx.sfxVolume=Math.max(0,Math.min(1,v));}
     void playMusic(String songId,boolean loop,float fadeIn){
+        if(sfx!=null)sfx.musicTag=songId==null?"":songId;
         if(sfx==null)return;Song m=project.song(songId);
         if(m==null){sfx.stopMusic(0);return;}
         sfx.playMusic(m.compile(project),loop,fadeIn);

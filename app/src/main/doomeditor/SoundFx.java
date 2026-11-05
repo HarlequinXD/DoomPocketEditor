@@ -41,6 +41,8 @@ final class SoundFx {
     private int step;private double stepLeft;private long age;
     private float fade=1,fadeTarget=1,fadeStep;
     private int rnd=0x2545F491;
+    /** Song id the game last started, so a map change can keep the same music playing. */
+    String musicTag="";
     volatile long musicTicks;
     volatile int musicStep=-1;
 

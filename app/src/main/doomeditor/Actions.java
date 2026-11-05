@@ -10,7 +10,7 @@ import java.util.LinkedHashMap;
  */
 final class Actions {
     private Actions(){}
-    static final int T_FLOAT=0,T_INT=1,T_BOOL=2,T_TEXT=3,T_EVENT=4,T_VAR=5,T_CHOICE=6,T_ENTITY=7,T_MATERIAL=8,T_SECTOR=9,T_CLIP=10,T_SOUND=11,T_SONG=12;
+    static final int T_FLOAT=0,T_INT=1,T_BOOL=2,T_TEXT=3,T_EVENT=4,T_VAR=5,T_CHOICE=6,T_ENTITY=7,T_MATERIAL=8,T_SECTOR=9,T_CLIP=10,T_SOUND=11,T_SONG=12,T_MAP=13;
     static final int DONE=0,RUNNING=1;
     static final String CAM_STYLES="Orbit|Shoulder|Chase";
     static final String[] CATEGORIES={"Flow","Animation","Variables","Input","Combat","Character","Inventory","Dialogue","Quests","Health","Movement","Camera","AI","World","Entities","Feedback","Audio"};
@@ -47,7 +47,7 @@ final class Actions {
         int colon=spec.indexOf(':'),eq=spec.indexOf('=',colon);
         String key=spec.substring(0,colon),type=spec.substring(colon+1,eq<0?spec.length():eq),def=eq<0?"":spec.substring(eq+1);
         if(type.startsWith("c(")){String[] opts=type.substring(2,type.length()-1).split("\\|");return new Param(key,T_CHOICE,def.isEmpty()?opts[0]:def,opts);}
-        int t;switch(type){case "f":t=T_FLOAT;break;case "i":t=T_INT;break;case "b":t=T_BOOL;break;case "e":t=T_EVENT;break;case "v":t=T_VAR;break;case "E":t=T_ENTITY;break;case "M":t=T_MATERIAL;break;case "A":t=T_CLIP;break;case "X":t=T_SECTOR;break;case "S":t=T_SOUND;break;case "U":t=T_SONG;break;default:t=T_TEXT;}
+        int t;switch(type){case "f":t=T_FLOAT;break;case "i":t=T_INT;break;case "b":t=T_BOOL;break;case "e":t=T_EVENT;break;case "v":t=T_VAR;break;case "E":t=T_ENTITY;break;case "M":t=T_MATERIAL;break;case "A":t=T_CLIP;break;case "X":t=T_SECTOR;break;case "S":t=T_SOUND;break;case "U":t=T_SONG;break;case "P":t=T_MAP;break;default:t=T_TEXT;}
         return new Param(key,t,def,null);
     }
     private static void def(String id,String name,String cat,int icon,String desc,Impl impl,String... params){
@@ -321,6 +321,10 @@ final class Actions {
         def("set_sector_texture","Set Sector Texture","World",Icons.WALL_TEX,"Changes a sector's floor, ceiling or wall texture.",c->{
             Level.Sector s=c.w.sector(c.i("sector"));if(s!=null){int t=Math.max(0,Math.min(Textures.COUNT-1,c.i("texture")));switch(c.choice("surface","Floor|Ceiling|Wall")){case 1:s.ceilingMaterial=t;break;case 2:s.wallMaterial=t;break;default:s.floorMaterial=t;}}return DONE;},
             "sector:X=0","surface:c(Floor|Ceiling|Wall)=Floor","texture:M=0");
+        def("go_to_map","Go To Map","World",Icons.FLAG,"Takes the hero to another map. Optionally arrive at the first placed entity of a type (an Arrival Point); otherwise at that map's player start. The hero keeps health, items, gold, keys and quests.",c->{
+            int num;try{num=Integer.parseInt(c.s("map"));}catch(NumberFormatException e){num=-1;}c.w.goToMap(num,c.s("arriveAt"));return DONE;},"map:P=","arriveAt:E=");
+        def("is_map","Current Map Is","World",Icons.VALIDATE,"Sends one event if the hero is on a particular map, another if not.",c->{
+            int num;try{num=Integer.parseInt(c.s("map"));}catch(NumberFormatException e){num=-1;}c.send(c.w.mapNum==num?"yesEvent":"noEvent");return DONE;},"map:P=","yesEvent:e=","noEvent:e=");
         def("exit_level","Exit Level","World",Icons.FLAG,"Finishes the level and shows the results screen.",c->{c.w.exitLevel();return DONE;});
         def("restart_level","Restart Level","World",Icons.RESET,"Restarts the level from the beginning.",c->{c.w.requestRestart();return DONE;});
         def("in_sector_event","In Sector","World",Icons.SECTORS,"Sends an event while this entity is inside a sector.",c->{if(c.w.sectorIndex(c.self)==c.i("sector"))c.send("event");return c.doneOrRun();},"sector:X=0","event:e=","everyFrame:b=true");
