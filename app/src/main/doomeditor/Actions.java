@@ -10,7 +10,7 @@ import java.util.LinkedHashMap;
  */
 final class Actions {
     private Actions(){}
-    static final int T_FLOAT=0,T_INT=1,T_BOOL=2,T_TEXT=3,T_EVENT=4,T_VAR=5,T_CHOICE=6,T_ENTITY=7,T_MATERIAL=8,T_SECTOR=9,T_CLIP=10,T_SOUND=11,T_SONG=12,T_MAP=13,T_ITEM=14,T_SPELL=15,T_CLASS=16,T_LOOT=17,T_SHOP=18;
+    static final int T_FLOAT=0,T_INT=1,T_BOOL=2,T_TEXT=3,T_EVENT=4,T_VAR=5,T_CHOICE=6,T_ENTITY=7,T_MATERIAL=8,T_SECTOR=9,T_CLIP=10,T_SOUND=11,T_SONG=12,T_MAP=13,T_ITEM=14,T_SPELL=15,T_CLASS=16,T_LOOT=17,T_SHOP=18,T_TALK=19,T_QUEST=20;
     static final int DONE=0,RUNNING=1;
     static final String CAM_STYLES="Orbit|Shoulder|Chase";
     static final String[] CATEGORIES={"Flow","Animation","Variables","Input","Combat","Character","Inventory","Dialogue","Quests","Health","Movement","Camera","AI","World","Entities","Feedback","Audio"};
@@ -47,7 +47,7 @@ final class Actions {
         int colon=spec.indexOf(':'),eq=spec.indexOf('=',colon);
         String key=spec.substring(0,colon),type=spec.substring(colon+1,eq<0?spec.length():eq),def=eq<0?"":spec.substring(eq+1);
         if(type.startsWith("c(")){String[] opts=type.substring(2,type.length()-1).split("\\|");return new Param(key,T_CHOICE,def.isEmpty()?opts[0]:def,opts);}
-        int t;switch(type){case "f":t=T_FLOAT;break;case "i":t=T_INT;break;case "b":t=T_BOOL;break;case "e":t=T_EVENT;break;case "v":t=T_VAR;break;case "E":t=T_ENTITY;break;case "M":t=T_MATERIAL;break;case "A":t=T_CLIP;break;case "X":t=T_SECTOR;break;case "S":t=T_SOUND;break;case "U":t=T_SONG;break;case "P":t=T_MAP;break;case "I":t=T_ITEM;break;case "W":t=T_SPELL;break;case "C":t=T_CLASS;break;case "L":t=T_LOOT;break;case "H":t=T_SHOP;break;default:t=T_TEXT;}
+        int t;switch(type){case "f":t=T_FLOAT;break;case "i":t=T_INT;break;case "b":t=T_BOOL;break;case "e":t=T_EVENT;break;case "v":t=T_VAR;break;case "E":t=T_ENTITY;break;case "M":t=T_MATERIAL;break;case "A":t=T_CLIP;break;case "X":t=T_SECTOR;break;case "S":t=T_SOUND;break;case "U":t=T_SONG;break;case "P":t=T_MAP;break;case "I":t=T_ITEM;break;case "W":t=T_SPELL;break;case "C":t=T_CLASS;break;case "L":t=T_LOOT;break;case "H":t=T_SHOP;break;case "G":t=T_TALK;break;case "Q":t=T_QUEST;break;default:t=T_TEXT;}
         return new Param(key,t,def,null);
     }
     private static void def(String id,String name,String cat,int icon,String desc,Impl impl,String... params){
@@ -230,17 +230,22 @@ final class Actions {
                 c.w.say(c.self,sp,c.s("text"),ch.toArray(new String[0]),ev.toArray(new String[0]));c.m[0]=1;return RUNNING;}
             return c.w.dialogue==null?DONE:RUNNING;},
             "speaker:t=","text:t=Well met, traveller.","answer1:t=","event1:e=","answer2:t=","event2:e=","answer3:t=","event3:e=","doneEvent:e=");
+        def("talk","Talk (Conversation)","Dialogue",Icons.CHAT,"Runs a conversation tree from the Dialogue editor: lines, choices with conditions, and effects like giving items or starting quests. Sends the end event when it finishes.",c->{
+            if(c.enter){c.w.startTalk(c.self,c.w.project.dialogue(c.s("conversation")),c.s("endEvent"));}return c.w.dialogue!=null&&c.w.dialogue.tree!=null?RUNNING:DONE;},"conversation:G=","endEvent:e=");
         def("dialogue_open","Is Talking","Dialogue",Icons.CHAT,"Sends an event while a conversation box is open.",c->{if(c.w.dialogue!=null)c.send("event");return c.doneOrRun();},"event:e=","everyFrame:b=true");
 
         // ------------------------------------------------------------------ Quests
         def("start_quest","Start Quest","Quests",Icons.SCROLL,"Adds a quest to the hero's journal.",c->{World.Quest q=c.w.quest(c.s("id"));if(q.state==World.Q_INACTIVE){q.state=World.Q_ACTIVE;q.title=c.s("title").isEmpty()?q.id:c.s("title");q.text=c.s("objective");c.w.centerPrint("New quest: "+q.title,3);c.w.sound(SoundFx.SECRET,c.w.player);}return DONE;},
-            "id:t=quest1","title:t=The Lost Relic","objective:t=Find the relic in the crypt.");
-        def("update_quest","Update Quest","Quests",Icons.SCROLL,"Changes a quest's current objective.",c->{World.Quest q=c.w.quest(c.s("id"));q.text=c.s("objective");if(q.state==World.Q_ACTIVE)c.w.message("Journal updated: "+q.text,3);return DONE;},"id:t=quest1","objective:t=Return the relic to the priest.");
+            "id:Q=quest1","title:t=The Lost Relic","objective:t=Find the relic in the crypt.");
+        def("update_quest","Update Quest","Quests",Icons.SCROLL,"Changes a quest's current objective.",c->{World.Quest q=c.w.quest(c.s("id"));q.text=c.s("objective");if(q.state==World.Q_ACTIVE)c.w.message("Journal updated: "+q.text,3);return DONE;},"id:Q=quest1","objective:t=Return the relic to the priest.");
         def("complete_quest","Complete Quest","Quests",Icons.CHECK,"Completes a quest and rewards the hero with XP and gold.",c->{World.Quest q=c.w.quest(c.s("id"));if(q.state!=World.Q_DONE){q.state=World.Q_DONE;c.w.centerPrint("Quest complete: "+q.title,3);c.w.sound(SoundFx.LEVEL_UP,c.w.player);
-                if(c.i("gold")>0)c.w.giveGold(c.i("gold"));c.w.awardXp(c.i("xp"),c.w.player);}return DONE;},"id:t=quest1","xp:i=100","gold:i=25");
-        def("fail_quest","Fail Quest","Quests",Icons.CANCEL,"Marks a quest as failed.",c->{World.Quest q=c.w.quest(c.s("id"));q.state=World.Q_FAILED;c.w.message("Quest failed: "+q.title,3);return DONE;},"id:t=quest1");
+                if(c.i("gold")>0)c.w.giveGold(c.i("gold"));c.w.awardXp(c.i("xp"),c.w.player);}return DONE;},"id:Q=quest1","xp:i=100","gold:i=25");
+        def("quest_begin","Begin Quest","Quests",Icons.SCROLL,"Starts a quest from the Dialogue editor's Quests tab: its title and first objective go in the journal.",c->{c.w.questBegin(c.s("quest"));return DONE;},"quest:Q=");
+        def("quest_stage","Set Quest Stage","Quests",Icons.SCROLL,"Moves a quest to one of its stages (1 = first objective); starts it if needed.",c->{c.w.questStage(c.s("quest"),c.i("stage"));return DONE;},"quest:Q=","stage:i=2");
+        def("quest_finish","Finish Quest","Quests",Icons.CHECK,"Completes a quest and gives the rewards set in the Quests tab (XP, gold, item).",c->{c.w.questFinish(c.s("quest"));return DONE;},"quest:Q=");
+        def("fail_quest","Fail Quest","Quests",Icons.CANCEL,"Marks a quest as failed.",c->{World.Quest q=c.w.quest(c.s("id"));q.state=World.Q_FAILED;c.w.message("Quest failed: "+q.title,3);return DONE;},"id:Q=quest1");
         def("quest_state","Quest State","Quests",Icons.SCROLL,"Sends an event for a quest's state: not started, active, done or failed.",c->{
-            int st=c.w.questState(c.s("id"));c.send(st==World.Q_ACTIVE?"activeEvent":st==World.Q_DONE?"doneEvent":st==World.Q_FAILED?"failedEvent":"notStartedEvent");return DONE;},"id:t=quest1","notStartedEvent:e=","activeEvent:e=","doneEvent:e=","failedEvent:e=");
+            int st=c.w.questState(c.s("id"));c.send(st==World.Q_ACTIVE?"activeEvent":st==World.Q_DONE?"doneEvent":st==World.Q_FAILED?"failedEvent":"notStartedEvent");return DONE;},"id:Q=quest1","notStartedEvent:e=","activeEvent:e=","doneEvent:e=","failedEvent:e=");
 
         // ------------------------------------------------------------------ Legacy (older projects; hidden from the browser)
         def("fire_weapon","Fire Weapon (old)","Legacy",Icons.SWORD,"Older projects: attacks with the hero's weapon.",c->{

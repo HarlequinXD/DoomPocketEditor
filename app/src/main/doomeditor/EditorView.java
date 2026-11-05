@@ -21,11 +21,11 @@ public class EditorView extends View {
     private static final String[] MODE_NAMES={"Sectors","Entities","3D View","Play"};
     private static final int[] MODE_ICONS={Icons.SECTORS,Icons.ENTITIES,Icons.CUBE,Icons.PLAY};
     // Every editor in the app, in header / launcher order. Index 4 and 5 open their own screens.
-    static final String[] EDITOR_NAMES={"Sectors","Entities","3D View","Play","FSM","Sprites","Sound","UI Editor","Content"};
-    static final int[] EDITOR_ICONS={Icons.SECTORS,Icons.ENTITIES,Icons.CUBE,Icons.PLAY,Icons.GRAPH,Icons.PIXEL,Icons.MUSIC,Icons.GAMEPAD,Icons.BACKPACK};
-    static final int[] EDITOR_COLORS={0xff3d8bfd,0xfff0a030,0xff9b6dff,0xff3ecf8e,0xff2fb8c8,0xffef6b8a,0xffe0679a,0xffd8a830,0xffc0703a};
-    static final String[] EDITOR_DESC={"Rooms, doors & stairs","Monsters, items & types","Walk & paint surfaces","Test with the real engine","Behaviour & actions","Pixel art & animation","Sound effects & music","Controls & HUD layout","Items, spells, classes, loot & shops"};
-    private static final int[] EDITOR_MODES={POLY,THINGS,POLY3D,PLAY,-1,-1,-1,-1,-1};
+    static final String[] EDITOR_NAMES={"Sectors","Entities","3D View","Play","FSM","Sprites","Sound","UI Editor","Content","Dialogue"};
+    static final int[] EDITOR_ICONS={Icons.SECTORS,Icons.ENTITIES,Icons.CUBE,Icons.PLAY,Icons.GRAPH,Icons.PIXEL,Icons.MUSIC,Icons.GAMEPAD,Icons.BACKPACK,Icons.CHAT};
+    static final int[] EDITOR_COLORS={0xff3d8bfd,0xfff0a030,0xff9b6dff,0xff3ecf8e,0xff2fb8c8,0xffef6b8a,0xffe0679a,0xffd8a830,0xffc0703a,0xff5a8a4a};
+    static final String[] EDITOR_DESC={"Rooms, doors & stairs","Monsters, items & types","Walk & paint surfaces","Test with the real engine","Behaviour & actions","Pixel art & animation","Sound effects & music","Controls & HUD layout","Items, spells, classes, loot & shops","Conversations & quests"};
+    private static final int[] EDITOR_MODES={POLY,THINGS,POLY3D,PLAY,-1,-1,-1,-1,-1,-1};
     private static final int H_ED=3000,H_SWITCH=3010,H_MORE=3011,H_LAUNCH=3020,H_LAUNCH_HOME=3037,H_LAUNCH_CLOSE=3038,H_TILE=3040,H_HOMEPLAY=3050,H_HOME3D=3051,H_HOMEFIX=3052;
     private boolean launcherOpen;
     // Touch target ids registered while drawing.
@@ -264,6 +264,7 @@ public class EditorView extends View {
         if(i==6){save(false);if(host!=null)host.openSound(0);return;}
         if(i==7){save(false);if(host!=null)host.openUi();return;}
         if(i==8){save(false);if(host!=null)host.openContent(0);return;}
+        if(i==9){save(false);if(host!=null)host.openDialogue(0);return;}
         if(EDITOR_MODES[i]!=mode)changeMode(EDITOR_MODES[i]);
     }
     /** Android back: close the launcher, leave Play, leave an editor for Home; false means leave the project. */
@@ -320,6 +321,7 @@ public class EditorView extends View {
             case 3:return statWarnings==0?"Ready to play":statWarnings+" map warning"+(statWarnings==1?"":"s");
             case 4:return statStates+" states · "+project.defs.size()+" machines";
             case 5:return project.sprites.size()+(project.sprites.size()==1?" custom sprite":" custom sprites");
+            case 9:return project.dialogues.size()+(project.dialogues.size()==1?" conversation · ":" conversations · ")+project.quests.size()+(project.quests.size()==1?" quest":" quests");
             case 8:{project.ensureContent();return project.items.size()+" items · "+project.spells.size()+" spells · "+project.classes.size()+" classes";}
             case 7:{int moved=0;for(HudLayout.Elem el:project.hud.e)if(el.custom||el.scale!=1||el.alpha!=1||!el.visible)moved++;return moved==0?"Default layout":moved+" control"+(moved==1?"":"s")+" customised";}
             default:return project.sounds.size()+(project.sounds.size()==1?" sound · ":" sounds · ")+project.songs.size()+(project.songs.size()==1?" song":" songs");
@@ -1490,7 +1492,7 @@ public class EditorView extends View {
             if(world.levelComplete){if(hid==H_RETRY)startPlay(world.mapNum);else if(hid==H_BACK){if(frontEnd()){world=null;menu().paused=false;menu().state=GameMenu.MAIN;}else changeMode(returnMode);}return true;}
             if(world.shop!=null){shopDownHit=hid;bagDragY=y;bagDragged=false;return true;}
             if(bagOpen){bagTap(hid);bagDragY=y;bagDragged=false;return true;}
-            if(world.dialogue!=null){if(hid>=H_DLG&&hid<H_DLG+3)world.chooseDialogue(hid-H_DLG);return true;}
+            if(world.dialogue!=null){if(hid>=H_DLG&&hid<H_DLG+8)world.chooseDialogue(hid-H_DLG);return true;}
             if(hid==H_EXITPLAY){pauseToMenu();return true;}
             if(hid==H_BAG){openBag();return true;}
             int b=hid==H_FIRE?Input.FIRE:hid==H_USE?Input.USE:hid==H_JUMP?Input.JUMP:hid==H_WEAPON?Input.WEAPON:hid==H_SPELL?Input.SPELL:hid==H_POTION?Input.POTION:-1;

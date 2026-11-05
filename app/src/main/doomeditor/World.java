@@ -51,9 +51,11 @@ final class World {
     final ArrayList<Floater> floaters=new ArrayList<>();
     void floater(Actor a,String text,int color){if(a==null||!GameSettings.combatText)return;floaters.add(new Floater(a.x+(rng.nextFloat()-.5f)*.25f,a.y+(rng.nextFloat()-.5f)*.25f,a.z+a.height+.1f,text,color));if(floaters.size()>40)floaters.remove(0);}
     /** NPC conversation shown over the game (pauses it). Choices send events back to the speaker's FSM. */
-    static final class Dialogue {String speaker,text;String[] choices,events;Actor who;}
+    static final class Dialogue {String speaker,text;String[] choices,events;Actor who;
+        /** Conversation tree mode (Dialogue editor): the tree, the node shown and which choice each button is. */
+        com.retro.doomeditor.Dialogue.Def tree;com.retro.doomeditor.Dialogue.Node node;int[] choiceMap;String endEvent="";}
     Dialogue dialogue;
-    static final class Quest {final String id;String title,text;int state;Quest(String id){this.id=id;}}
+    static final class Quest {final String id;String title,text;int state,stage;Quest(String id){this.id=id;}}
     static final int Q_INACTIVE=0,Q_ACTIVE=1,Q_DONE=2,Q_FAILED=3;
     final java.util.LinkedHashMap<String,Quest> quests=new java.util.LinkedHashMap<>();
     static final class Effect {int type;float x,y,z,t,life;Effect(int type,float x,float y,float z,float life){this.type=type;this.x=x;this.y=y;this.z=z;this.life=life;}}
@@ -753,7 +755,85 @@ final class World {
     boolean hasKey(int k){return hero!=null&&hero.hasKey(k);}
     // ---- dialogue & quests
     void say(Actor who,String speaker,String text,String[] choices,String[] events){Dialogue d=new Dialogue();d.who=who;d.speaker=speaker;d.text=text;d.choices=choices;d.events=events;dialogue=d;input.clear();}
-    void chooseDialogue(int i){Dialogue d=dialogue;dialogue=null;if(d==null)return;if(d.events!=null&&i>=0&&i<d.events.length&&d.events[i]!=null&&!d.events[i].isEmpty()&&d.who!=null&&d.who.fsm!=null)d.who.fsm.send(d.events[i]);}
+    void chooseDialogue(int i){Dialogue d=dialogue;if(d!=null&&d.tree!=null){chooseTalk(d,i);return;}dialogue=null;if(d==null)return;if(d.events!=null&&i>=0&&i<d.events.length&&d.events[i]!=null&&!d.events[i].isEmpty()&&d.who!=null&&d.who.fsm!=null)d.who.fsm.send(d.events[i]);}
+    // ------------------------------------------------------------------ conversation trees (Dialogue editor)
+    void startTalk(Actor who,com.retro.doomeditor.Dialogue.Def def,String endEvent){
+        if(def==null||def.nodes.isEmpty()){if(who!=null&&who.fsm!=null&&endEvent!=null&&!endEvent.isEmpty())who.fsm.send(endEvent);return;}
+        Dialogue d=new Dialogue();d.who=who;d.tree=def;d.endEvent=endEvent==null?"":endEvent;
+        showNode(d,def.node(def.start)!=null?def.node(def.start):def.nodes.get(0),0);
+    }
+    private void showNode(Dialogue d,com.retro.doomeditor.Dialogue.Node n,int depth){
+        if(n==null||depth>20){endTalk(d);return;}
+        d.node=n;
+        for(com.retro.doomeditor.Dialogue.Effect e:n.effects){if(applyEffect(d,e))return;}   // an effect ended the talk (shop)
+        java.util.ArrayList<String> labels=new java.util.ArrayList<>();java.util.ArrayList<Integer> map=new java.util.ArrayList<>();
+        for(int i=0;i<n.choices.size();i++){com.retro.doomeditor.Dialogue.Choice c=n.choices.get(i);if(check(c.cond)){labels.add(c.text.isEmpty()?"…":c.text);map.add(i);}}
+        if(labels.isEmpty()){labels.add(n.next.isEmpty()?"Farewell":"Continue");map.add(-1);}
+        d.choiceMap=new int[map.size()];for(int i=0;i<map.size();i++)d.choiceMap[i]=map.get(i);
+        String sp=!n.speaker.isEmpty()?n.speaker:!d.tree.speaker.isEmpty()?d.tree.speaker:d.who!=null&&d.who.def!=null?d.who.def.name:"";
+        d.speaker=sp;d.text=n.text;d.choices=labels.toArray(new String[0]);d.events=null;
+        dialogue=d;input.clear();
+    }
+    private void chooseTalk(Dialogue d,int i){
+        if(i<0||i>=d.choiceMap.length)return;
+        int ci=d.choiceMap[i];String target=ci<0?d.node.next:d.node.choices.get(ci).target;
+        com.retro.doomeditor.Dialogue.Node nx=target==null||target.isEmpty()?null:d.tree.node(target);
+        if(nx==null)endTalk(d);else showNode(d,nx,0);
+    }
+    private void endTalk(Dialogue d){if(dialogue==d)dialogue=null;if(d.who!=null&&d.who.fsm!=null&&!d.endEvent.isEmpty())d.who.fsm.send(d.endEvent);}
+    private static String varName(String s){return s.startsWith("g.")?s.substring(2):s;}
+    boolean check(com.retro.doomeditor.Dialogue.Cond c){
+        boolean r;
+        switch(c.kind){
+            case com.retro.doomeditor.Dialogue.C_ITEM:{Rpg.Item it=Rpg.item(c.s);r=hero!=null&&it!=null&&hero.count(it)>=Math.max(1,c.n);break;}
+            case com.retro.doomeditor.Dialogue.C_QUEST:r=questState(c.s)==c.n;break;
+            case com.retro.doomeditor.Dialogue.C_GOLD:r=hero!=null&&hero.gold>=c.n;break;
+            case com.retro.doomeditor.Dialogue.C_VAR:{Float v=globals.get(varName(c.s));r=(v==null?0:v)>=c.n;break;}
+            case com.retro.doomeditor.Dialogue.C_CLASS:r=hero!=null&&hero.cls.name.equalsIgnoreCase(c.s);break;
+            case com.retro.doomeditor.Dialogue.C_LEVEL:r=hero!=null&&hero.level>=c.n;break;
+            default:return true;
+        }
+        return c.not!=r;
+    }
+    /** Runs a node effect; returns true if it ended the conversation. */
+    private boolean applyEffect(Dialogue d,com.retro.doomeditor.Dialogue.Effect e){
+        switch(e.kind){
+            case com.retro.doomeditor.Dialogue.E_GIVE_ITEM:{Rpg.Item it=Rpg.item(e.s);if(it!=null&&giveItem(it,Math.max(1,e.n)))message("Received "+(e.n>1?e.n+"× ":"")+it.name,2.5f);break;}
+            case com.retro.doomeditor.Dialogue.E_TAKE_ITEM:{Rpg.Item it=Rpg.item(e.s);if(it!=null&&hero!=null)hero.remove(it,Math.max(1,e.n));break;}
+            case com.retro.doomeditor.Dialogue.E_GIVE_GOLD:giveGold(e.n);break;
+            case com.retro.doomeditor.Dialogue.E_TAKE_GOLD:if(hero!=null)hero.gold=Math.max(0,hero.gold-e.n);break;
+            case com.retro.doomeditor.Dialogue.E_START_QUEST:questBegin(e.s);break;
+            case com.retro.doomeditor.Dialogue.E_QUEST_STAGE:questStage(e.s,e.n);break;
+            case com.retro.doomeditor.Dialogue.E_COMPLETE_QUEST:questFinish(e.s);break;
+            case com.retro.doomeditor.Dialogue.E_FAIL_QUEST:{Quest q=quest(e.s);if(q.state!=Q_FAILED){q.state=Q_FAILED;message("Quest failed: "+q.title,3);}break;}
+            case com.retro.doomeditor.Dialogue.E_SET_VAR:globals.put(varName(e.s),(float)e.n);break;
+            case com.retro.doomeditor.Dialogue.E_ADD_VAR:{String k=varName(e.s);Float v=globals.get(k);globals.put(k,(v==null?0:v)+e.n);break;}
+            case com.retro.doomeditor.Dialogue.E_XP:awardXp(e.n,player);break;
+            case com.retro.doomeditor.Dialogue.E_LOOT:giveLoot(Rpg.loot(e.s));break;
+            case com.retro.doomeditor.Dialogue.E_SHOP:{Rpg.Shop s=Rpg.shop(e.s);endTalk(d);if(s!=null)openShop(s,d.who,"");return true;}
+            case com.retro.doomeditor.Dialogue.E_EVENT:if(d.who!=null&&d.who.fsm!=null&&!e.s.isEmpty())d.who.fsm.send(e.s);break;
+            default:if(hero!=null){heal(player,hero.maxHp);hero.sp=hero.maxSp;message("You feel rested",2);}
+        }
+        return false;
+    }
+    // ------------------------------------------------------------------ quests defined in the Dialogue editor
+    void questBegin(String id){
+        Quest q=quest(id);if(q.state!=Q_INACTIVE)return;com.retro.doomeditor.Dialogue.QuestDef qd=project.questDef(id);
+        q.state=Q_ACTIVE;q.stage=0;if(qd!=null){q.title=qd.title;q.text=qd.objective(0);}
+        centerPrint("New quest: "+q.title,3);sound(SoundFx.SECRET,player);
+    }
+    /** Stage numbers are 1-based in the editor. */
+    void questStage(String id,int stage){
+        Quest q=quest(id);com.retro.doomeditor.Dialogue.QuestDef qd=project.questDef(id);
+        if(q.state==Q_INACTIVE)questBegin(id);if(q.state!=Q_ACTIVE)return;
+        q.stage=Math.max(0,stage-1);if(qd!=null){q.text=qd.objective(q.stage);message("Journal updated: "+q.text,3);}
+    }
+    void questFinish(String id){
+        Quest q=quest(id);if(q.state==Q_DONE)return;com.retro.doomeditor.Dialogue.QuestDef qd=project.questDef(id);
+        if(qd!=null&&q.title.equals(q.id))q.title=qd.title;
+        q.state=Q_DONE;centerPrint("Quest complete: "+q.title,3);sound(SoundFx.LEVEL_UP,player);
+        if(qd!=null){if(qd.gold>0)giveGold(qd.gold);Rpg.Item it=Rpg.item(qd.rewardItem);if(it!=null)giveItem(it,qd.rewardCount);awardXp(qd.xp,player);}
+    }
     Quest quest(String id){Quest q=quests.get(id);if(q==null){q=new Quest(id);q.title=id;q.text="";quests.put(id,q);}return q;}
     int questState(String id){Quest q=quests.get(id);return q==null?Q_INACTIVE:q.state;}
     boolean giveHealth(Actor a,int amount,int max){if(a==null||!a.alive)return false;if(a.isPlayer&&hero!=null)max=hero.maxHp;if(a.health>=max)return false;int b=a.health;a.health=Math.min(max,a.health+amount);floater(a,"+"+(a.health-b),0xff60e070);return true;}

@@ -378,6 +378,8 @@ public class FSMGraphView extends View {
             case Actions.T_SPELL:{if(v.equalsIgnoreCase("Selected"))return "Selected spell";Rpg.Spell sp=Rpg.spell(v);return v.isEmpty()?"none":sp==null?v+"?":sp.name;}
             case Actions.T_LOOT:{Rpg.LootTable t=Rpg.loot(v);return v.isEmpty()?"none":t==null?v+"?":t.name;}
             case Actions.T_SHOP:{Rpg.Shop t=Rpg.shop(v);return v.isEmpty()?"none":t==null?v+"?":t.name;}
+            case Actions.T_TALK:{Dialogue.Def d=project.dialogue(v);return v.isEmpty()?"choose a conversation":d==null?v+"?":d.name;}
+            case Actions.T_QUEST:{Dialogue.QuestDef q=project.questDef(v);return v.isEmpty()?"choose a quest":q==null?v:q.title;}
             default:return v;
         }
     }
@@ -610,6 +612,12 @@ public class FSMGraphView extends View {
             case Actions.T_SHOP:{String[] arr=new String[Rpg.SHOPS.size()+1];int cur=-1;Rpg.Shop now=Rpg.shop(v);for(int k=0;k<Rpg.SHOPS.size();k++){arr[k]=Rpg.SHOPS.get(k).name;if(Rpg.SHOPS.get(k)==now)cur=k;}
                 arr[arr.length-1]="Create or edit shops in the Content editor…";
                 host.choose(pm.label,arr,cur,k->{if(k==Rpg.SHOPS.size())host.openContent(4);else a.params.put(pm.key,Rpg.SHOPS.get(k).id);});break;}
+            case Actions.T_TALK:{String[] arr=new String[project.dialogues.size()+1];int cur=-1;for(int k=0;k<project.dialogues.size();k++){arr[k]=project.dialogues.get(k).name;if(project.dialogues.get(k).id.equals(v))cur=k;}
+                arr[arr.length-1]="Write conversations in the Dialogue editor…";
+                host.choose(pm.label,arr,cur,k->{if(k==project.dialogues.size())host.openDialogue(0);else a.params.put(pm.key,project.dialogues.get(k).id);});break;}
+            case Actions.T_QUEST:{String[] arr=new String[project.quests.size()+2];int cur=-1;for(int k=0;k<project.quests.size();k++){arr[k]=project.quests.get(k).title;if(project.quests.get(k).id.equals(v))cur=k;}
+                arr[arr.length-2]="Type a quest ID…";arr[arr.length-1]="Create quests in the Dialogue editor…";
+                host.choose(pm.label,arr,cur,k->{if(k==arr.length-1)host.openDialogue(1);else if(k==arr.length-2)host.prompt(pm.label,"Any name; the same ID links Start, Update and Complete",v,false,t->{if(!t.trim().isEmpty())a.params.put(pm.key,t.trim());});else a.params.put(pm.key,project.quests.get(k).id);});break;}
             case Actions.T_MAP:{project.ensureMaps();String[] arr=new String[project.maps.size()];int cur=-1;
                 for(int k=0;k<arr.length;k++){Project.GameMap gm=project.maps.get(k);arr[k]=gm.name+(gm.num==project.startMap?"  (start)":"");if(String.valueOf(gm.num).equals(v))cur=k;}
                 host.choose(pm.label,arr,cur,k->a.params.put(pm.key,String.valueOf(project.maps.get(k).num)));break;}

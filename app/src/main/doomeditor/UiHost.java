@@ -13,4 +13,6 @@ interface UiHost {
     default void openUi(){}
     /** Opens the Content editor (0 items, 1 spells, 2 classes, 3 loot, 4 shops). */
     default void openContent(int tab){}
+    /** Opens the Dialogue editor (0 conversations, 1 quests). */
+    default void openDialogue(int tab){}
 }

@@ -108,6 +108,7 @@ public class MainActivity extends Activity implements UiHost {
         startActivity(i);
     }
 
+    @Override public void openDialogue(int tab) { Intent i = new Intent(this, DialogueEditorActivity.class); i.putExtra("tab", tab); startActivity(i); }
     @Override public void openContent(int tab) { Intent i = new Intent(this, ContentEditorActivity.class); i.putExtra("tab", tab); startActivity(i); }
     @Override public void openUi() { startActivity(new Intent(this, UiEditorActivity.class)); }
     @Override public void openSound(int tab) {

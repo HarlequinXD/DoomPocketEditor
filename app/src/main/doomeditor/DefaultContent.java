@@ -260,7 +260,7 @@ final class DefaultContent {
     }
 
     /** Templates offered when creating a new entity type. */
-    static final String[] TEMPLATES={"Monster (melee)","Monster (archer)","Monster (spellcaster)","NPC (talks)","Merchant","Item pick-up","Treasure chest","Decoration","Lever / trigger","Map exit (go to another map)","Arrival point (where map exits arrive)","Empty"};
+    static final String[] TEMPLATES={"Monster (melee)","Monster (archer)","Monster (spellcaster)","NPC (talks)","Merchant","Item pick-up","Treasure chest","Decoration","Lever / trigger","NPC (conversation tree)","Map exit (go to another map)","Arrival point (where map exits arrive)","Empty"};
     static EntityDef fromTemplate(int t,String id,String name){
         EntityDef d;
         switch(t){
@@ -274,10 +274,12 @@ final class DefaultContent {
             case 6:{d=chest();d.id=id;d.name=name;break;}
             case 7:d=decoration(id,name,Sprites.PILLAR,.35f,1.5f);break;
             case 8:{d=exitLever();d.id=id;d.name=name;FSMGraph.Node p=d.fsm.byName("Pulled");p.actions.clear();p.add("play_sound").set("sound","Switch");p.add("set_sprite").set("sprite","Lever (pulled)");p.add("show_message").set("text",name+" pulled");p.transitions.clear();break;}
-            case 9:{d=new EntityDef(id,name,EntityDef.TRIGGER,Sprites.BRAZIER);d.solid=false;d.shootable=false;d.radius=.6f;d.height=1f;
+            case 9:{d=new EntityDef(id,name,EntityDef.NPC,Sprites.VILLAGER);d.solid=true;d.radius=.4f;d.height=1.4f;FSMGraph g=d.fsm;FSMGraph.Node idle=g.add("Idle",0,0),talk=g.add("Talking",280,0);
+                idle.on("USED",talk);talk.add("talk").set("endEvent","DONE");talk.on("DONE",idle);g.start=idle.id;break;}
+            case 10:{d=new EntityDef(id,name,EntityDef.TRIGGER,Sprites.BRAZIER);d.solid=false;d.shootable=false;d.radius=.6f;d.height=1f;
                 FSMGraph g=d.fsm;FSMGraph.Node idle=g.add("Waiting",0,0),go=g.add("Travel",280,0);
                 idle.on("TOUCHED",go);idle.on("USED",go);go.add("play_sound").set("sound","Teleport");go.add("go_to_map");g.start=idle.id;break;}
-            case 10:{d=new EntityDef(id,name,EntityDef.TRIGGER,Sprites.PILLAR);d.solid=false;d.shootable=false;d.radius=.3f;d.height=.5f;
+            case 11:{d=new EntityDef(id,name,EntityDef.TRIGGER,Sprites.PILLAR);d.solid=false;d.shootable=false;d.radius=.3f;d.height=.5f;
                 FSMGraph.Node n=d.fsm.add("Hidden",0,0);n.add("set_visible").set("value","false");d.fsm.start=n.id;break;}
             default:d=new EntityDef(id,name,EntityDef.DECORATION,Sprites.PILLAR);d.fsm.add("Idle",0,0);
         }

@@ -205,7 +205,7 @@ final class Rpg {
     }
     /** Points the catalogue at a project's own content. */
     static void use(Project p){
-        if(p==null)return;p.ensureContent();
+        if(p==null)return;p.ensureContent();Dialogue.project=p;
         ITEMS=p.items;SPELLS=p.spells;CLASSES=p.classes;LOOT=p.loot;SHOPS=p.shops;
         if(item("fists")==null)ITEMS.add(0,copy(DEFAULT_ITEMS.get(0)));   // the engine's unarmed attack must exist
     }

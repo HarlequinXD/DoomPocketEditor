@@ -63,7 +63,7 @@ final class GameSave {
         o.put("map",w.mapNum);
         JSONObject pl=new JSONObject();pl.put("x",(double)w.player.x);pl.put("y",(double)w.player.y);pl.put("angle",(double)w.player.angle);pl.put("health",w.player.health);o.put("player",pl);
         o.put("hero",heroJson(h));
-        JSONArray qs=new JSONArray();for(World.Quest q:w.quests.values()){JSONObject j=new JSONObject();j.put("id",q.id);j.put("title",q.title);j.put("text",q.text);j.put("state",q.state);qs.put(j);}o.put("quests",qs);
+        JSONArray qs=new JSONArray();for(World.Quest q:w.quests.values()){JSONObject j=new JSONObject();j.put("id",q.id);j.put("title",q.title);j.put("text",q.text);j.put("state",q.state);j.put("stage",q.stage);qs.put(j);}o.put("quests",qs);
         JSONObject g=new JSONObject();for(Map.Entry<String,Float> e:w.globals.entrySet())g.put(e.getKey(),(double)e.getValue());o.put("globals",g);
         // all visited maps, with the current one captured now
         JSONObject maps=new JSONObject();
@@ -88,7 +88,7 @@ final class GameSave {
             if(w.level.sectorAt(x,y)>=0){w.player.x=x;w.player.y=y;w.player.z=w.floorAt(x,y);}
             w.player.angle=(float)pl.optDouble("angle",w.player.angle);w.player.health=Math.max(1,pl.optInt("health",w.player.health));}
         w.quests.clear();JSONArray qs=o.optJSONArray("quests");
-        if(qs!=null)for(int i=0;i<qs.length();i++){JSONObject j=qs.getJSONObject(i);World.Quest q=new World.Quest(j.optString("id","q"+i));q.title=j.optString("title","");q.text=j.optString("text","");q.state=j.optInt("state",0);w.quests.put(q.id,q);}
+        if(qs!=null)for(int i=0;i<qs.length();i++){JSONObject j=qs.getJSONObject(i);World.Quest q=new World.Quest(j.optString("id","q"+i));q.title=j.optString("title","");q.text=j.optString("text","");q.state=j.optInt("state",0);q.stage=j.optInt("stage",0);w.quests.put(q.id,q);}
         w.globals.clear();JSONObject g=o.optJSONObject("globals");
         if(g!=null){Iterator<String> k=g.keys();while(k.hasNext()){String key=k.next();w.globals.put(key,(float)g.optDouble(key,0));}}
         w.syncView();

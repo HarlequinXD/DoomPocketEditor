@@ -43,6 +43,13 @@ final class Project {
     String mapMusic(GameMap m){return m!=null&&!m.music.isEmpty()&&song(m.music)!=null?m.music:levelMusic;}
     /** The game's RPG content (Content editor): starts as a copy of the built-in catalogue. */
     ArrayList<Rpg.Item> items;ArrayList<Rpg.Spell> spells;ArrayList<Rpg.HeroClass> classes;ArrayList<Rpg.LootTable> loot;ArrayList<Rpg.Shop> shops;
+    /** Conversations and quests from the Dialogue editor. */
+    final ArrayList<Dialogue.Def> dialogues=new ArrayList<>();
+    final ArrayList<Dialogue.QuestDef> quests=new ArrayList<>();
+    Dialogue.Def dialogue(String id){if(id==null)return null;for(Dialogue.Def d:dialogues)if(d.id.equals(id))return d;return null;}
+    Dialogue.QuestDef questDef(String id){if(id==null)return null;for(Dialogue.QuestDef q:quests)if(q.id.equals(id))return q;return null;}
+    String uniqueTalkId(String base){String b=base.toLowerCase(java.util.Locale.US).replaceAll("[^a-z0-9]+","_").replaceAll("^_|_$","");if(b.isEmpty())b="talk";String id=b;int n=2;while(dialogue(id)!=null)id=b+"_"+(n++);return id;}
+    String uniqueQuestId(String base){String b=base.toLowerCase(java.util.Locale.US).replaceAll("[^a-z0-9]+","_").replaceAll("^_|_$","");if(b.isEmpty())b="quest";String id=b;int n=2;while(questDef(id)!=null)id=b+"_"+(n++);return id;}
     void ensureContent(){
         if(items==null){items=new ArrayList<>();for(Rpg.Item i:Rpg.DEFAULT_ITEMS)items.add(Rpg.copy(i));}
         if(spells==null){spells=new ArrayList<>();for(Rpg.Spell s:Rpg.DEFAULT_SPELLS)spells.add(Rpg.copy(s));}
@@ -157,6 +164,8 @@ final class Project {
         JSONArray rl=new JSONArray();for(Rpg.LootTable lt:loot)rl.put(Rpg.toJson(lt));rpg.put("loot",rl);
         JSONArray rh=new JSONArray();for(Rpg.Shop sh:shops)rh.put(Rpg.toJson(sh));rpg.put("shops",rh);
         o.put("rpg",rpg);
+        JSONArray dl=new JSONArray();for(Dialogue.Def d:dialogues)dl.put(Dialogue.toJson(d));o.put("dialogues",dl);
+        JSONArray qd=new JSONArray();for(Dialogue.QuestDef q:quests)qd.put(Dialogue.toJson(q));o.put("quests",qd);
         JSONObject ui=new JSONObject();ui.put("hud",hud.toJson());ui.put("theme",theme.toJson());o.put("ui",ui);
         return o;
     }
@@ -186,6 +195,8 @@ final class Project {
             JSONArray rl=rpg.optJSONArray("loot");if(rl!=null){p.loot=new ArrayList<>();for(int i=0;i<rl.length();i++){JSONObject j=rl.optJSONObject(i);if(j!=null)p.loot.add(Rpg.lootFrom(j));}}
             JSONArray rh=rpg.optJSONArray("shops");if(rh!=null){p.shops=new ArrayList<>();for(int i=0;i<rh.length();i++){JSONObject j=rh.optJSONObject(i);if(j!=null)p.shops.add(Rpg.shopFrom(j));}}}
         p.ensureContent();
+        JSONArray dl=o.optJSONArray("dialogues");if(dl!=null)for(int i=0;i<dl.length();i++){JSONObject j=dl.optJSONObject(i);if(j!=null)p.dialogues.add(Dialogue.fromJson(j));}
+        JSONArray qd=o.optJSONArray("quests");if(qd!=null)for(int i=0;i<qd.length();i++){JSONObject j=qd.optJSONObject(i);if(j!=null)p.quests.add(Dialogue.questFrom(j));}
         JSONObject ui=o.optJSONObject("ui");if(ui!=null){p.hud=HudLayout.fromJson(ui.optJSONObject("hud"));JSONObject th=ui.optJSONObject("theme");if(th!=null)p.theme=UiTheme.fromJson(th);}
         if(!p.level.isConsistent())throw new IllegalStateException("inconsistent map");
         p.fixUp();return p;
