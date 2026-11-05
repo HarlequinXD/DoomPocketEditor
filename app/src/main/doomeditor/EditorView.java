@@ -271,6 +271,7 @@ public class EditorView extends View {
     boolean goBack(){
         if(launcherOpen){launcherOpen=false;invalidate();return true;}
         if(mode==PLAY&&menu!=null&&menu.active()){if(!menu.back())leavePlay();invalidate();return true;}
+        if(mode==PLAY&&world!=null&&debug!=null&&debug.open){debug.close(world);invalidate();return true;}
         if(mode==PLAY&&world!=null&&world.shop!=null){world.closeShop();invalidate();return true;}
         if(mode==PLAY&&bagOpen){closeBag();invalidate();return true;}
         if(mode==PLAY){pauseToMenu();invalidate();return true;}
@@ -284,12 +285,15 @@ public class EditorView extends View {
         host.choose(project.name,new String[]{"Check map ("+(errs.isEmpty()?"no problems":errs.size()+" warning"+(errs.size()==1?"":"s"))+")","Save now",
                 sv?"Battery saver: ON (tap to turn off)":"Battery saver: off (30 fps, still backdrops)",
                 Sprites.pixel?"Built-in sprites: Pixel art (tap for HD)":"Built-in sprites: HD (tap for pixel art)","Reset level…","Back to projects",
-                frontEnd()?"Play: splash + main menu ON (tap to start straight in the level)":"Play: starts straight in the level (tap for splash + main menu)"},-1,k->{
+                frontEnd()?"Play: splash + main menu ON (tap to start straight in the level)":"Play: starts straight in the level (tap for splash + main menu)",
+                "Play from the cursor (testing)"},-1,k->{
             if(k==0)showMapCheck();
             else if(k==1)save(true);
             else if(k==2){Perf.setSaver(getContext(),!sv);hint(!sv?"Battery saver on · 30 fps game and 3D, still previews":"Battery saver off · 60 fps");lastInteraction=System.currentTimeMillis();}
             else if(k==4)host.confirm("Reset the level?","This clears every sector and placed entity. Entity types, FSMs and sprites are kept.","Reset level",()->{resetLevel();invalidate();});
             else if(k==5){save(false);if(onExitToTitle!=null)onExitToTitle.run();}
+            else if(k==7){playFrom=new float[]{cursorX,cursorY,level.facing};playThisMap=project.currentMap;
+                if(level.sectorAt(cursorX,cursorY)<0)hint("The cursor is outside every sector · starting at the player start");changeMode(PLAY);}
             else if(k==6){GameSettings.frontEnd=!GameSettings.frontEnd;GameSettings.save(getContext());hint(GameSettings.frontEnd?"Play opens with the splash screen and main menu":"Play starts straight in the level");}
             else if(k==3){boolean hd=Sprites.pixel;Perf.setHdSprites(getContext(),hd);java.util.Arrays.fill(spriteThumbs,null);hint(hd?"Built-in sprites: HD":"Built-in sprites: pixel art");}
             invalidate();});
@@ -962,7 +966,8 @@ public class EditorView extends View {
         // viewport chips
         float bh=dp(32),top=toolbarH+dp(10),x=w-dp(10);
         float fw2=dp(96);r.set(x-fw2,top,x,top+bh);ui.button(c,r,fly?Icons.LAYERS:Icons.ENTITIES,fly?"Fly":"Walk",fly?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_FLY);x-=fw2+dp(8);
-        r.set(x-bh,top,x,top+bh);ui.button(c,r,Icons.FLAG,null,Ui.NORMAL);ui.hit(r,H_START3D);
+        r.set(x-bh,top,x,top+bh);ui.button(c,r,Icons.FLAG,null,Ui.NORMAL);ui.hit(r,H_START3D);x-=bh+dp(8);
+        float pw2=dp(118);r.set(x-pw2,top,x,top+bh);ui.button(c,r,Icons.PLAY,"Play here",Ui.SUCCESS);ui.hit(r,H_PLAYHERE);
         // Right-hand dock: the sector panel (Raise/Lower/Light) takes the outer column; the fly
         // Up/Down buttons move one column in when it is showing, so the two never overlap.
         int sk=Renderer.kind(sel3d);boolean sectorPanel=sel3d>=0&&(sk==Renderer.ID_FLOOR||sk==Renderer.ID_CEIL||sk==Renderer.ID_WALL);
@@ -1121,7 +1126,29 @@ public class EditorView extends View {
         else if(bagOpen)drawBag(c);
         else if(world.dialogue!=null)drawDialogue(c);
         else drawPlayControls(c);
+        if(!playerMode)drawDebugLayer(c,dt);
         nextFrame();
+    }
+    // ---------------------------------------------------------------- testing tools (editor testing only)
+    private static final int H_DEBUG=545,H_PLAYHERE=546;
+    private PlayDebug debug;private float fpsAvg=60;private float[] playFrom;
+    private PlayDebug debug(){
+        if(debug==null)debug=new PlayDebug(ui,project,new PlayDebug.Host(){
+            @Override public UiHost ui(){return host;}
+            @Override public void restartMap(){if(world!=null)startPlay(world.mapNum);}
+            @Override public void hint(String s){EditorView.this.hint(s);}
+        });
+        return debug;
+    }
+    private void drawDebugLayer(Canvas c,float dt){
+        if(dt>0)fpsAvg=fpsAvg*.92f+(1f/Math.max(.001f,dt))*.08f;
+        if(PlayDebug.showStates)for(Actor a:world.actors){if(a.isPlayer||a.removed||a.fsm==null||a.fsm.state==null||a.def==null)continue;
+            if(Math.hypot(a.x-world.player.x,a.y-world.player.y)>18||!renderer.project(a.x,a.y,a.z+a.height+.35f,view3d,proj))continue;
+            String s=a.fsm.state.name;float tw=ui.measure(s,10,1)+dp(12);ui.round(c,proj[0]-tw*.5f,proj[1]-dp(9),proj[0]+tw*.5f,proj[1]+dp(9),dp(9),0xc0101318);ui.textMid(c,s,proj[0],proj[1],10,0xff8ad06a,1,0);}
+        if(PlayDebug.showFps)ui.text(c,Math.round(fpsAvg)+" fps",w*.5f+dp(52),dp(26),11,0xffffff80,2,-1);
+        boolean busy=world.levelComplete||world.shop!=null||bagOpen||world.dialogue!=null;
+        if(debug().open)debug.draw(c,w,h,world);
+        else if(!busy){r.set(w*.5f-dp(40),dp(10),w*.5f+dp(40),dp(36));ui.round(c,r,dp(13),0xa08a3030);ui.textMid(c,"DEBUG",r.centerX(),r.centerY(),10.5f,0xffffffff,2,0);ui.hit(r.left-dp(6),r.top-dp(6),r.right+dp(6),r.bottom+dp(6),H_DEBUG);}
     }
     // ---------------------------------------------------------------- RPG play UI
     private float bagDragY;private boolean bagDragged;
@@ -1252,7 +1279,7 @@ public class EditorView extends View {
     }
     // ---------------------------------------------------------------- shop (Open Shop action)
     private static final int H_SHOP_CLOSE=3800,H_SHOP_TAB=3810,H_SHOP_ROW=3900;
-    private int shopTab,shopDownHit=-1;private float shopScroll;
+    private int shopTab,shopDownHit=-1,debugDownHit=-1;private float shopScroll;
     private void drawShop(Canvas c){
         Hero hero=world.hero;Rpg.Shop sh=world.shop;if(hero==null){world.closeShop();return;}
         UiTheme th=project.theme;float D=ui.dp;
@@ -1353,7 +1380,9 @@ public class EditorView extends View {
         cancelStage();entStage=0;
         mode=next;pending.clear();joyVisible=false;joyPointer=lookPointer=upPointer=downPointer=-1;moveX=moveY=0;flyUp=flyDown=false;dpadPointer=-1;
         lastFrame=System.nanoTime();
-        if(next==PLAY){project.syncCurrent();if(playThisMap>0){int m=playThisMap;playThisMap=-1;if(menu!=null)menu.state=GameMenu.OFF;startPlay(m);}
+        if(next==PLAY){project.syncCurrent();if(playThisMap>0){int m=playThisMap;playThisMap=-1;if(menu!=null)menu.state=GameMenu.OFF;startPlay(m);
+                if(playFrom!=null&&world.level.sectorAt(playFrom[0],playFrom[1])>=0){world.player.x=playFrom[0];world.player.y=playFrom[1];world.player.angle=playFrom[2];world.player.z=world.floorAt(playFrom[0],playFrom[1]);world.syncView();}
+                playFrom=null;}
             else if(frontEnd()){world=null;menu().begin();}else startPlay(project.currentMap);}
         setKeepScreenOn(next==PLAY);   // the screen may sleep normally while editing
         if(next!=HOME&&!(next==PLAY&&frontEnd()))hint(next==PLAY?"Left: move · right: look · Attack, Cast, Use and Potion on the right · Bag top right":next==POLY?"Pick a tool, move the cursor, tap Apply":next==THINGS?"Pick an entity type, then Apply to place it":"Left: move · right: look · double-tap a surface to texture it");
@@ -1452,6 +1481,7 @@ public class EditorView extends View {
             int hid=ui.hitAt(x,y);
             if(hid>=H_MAT&&hid<H_MAT+Textures.COUNT){selectedMaterial=hid-H_MAT;hint(Textures.NAMES[selectedMaterial]+" · double-tap a surface to apply");scrollTarget=3;downY=lastY=y;dragged=false;return true;}
             if(x<left){scrollTarget=3;downY=lastY=y;dragged=false;return true;}
+            if(hid==H_PLAYHERE&&walker!=null){playFrom=new float[]{walker.player.x,walker.player.y,walker.player.angle};playThisMap=project.currentMap;changeMode(PLAY);hint("Testing from the camera position · DEBUG at the top for cheats");return true;}
             if(hid==H_FLY){fly=!fly;if(walker!=null)walker.player.vz=0;hint(fly?"Fly mode · use Up and Down":"Walk mode · gravity and steps");invalidate();return true;}
             if(hid==H_START3D){ensureWalker();walker.player.x=level.playerX;walker.player.y=level.playerY;walker.player.angle=level.facing;walker.player.pitch=0;walker.player.z=walker.floorAt(level.playerX,level.playerY);walker.viewZ=walker.player.z+World.EYE;hint("Back at the player start");invalidate();return true;}
             if(hid==H_UP){flyUp=true;upPointer=id;invalidate();return true;}
@@ -1496,6 +1526,8 @@ public class EditorView extends View {
         int id=e.getPointerId(idx);
         if(a==MotionEvent.ACTION_DOWN||a==MotionEvent.ACTION_POINTER_DOWN){
             int hid=ui.hitAt(x,y);
+            if(debug!=null&&debug.open){debugDownHit=hid;bagDragY=y;bagDragged=false;return true;}
+            if(hid==H_DEBUG&&!playerMode){debug().toggle(world);for(int i=0;i<buttonPointer.length;i++)buttonPointer[i]=-1;world.input.clear();joyPointer=lookPointer=-1;joyVisible=false;moveX=moveY=0;return true;}
             if(world.levelComplete){if(hid==H_RETRY)startPlay(world.mapNum);else if(hid==H_BACK){if(frontEnd()){world=null;menu().paused=false;menu().state=GameMenu.MAIN;}else changeMode(returnMode);}return true;}
             if(world.shop!=null){shopDownHit=hid;bagDragY=y;bagDragged=false;return true;}
             if(bagOpen){bagTap(hid);bagDragY=y;bagDragged=false;return true;}
@@ -1514,6 +1546,7 @@ public class EditorView extends View {
             return true;
         }
         if(a==MotionEvent.ACTION_MOVE){
+            if(debug!=null&&debug.open){if(Math.abs(y-bagDragY)>dp(4)||bagDragged){bagDragged=true;debug.scrollBy(y-bagDragY);bagDragY=y;}return true;}
             if(world.shop!=null){if(Math.abs(y-bagDragY)>dp(4)||bagDragged){bagDragged=true;shopScroll=Math.max(0,shopScroll-(y-bagDragY));bagDragY=y;}return true;}
             if(bagOpen){bagScroll=Math.max(0,bagScroll-(y-bagDragY));bagDragY=y;return true;}
             for(int i=0;i<e.getPointerCount();i++){int pid=e.getPointerId(i);float px=e.getX(i),py=e.getY(i);
@@ -1522,6 +1555,7 @@ public class EditorView extends View {
             return true;
         }
         if(a==MotionEvent.ACTION_UP||a==MotionEvent.ACTION_POINTER_UP||a==MotionEvent.ACTION_CANCEL){
+            if(debug!=null&&debug.open){if(a==MotionEvent.ACTION_UP&&!bagDragged){int hid=ui.hitAt(x,y);if(hid==debugDownHit)debug.tap(hid,world);}debugDownHit=-1;return true;}
             if(world.shop!=null){if(a==MotionEvent.ACTION_UP&&!bagDragged){int hid=ui.hitAt(x,y);if(hid==shopDownHit)shopTap(hid);}shopDownHit=-1;return true;}
             for(int b=0;b<buttonPointer.length;b++)if(buttonPointer[b]==id||a!=MotionEvent.ACTION_POINTER_UP&&buttonPointer[b]>=0){buttonPointer[b]=-1;world.input.setButton(b,false);}
             if(id==joyPointer||a!=MotionEvent.ACTION_POINTER_UP){if(joyPointer>=0){joyReleaseTime=System.currentTimeMillis();}joyPointer=-1;joyVisible=false;moveX=moveY=0;}

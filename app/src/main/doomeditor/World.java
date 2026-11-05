@@ -70,6 +70,8 @@ final class World {
     /** Re-centres the camera after the player was moved (loading a save). */
     void syncView(){viewZ=player.z+EYE;}
     /** Map being played, and a map change requested by an exit or the Go To Map action (applied by the screen). */
+    /** Testing cheat from the debug panel. */
+    boolean godMode;
     int mapNum;int pendingMap=-1;String pendingArrival="";
     /** Everything remembered across maps this game (visited map states, play time); shared when changing maps. */
     GameSave.Session session;
@@ -455,6 +457,7 @@ final class World {
     /** Applies damage, shows the number, awards XP to the hero for kills and sends DAMAGED / DIED to the FSM. */
     void damage(Actor t,int amount,Actor src,boolean crit){
         if(t==null||!t.alive||t.invulnerable||amount<=0||t.removed)return;
+        if(t.isPlayer&&godMode)return;   // testing: Debug > God mode
         if(t.isPlayer)amount=Math.max(1,Math.round(amount*GameSettings.damageTaken()));   // Options > Difficulty
         if(t.isPlayer){damageFlash=Math.min(1,damageFlash+.25f+amount*.02f);flashColor=0xffff0000;}
         floater(t,crit?amount+"!":String.valueOf(amount),t.isPlayer?0xffff5a4a:crit?0xffffd040:0xffffffff);
