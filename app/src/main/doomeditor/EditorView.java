@@ -1231,6 +1231,20 @@ public class EditorView extends View {
         if(pl!=null&&pl.alive)deathSave=null;else if(deathTime>0&&deathTime<dt*1.5f)deathSave=GameSave.latest(getContext(),project);
     }
     private GameSave.Info deathSave;
+    private static final int H_POPUP=560;
+    /** Show Popup action: a themed box with the title, wrapped text and one or two buttons. */
+    private void drawPopup(Canvas c){
+        World.Popup pp=world.popup;UiTheme th=project.theme;float D=ui.dp;
+        ui.rect(c,0,0,w,h,0x80000000);
+        float pw=Math.min(w-dp(40),dp(440));ArrayList<String> lines=wrap(pp.text,14,1,pw-dp(44));while(lines.size()>8)lines.remove(lines.size()-1);
+        boolean hasTitle=!pp.title.isEmpty();float ph=dp(24)+(hasTitle?dp(34):0)+lines.size()*dp(21)+dp(70),pl=(w-pw)*.5f,pt=(h-ph)*.45f;
+        ui.round(c,pl,pt+dp(4),pl+pw,pt+ph+dp(4),dp(14),0x80000000);th.panel(c,p,pl,pt,pl+pw,pt+ph,D,.98f,false);
+        float y=pt+dp(24);
+        if(hasTitle){ui.icon(c,Icons.SCROLL,pl+dp(30),y+dp(8),18,th.accentOnPanel());ui.text(c,ui.ellipsize(pp.title,18,2,pw-dp(70)),pl+dp(48),y+dp(15),18,th.accentOnPanel(),2,-1);y+=dp(34);}
+        for(String ln:lines){y+=dp(21);ui.text(c,ln,pl+dp(22),y-dp(4),14,th.text,1,-1);}
+        float bw=Math.min(dp(160),(pw-dp(44)-(pp.buttons.length-1)*dp(10))/pp.buttons.length),by=pt+ph-dp(56),bx=pl+pw-dp(22)-pp.buttons.length*bw-(pp.buttons.length-1)*dp(10);
+        for(int i=0;i<pp.buttons.length;i++){r.set(bx,by,bx+bw,by+dp(40));th.rectButton(c,p,ui,r,-1,pp.buttons[i],i==0?UiTheme.BTN_PRIMARY:UiTheme.BTN_NORMAL,D);ui.hit(r,H_POPUP+i);bx+=bw+dp(10);}
+    }
     private boolean deathTap(int hid){
         if(world==null||world.player==null||world.player.alive||!project.screens.death||deathTime<project.screens.deathDelay+.8f)return false;
         if(hid==H_DRETRY){startPlay(world.mapNum);startCard();return true;}
@@ -1286,6 +1300,7 @@ public class EditorView extends View {
         hud().drawStatus(c,w,h,world,false);
         if(world.menuRequested){world.menuRequested=false;openBag();}
         drawStoryScreens(c,dt);
+        if(world.popup!=null)drawPopup(c);
         if(world.levelComplete)drawComplete(c);
         else if(world.shop!=null)drawShop(c);
         else if(bagOpen)drawBag(c);
@@ -1689,6 +1704,7 @@ public class EditorView extends View {
             if(hid==H_DEBUG&&!playerMode){debug().toggle(world);for(int i=0;i<buttonPointer.length;i++)buttonPointer[i]=-1;world.input.clear();joyPointer=lookPointer=-1;joyVisible=false;moveX=moveY=0;return true;}
             if(world.levelComplete){if(hid==H_RETRY){startPlay(world.mapNum);startCard();}else if(hid==H_BACK)backFromEnd();return true;}
             if(deathTap(hid))return true;
+            if(world.popup!=null){if(hid>=H_POPUP&&hid<H_POPUP+3)world.choosePopup(hid-H_POPUP);return true;}
             if(world.shop!=null){shopDownHit=hid;bagDragY=y;bagDragged=false;return true;}
             if(bagOpen){bagTap(hid);bagDragY=y;bagDragged=false;return true;}
             if(world.dialogue!=null){if(hid>=H_DLG&&hid<H_DLG+8)world.chooseDialogue(hid-H_DLG);return true;}

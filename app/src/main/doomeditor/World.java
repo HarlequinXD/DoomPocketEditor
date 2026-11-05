@@ -731,6 +731,16 @@ final class World {
     }
     /** Shop open over the game (drawn by the play screen), the entity that opened it and its close event. */
     Rpg.Shop shop;Actor shopOwner;String shopClosedEvent="";
+    // themed message box from the Show Popup action; the game waits while it is open
+    static final class Popup {String title,text;String[] buttons,events;Actor owner;}
+    Popup popup;
+    static final String[][] POPUP_BUTTONS={{"OK"},{"Yes","No"},{"Accept","Decline"},{"Continue"}};
+    void showPopup(Actor owner,String title,String text,int kind,String event,String event2){
+        Popup p=new Popup();p.owner=owner;p.title=title==null?"":title;p.text=text==null?"":text;p.buttons=POPUP_BUTTONS[Math.max(0,Math.min(POPUP_BUTTONS.length-1,kind))];
+        p.events=new String[]{event==null?"":event,event2==null?"":event2};popup=p;paused=true;input.clear();
+    }
+    void choosePopup(int i){Popup p=popup;if(p==null)return;popup=null;paused=false;
+        String ev=i>=0&&i<p.events.length?p.events[i]:"";if(p.owner!=null&&p.owner.fsm!=null&&!ev.isEmpty())p.owner.fsm.send(ev);}
     void openShop(Rpg.Shop s,Actor owner,String closedEvent){if(s==null||hero==null)return;shop=s;shopOwner=owner;shopClosedEvent=closedEvent==null?"":closedEvent;paused=true;}
     void closeShop(){if(shop==null)return;shop=null;paused=false;if(shopOwner!=null&&shopOwner.fsm!=null&&!shopClosedEvent.isEmpty())shopOwner.fsm.send(shopClosedEvent);shopOwner=null;}
     /** Units left of a shop line this game (-1 = unlimited). */

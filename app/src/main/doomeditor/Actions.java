@@ -399,6 +399,9 @@ final class Actions {
 
         // ------------------------------------------------------------------ Feedback
         def("show_message","Show Message","Feedback",Icons.INFO,"Shows a message at the top of the screen, like item pickups.",c->{c.w.message(c.s("text"),c.f("seconds"));return DONE;},"text:t=Hello","seconds:f=3");
+        def("show_popup","Show Popup","Feedback",Icons.SCROLL,"Shows a message box in the game's theme (a sign, a tip, a question). The game waits until a button is tapped, then this entity gets that button's event.",
+            c->{c.w.showPopup(c.self,c.s("title"),c.s("text"),c.choice("buttons","OK|Yes / No|Accept / Decline|Continue"),c.s("event"),c.s("event2"));return DONE;},
+            "title:t=Notice","text:t=","buttons:c(OK|Yes / No|Accept / Decline|Continue)=OK","event:e=CLOSED","event2:e=NO");
         def("center_print","Center Message","Feedback",Icons.INFO,"Shows large text in the middle of the screen.",c->{c.w.centerPrint(c.s("text"),c.f("seconds"));return DONE;},"text:t=","seconds:f=2");
         def("screen_flash","Screen Flash","Feedback",Icons.SUN,"Tints the screen briefly (red for pain, gold for pickups).",c->{c.w.flash(c.choice("color","Red|Gold|White|Green"),c.f("strength"));return DONE;},"color:c(Red|Gold|White|Green)=Gold","strength:f=0.4");
         def("spray_blood","Spray Blood","Feedback",Icons.POTION,"Sprays red droplets from this entity; they splat on nearby floors and walls.",c->{c.w.spray(c.self,null,Math.max(1,c.i("amount")),false,false);return DONE;},"amount:i=5");
