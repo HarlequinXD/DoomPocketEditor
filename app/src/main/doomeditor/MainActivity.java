@@ -28,6 +28,7 @@ public class MainActivity extends Activity implements UiHost {
         String crash = getSharedPreferences(DoomApp.CRASH_PREFS, 0).getString(DoomApp.CRASH_KEY, null);
         if (crash != null) { showCrash(crash); return; }
         showTitle();
+        handleViewIntent(getIntent());
     }
     private void fullscreen() {
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
@@ -40,7 +41,12 @@ public class MainActivity extends Activity implements UiHost {
         if (editor != null) { editor.onPause(); editor = null; }
         title = new TitleView(this);
         title.host = this;
-        title.listener = this::openProject;
+        title.listener = new TitleView.Listener() {
+            @Override public void openProject(String id) { MainActivity.this.openProject(id); }
+            @Override public void playProject(String id) { MainActivity.this.playProject(id); }
+            @Override public void exportProject(String id, boolean share) { MainActivity.this.exportProject(id, share); }
+            @Override public void importProject() { MainActivity.this.pickImport(); }
+        };
         setContentView(title);
     }
     private void openProject(String id) {
@@ -48,6 +54,83 @@ public class MainActivity extends Activity implements UiHost {
         catch (Exception e) { Toast.makeText(this, "Could not open that project", Toast.LENGTH_LONG).show(); if (title != null) title.refresh(); return; }
         startEditor();
     }
+    // ------------------------------------------------------------------ play, export, import
+    private static final int REQ_EXPORT = 51, REQ_IMPORT = 52;
+    private String pendingExport;
+    /** Opens a project straight into its game (splash and main menu); quitting returns here. */
+    void playProject(String id) {
+        try { Project p = Project.isOpen() ? Project.get(this) : null; if (p == null || !id.equals(p.id)) Project.open(this, id); }
+        catch (Exception e) { Toast.makeText(this, "Could not open that game", Toast.LENGTH_LONG).show(); return; }
+        startEditor(); editor.startPlayerMode();
+    }
+    private static String fileName(String name) { String n = name.replaceAll("[^A-Za-z0-9 _-]", "").trim(); return (n.isEmpty() ? "game" : n) + ".rpgpocket"; }
+    void exportProject(String id, boolean share) {
+        String name = "game"; for (ProjectStore.Meta m : ProjectStore.list(this)) if (m.id.equals(id)) name = m.name;
+        if (share) {
+            try {
+                java.io.File f = new java.io.File(ShareProvider.dir(this), fileName(name));
+                try (java.io.OutputStreamWriter w = new java.io.OutputStreamWriter(new java.io.FileOutputStream(f), "UTF-8")) { w.write(ProjectStore.exportPackage(this, id)); }
+                Intent send = new Intent(Intent.ACTION_SEND);
+                send.setType("application/octet-stream");
+                send.putExtra(Intent.EXTRA_STREAM, ShareProvider.uriFor(f));
+                send.putExtra(Intent.EXTRA_SUBJECT, name + " – an RPG Pocket Editor game");
+                send.putExtra(Intent.EXTRA_TEXT, "Open this file with RPG Pocket Editor to play " + name + ".");
+                send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                startActivity(Intent.createChooser(send, "Share " + name));
+            } catch (Exception e) { Toast.makeText(this, "Couldn't prepare the game file", Toast.LENGTH_LONG).show(); }
+            return;
+        }
+        pendingExport = id;
+        Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE); i.setType("application/octet-stream"); i.putExtra(Intent.EXTRA_TITLE, fileName(name));
+        try { startActivityForResult(i, REQ_EXPORT); } catch (Exception e) { Toast.makeText(this, "Can't save files on this device", Toast.LENGTH_LONG).show(); }
+    }
+    void pickImport() {
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE); i.setType("*/*");
+        try { startActivityForResult(i, REQ_IMPORT); }
+        catch (Exception e) { Intent g = new Intent(Intent.ACTION_GET_CONTENT); g.setType("*/*"); g.addCategory(Intent.CATEGORY_OPENABLE); try { startActivityForResult(g, REQ_IMPORT); } catch (Exception e2) { Toast.makeText(this, "No file picker available", Toast.LENGTH_LONG).show(); } }
+    }
+    private void importFrom(android.net.Uri uri) {
+        new Thread(() -> {
+            try {
+                StringBuilder b = new StringBuilder(); char[] buf = new char[16384];
+                try (java.io.InputStreamReader r = new java.io.InputStreamReader(getContentResolver().openInputStream(uri), "UTF-8")) { int n; while ((n = r.read(buf)) > 0) { b.append(buf, 0, n); if (b.length() > 80_000_000) throw new java.io.IOException("File too large"); } }
+                String id = ProjectStore.importPackage(this, b.toString());
+                String name = id; for (ProjectStore.Meta m : ProjectStore.list(this)) if (m.id.equals(id)) name = m.name;
+                final String nm = name;
+                runOnUiThread(() -> {
+                    if (title != null) title.refresh();
+                    choose(this, "Imported \u201c" + nm + "\u201d", new String[]{"Play it now", "Open it in the editor", "Later"}, 0, k -> { if (k == 0) playProject(id); else if (k == 1) openProject(id); }, this::refreshView);
+                });
+            } catch (Throwable t) {
+                runOnUiThread(() -> Toast.makeText(this, "Couldn't import that file: " + (t.getMessage() == null ? t.getClass().getSimpleName() : t.getMessage()), Toast.LENGTH_LONG).show());
+            }
+        }, "ImportGame").start();
+    }
+    @Override protected void onActivityResult(int req, int res, Intent data) {
+        super.onActivityResult(req, res, data);
+        if (res != RESULT_OK || data == null || data.getData() == null) { pendingExport = null; return; }
+        android.net.Uri uri = data.getData();
+        if (req == REQ_IMPORT) importFrom(uri);
+        else if (req == REQ_EXPORT && pendingExport != null) {
+            String id = pendingExport; pendingExport = null;
+            try (java.io.OutputStream o = getContentResolver().openOutputStream(uri)) { o.write(ProjectStore.exportPackage(this, id).getBytes("UTF-8")); Toast.makeText(this, "Game file saved", Toast.LENGTH_SHORT).show(); }
+            catch (Exception e) { Toast.makeText(this, "Couldn't save the game file", Toast.LENGTH_LONG).show(); }
+        }
+    }
+    /** A game file opened from another app (file manager, Drive, a chat attachment). */
+    private boolean handleViewIntent(Intent i) {
+        if (i == null) return false;
+        android.net.Uri uri = null;
+        if (Intent.ACTION_VIEW.equals(i.getAction())) uri = i.getData();
+        else if (Intent.ACTION_SEND.equals(i.getAction())) uri = i.getParcelableExtra(Intent.EXTRA_STREAM);
+        if (uri == null) return false;
+        i.setAction(Intent.ACTION_MAIN); i.setData(null);
+        importFrom(uri); return true;
+    }
+    @Override protected void onNewIntent(Intent i) { super.onNewIntent(i); if (handleViewIntent(i) && editor != null) { editor.save(false); showTitle(); } }
+
     private void startEditor() {
         fullscreen();
         title = null;

@@ -13,8 +13,8 @@ import java.util.ArrayList;
 
 /** Title screen and project manager: live 3D backdrop, project list and the New Project screen. */
 public class TitleView extends View {
-    interface Listener {void openProject(String id);}
-    private static final int H_NEW=1,H_CONTINUE=2,H_NAME=3,H_CANCEL=4,H_CREATE=5,H_TEMPLATE=10,H_OPEN=100,H_MENU=600;
+    interface Listener {void openProject(String id);default void playProject(String id){}default void exportProject(String id,boolean share){}default void importProject(){}}
+    private static final int H_IMPORT=6,H_NEW=1,H_CONTINUE=2,H_NAME=3,H_CANCEL=4,H_CREATE=5,H_TEMPLATE=10,H_OPEN=100,H_MENU=600;
 
     private final Ui ui;
     private final Paint p;
@@ -83,6 +83,7 @@ public class TitleView extends View {
         r.set(x,by,x+bw,by+dp(44));ui.button(c,r,Icons.PLUS_SQUARE,"New Project",Ui.PRIMARY);ui.hit(r,H_NEW);
         String cur=ProjectStore.currentId(getContext());ProjectStore.Meta m=find(cur);
         if(m!=null){r.set(x,by+dp(54),x+bw,by+dp(98));ui.button(c,r,Icons.PLAY,"Continue · "+m.name,Ui.NORMAL);ui.hit(r,H_CONTINUE);}
+        float iy=by+(m!=null?dp(108):dp(54));if(iy+dp(40)<h-dp(30)){r.set(x,iy,x+bw,iy+dp(38));ui.button(c,r,Icons.FOLDER,"Import a game file",Ui.GHOST);ui.hit(r,H_IMPORT);}
         ui.text(c,"v0.5  ·  "+Actions.visibleCount()+" FSM actions  ·  d20 RPG framework",x,h-dp(20),10.5f,Ui.TEXT_3);
     }
     private ProjectStore.Meta find(String id){if(id==null)return null;for(ProjectStore.Meta m:projects)if(m.id.equals(id))return m;return null;}
@@ -165,6 +166,7 @@ public class TitleView extends View {
             invalidate();return;
         }
         if(id==H_NEW){creating=true;newName="My Adventure";template=0;}
+        else if(id==H_IMPORT){if(listener!=null)listener.importProject();}
         else if(id==H_CONTINUE){String cur=ProjectStore.currentId(getContext());if(cur!=null&&listener!=null)listener.openProject(cur);}
         else if(id>=H_MENU){int i=id-H_MENU;if(i<projects.size())menu(projects.get(i));}
         else if(id>=H_OPEN){int i=id-H_OPEN;if(i<projects.size()&&listener!=null)listener.openProject(projects.get(i).id);}
@@ -172,9 +174,12 @@ public class TitleView extends View {
     }
     private void menu(ProjectStore.Meta m){
         if(host==null)return;
-        host.choose(m.name,new String[]{"Open","Rename","Duplicate","Delete"},-1,i->{
+        host.choose(m.name,new String[]{"Open in editor","Rename","Duplicate","Delete","Play game","Share game…","Save game file to a folder…"},-1,i->{
             try{
                 switch(i){
+                    case 4:if(listener!=null)listener.playProject(m.id);break;
+                    case 5:if(listener!=null)listener.exportProject(m.id,true);break;
+                    case 6:if(listener!=null)listener.exportProject(m.id,false);break;
                     case 0:if(listener!=null)listener.openProject(m.id);break;
                     case 1:host.prompt("Rename project",null,m.name,false,t->{if(t.trim().isEmpty())return;try{ProjectStore.rename(getContext(),m.id,t.trim());if(Project.isOpen()&&m.id.equals(Project.get(getContext()).id))Project.get(getContext()).name=t.trim();}catch(Exception ignored){}refresh();});break;
                     case 2:ProjectStore.duplicate(getContext(),m.id);break;

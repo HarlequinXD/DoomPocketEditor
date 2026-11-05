@@ -20,6 +20,26 @@ final class ProjectStore {
 
     static File dir(Context c){File d=new File(c.getFilesDir(),"projects");if(!d.exists())d.mkdirs();return d;}
     private static File file(Context c,String id){return new File(dir(c),id+".json");}
+    static File fileFor(Context c,String id){return file(c,id);}
+    static final String PACKAGE_FORMAT="rpg-pocket-editor-game";
+    /** A project as one shareable file: a small wrapper around the project JSON. */
+    static String exportPackage(Context c,String id)throws Exception{
+        Project open=Project.isOpen()?Project.get(c):null;if(open!=null&&id.equals(open.id))open.saveNow(c);
+        JSONObject o=new JSONObject();o.put("format",PACKAGE_FORMAT);o.put("version",1);o.put("exported",(double)System.currentTimeMillis());
+        o.put("project",new JSONObject(read(file(c,id))));return o.toString();
+    }
+    /** Imports a shared game (or a bare project file) as a new project; returns its id. */
+    static String importPackage(Context c,String text)throws Exception{
+        JSONObject o=new JSONObject(text);JSONObject pj=o.has("project")?o.getJSONObject("project"):o;
+        if(!pj.has("level"))throw new IllegalArgumentException("That file isn't an RPG Pocket Editor game");
+        Project p=Project.fromJson(pj);   // validates everything before it is saved
+        String base=p.name==null||p.name.isEmpty()?"Imported game":p.name,name=base;int n=2;
+        for(boolean clash=true;clash;){clash=false;for(Meta m:list(c))if(m.name.equalsIgnoreCase(name)){clash=true;name=base+" ("+(n++)+")";break;}}
+        p.name=name;p.id=newId();if(p.created==0)p.created=System.currentTimeMillis();
+        write(c,p.id,p.toJson().toString());
+        Project cur=Project.isOpen()?Project.get(c):null;if(cur!=null)Rpg.use(cur);   // fromJson must not leave the imported content active
+        return p.id;
+    }
     static String currentId(Context c){return c.getSharedPreferences("app",0).getString("current",null);}
     static void setCurrent(Context c,String id){c.getSharedPreferences("app",0).edit().putString("current",id).apply();}
 

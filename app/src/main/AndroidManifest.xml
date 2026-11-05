@@ -7,10 +7,24 @@
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:usesCleartextTraffic="false">
         <activity android:name="com.retro.doomeditor.MainActivity"
+            android:launchMode="singleTask"
             android:screenOrientation="landscape" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- open shared .rpgpocket game files -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" android:mimeType="application/octet-stream" />
+                <data android:scheme="content" android:mimeType="application/x-rpgpocket" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/octet-stream" />
             </intent-filter>
         </activity>
         <activity android:name="com.retro.doomeditor.SpriteEditorActivity"
@@ -25,5 +39,9 @@
             android:screenOrientation="landscape" android:exported="false" />
         <activity android:name="com.retro.doomeditor.FSMEditorActivity"
             android:screenOrientation="landscape" android:exported="false" />
+        <provider android:name="com.retro.doomeditor.ShareProvider"
+            android:authorities="com.retro.doomeditor.share"
+            android:exported="false"
+            android:grantUriPermissions="true" />
     </application>
 </manifest>

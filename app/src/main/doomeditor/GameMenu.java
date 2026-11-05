@@ -26,7 +26,9 @@ final class GameMenu {
     void refreshSaves(){for(int i=0;i<GameSave.SLOTS.length;i++)slotInfo[i]=GameSave.info(ctx,project,GameSave.SLOTS[i]);latest=null;for(GameSave.Info i:slotInfo)if(i.exists&&(latest==null||i.time>latest.time))latest=i;}
 
     int state=OFF;
-    boolean paused;   // opened from inside a running game: Continue is offered, the frozen game is the backdrop
+    boolean paused;
+    /** Player mode (a shared game opened with Play): the exit button quits to the title screen. */
+    boolean playerMode;   // opened from inside a running game: Continue is offered, the frozen game is the backdrop
     private final Ui ui;private final Paint p;private final Context ctx;
     private final Project project;private final Renderer renderer;private final SoundFx sfx;private final Listener listener;
     private float time,splashTime;private int optTab;
@@ -124,7 +126,7 @@ final class GameMenu {
             if(latest!=null)b.add(new Object[]{Icons.FOLDER,"Load game",H_LOAD});b.add(new Object[]{Icons.FLAG,"Restart level",H_NEW});}
         else{if(latest!=null)b.add(new Object[]{Icons.PLAY,"Continue",H_CONTINUE_SAVE});b.add(new Object[]{Icons.FLAG,"New Game",H_NEW});
             if(latest!=null)b.add(new Object[]{Icons.FOLDER,"Load game",H_LOAD});}
-        b.add(new Object[]{Icons.MORE,"Options",H_OPTIONS});b.add(new Object[]{Icons.ARROW_LEFT,"Exit to editor",H_EXIT});
+        b.add(new Object[]{Icons.MORE,"Options",H_OPTIONS});b.add(new Object[]{Icons.ARROW_LEFT,playerMode?"Quit":"Exit to editor",H_EXIT});
         float by=y+dp(36),bw=Math.min(dp(280),w*.4f),gap=dp(8),bh=Math.max(dp(34),Math.min(dp(50),(h-by-dp(48))/b.size()-gap));
         for(int i=0;i<b.size();i++){Object[] o=b.get(i);menuButton(c,L,by,bw,bh,(Integer)o[0],(String)o[1],(Integer)o[2],i==0);by+=bh+gap;}
         if(!paused&&latest!=null){ui.text(c,ui.ellipsize(latestLabel(latest),11,1,w-L-bw-dp(40)),L+bw+dp(14),y+dp(36)+bh*.5f+dp(4),11,0xc0e8ecf1,1,-1);}

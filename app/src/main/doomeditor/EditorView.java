@@ -270,7 +270,7 @@ public class EditorView extends View {
     /** Android back: close the launcher, leave Play, leave an editor for Home; false means leave the project. */
     boolean goBack(){
         if(launcherOpen){launcherOpen=false;invalidate();return true;}
-        if(mode==PLAY&&menu!=null&&menu.active()){if(!menu.back())changeMode(returnMode);invalidate();return true;}
+        if(mode==PLAY&&menu!=null&&menu.active()){if(!menu.back())leavePlay();invalidate();return true;}
         if(mode==PLAY&&world!=null&&world.shop!=null){world.closeShop();invalidate();return true;}
         if(mode==PLAY&&bagOpen){closeBag();invalidate();return true;}
         if(mode==PLAY){pauseToMenu();invalidate();return true;}
@@ -1057,14 +1057,21 @@ public class EditorView extends View {
                 project.syncCurrent();World w=GameSave.load(getContext(),project,sfx,slot);if(w==null)return false;
                 sfx.start();world=w;bagOpen=false;mapFade=1f;for(int i=0;i<buttonPointer.length;i++)buttonPointer[i]=-1;joyPointer=lookPointer=-1;joyVisible=false;
                 world.centerPrint(project.mapName(world.mapNum),2f);return true;}
-            @Override public void exitToEditor(){changeMode(returnMode);}
+            @Override public void exitToEditor(){leavePlay();}
         });
         return menu;
     }
-    private boolean frontEnd(){GameSettings.load(getContext());return GameSettings.frontEnd;}
+    private boolean frontEnd(){GameSettings.load(getContext());return playerMode||GameSettings.frontEnd;}
+    /** Player mode: the project was opened with Play game, so only the game is shown and leaving goes to the title. */
+    boolean playerMode;
+    void startPlayerMode(){playerMode=true;menu().playerMode=true;project.syncCurrent();changeMode(PLAY);}
+    private void leavePlay(){
+        if(playerMode){sfx.stopMusic(0);sfx.stopSounds();sfx.stop();world=null;if(menu!=null)menu.state=GameMenu.OFF;if(onExitToTitle!=null)onExitToTitle.run();return;}
+        changeMode(returnMode);
+    }
     /** In-game Back / close button: the pause menu (or straight back to the editor when the front end is off). */
     private void pauseToMenu(){
-        if(!frontEnd()||world==null){changeMode(returnMode);return;}
+        if(!frontEnd()||world==null){leavePlay();return;}
         world.paused=true;world.input.clear();for(int i=0;i<buttonPointer.length;i++)buttonPointer[i]=-1;joyPointer=lookPointer=-1;joyVisible=false;moveX=moveY=0;
         menu().openPause();
     }
