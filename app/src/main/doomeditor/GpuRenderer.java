@@ -73,7 +73,7 @@ final class GpuRenderer {
     private static int program(String vs,String fs){
         int v=shader(GLES20.GL_VERTEX_SHADER,vs),f=shader(GLES20.GL_FRAGMENT_SHADER,fs),p=GLES20.glCreateProgram();
         GLES20.glAttachShader(p,v);GLES20.glAttachShader(p,f);
-        GLES20.glBindAttribLocation(p,0,"aPos");GLES20.glBindAttribLocation(p,1,"aUv");GLES20.glBindAttribLocation(p,2,"aLight");GLES20.glBindAttribLocation(p,3,"aId");GLES20.glBindAttribLocation(p,4,"aTan");GLES20.glBindAttribLocation(p,5,"aKind");GLES20.glBindAttribLocation(p,6,"aGi");
+        GLES20.glBindAttribLocation(p,0,"aPos");GLES20.glBindAttribLocation(p,1,"aUv");GLES20.glBindAttribLocation(p,2,"aLight");GLES20.glBindAttribLocation(p,3,"aId");GLES20.glBindAttribLocation(p,4,"aTan");GLES20.glBindAttribLocation(p,5,"aKind");GLES20.glBindAttribLocation(p,6,"aGi");GLES20.glBindAttribLocation(p,7,"aEdge");
         GLES20.glLinkProgram(p);int[] ok=new int[1];GLES20.glGetProgramiv(p,GLES20.GL_LINK_STATUS,ok,0);
         if(ok[0]==0)throw new RuntimeException("link: "+GLES20.glGetProgramInfoLog(p));return p;
     }
@@ -101,10 +101,10 @@ final class GpuRenderer {
     // scene vertex: world position, texture coords, (sector light, bright flag), pick id bytes
     private static final String VS_SCENE=
         "uniform vec3 uCam;uniform vec2 uCS;uniform vec3 uProj;\n"+
-        "attribute vec3 aPos;attribute vec2 aUv;attribute vec2 aLight;attribute vec4 aId;attribute vec3 aTan;attribute float aKind;attribute vec3 aGi;\n"+
-        "varying vec2 vUv;varying vec2 vLight;varying vec3 vWorld;varying float vZ;varying vec4 vId;varying vec3 vTan;varying float vKind;varying vec3 vGi;\n"+
+        "attribute vec3 aPos;attribute vec2 aUv;attribute vec2 aLight;attribute vec4 aId;attribute vec3 aTan;attribute float aKind;attribute vec3 aGi;attribute vec3 aEdge;\n"+
+        "varying vec3 vEdge;varying vec2 vUv;varying vec2 vLight;varying vec3 vWorld;varying float vZ;varying vec4 vId;varying vec3 vTan;varying float vKind;varying vec3 vGi;\n"+
         "void main(){vec2 d=aPos.xy-uCam.xy;float x=-d.x*uCS.y+d.y*uCS.x;float z=d.x*uCS.x+d.y*uCS.y;float y=aPos.z-uCam.z;\n"+
-        " vUv=aUv;vLight=aLight;vWorld=aPos;vZ=z;vId=aId;vTan=aTan;vKind=aKind;vGi=aGi;\n"+
+        " vUv=aUv;vLight=aLight;vWorld=aPos;vZ=z;vId=aId;vTan=aTan;vKind=aKind;vGi=aGi;vEdge=aEdge;\n"+
         " gl_Position=vec4(x,uProj.y*z-y*uProj.x,(z*uProj.z-2.0*0.06*120.0/(120.0-0.06)),z);}\n";
     private static final String FS_HEAD=
         "#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\nprecision mediump float;\n#endif\n";
@@ -115,7 +115,11 @@ final class GpuRenderer {
         "uniform float uFade;uniform int uCount;uniform vec4 uL[16];uniform vec3 uLC[16];\n"+
         "uniform vec4 uFog;uniform vec3 uFogC;uniform vec4 uTint;uniform vec4 uHi;uniform float uAlphaCut;\n"+
         "uniform sampler2D uShadow;uniform float uShadowOn;\n"+
-        "varying vec2 vUv;varying vec2 vLight;varying vec3 vWorld;varying float vZ;varying vec4 vId;varying vec3 vTan;varying float vKind;varying vec3 vGi;\n"+
+        "varying vec2 vUv;varying vec2 vLight;varying vec3 vWorld;varying float vZ;varying vec4 vId;varying vec3 vTan;varying float vKind;varying vec3 vGi;varying vec3 vEdge;\n"+
+        // self-shadow inside the relief: 4 taps up the height map toward the light (soft, cheap)
+        "float pomShadow(vec2 uv,vec3 Lt,float amt,float h0){if(Lt.z<=0.02)return 0.35;vec2 dir=Lt.xy/max(Lt.z,0.2)*amt*(1.0-h0);float occ=0.0;\n"+
+        " for(int j=1;j<=4;j++){float s=float(j)*0.25;float hh=texture2D(uNorm,uv+dir*s).a;occ=max(occ,(hh-(h0+(1.0-h0)*s))*(1.0-s*0.5));}\n"+
+        " return 1.0-clamp(occ*5.0,0.0,0.75);}\n"+
         // polar shadow map: one row per light, 256 angles; RG = distance to the nearest blocking wall (16 bit, 0..32),
         // B = distance to the nearest actor (0..24), A = that actor's top height (0..16). 3 taps give soft edges.
         "float shadowAt(float row,vec3 lp,float actors){vec2 d=vWorld.xy-lp.xy;float dist=length(d);if(dist<0.05)return 1.0;\n"+
@@ -131,11 +135,18 @@ final class GpuRenderer {
         "  else{N=vec3(0.0,0.0,V.z>0.0?1.0:-1.0);}}\n"+
         " else{N=normalize(vec3(V.xy,0.0001));}\n"+
         " Nw=N;\n"+
+        " float amt=0.0;float h0=1.0;\n"+
         " if(surf&&uRelief>0.0){vec3 Vt=normalize(vec3(dot(V,T),dot(V,B),dot(V,N)));\n"+
-        "  float amt=uRelief*0.045*clamp(1.0-vZ/14.0,0.0,1.0);\n"+
-        "  if(amt>0.0){vec2 delta=Vt.xy/max(Vt.z,0.3)*amt/8.0;float layer=0.0;float depth=1.0-texture2D(uNorm,uv).a;\n"+
-        "   for(int i=0;i<8;i++){if(layer>=depth)break;uv-=delta;depth=1.0-texture2D(uNorm,uv).a;layer+=0.125;}}\n"+
-        "  vec3 nm=texture2D(uNorm,uv).rgb*2.0-1.0;Nw=normalize(T*nm.x+B*nm.y+N*nm.z);\n"+
+        // parallax occlusion: depth fades out with distance; fewer steps head-on and far away, more at grazing angles
+        "  float lod=clamp(1.0-vZ/12.0,0.0,1.0);amt=uRelief*0.07*lod;\n"+
+        "  if(amt>0.002){float steps=floor(mix(10.0,3.0,Vt.z)*(0.4+0.6*lod)+1.0);vec2 delta=Vt.xy/max(Vt.z,0.22)*amt/steps;float ls=1.0/steps;\n"+
+        "   float layer=0.0;vec2 cur=uv;float depth=1.0-texture2D(uNorm,cur).a;vec2 pUv=cur;float pD=depth;float pL=0.0;\n"+
+        "   for(int i=0;i<10;i++){if(float(i)>=steps||layer>=depth)break;pUv=cur;pD=depth;pL=layer;cur-=delta;layer+=ls;depth=1.0-texture2D(uNorm,cur).a;}\n"+
+        // contact refinement: one interpolation between the last two steps instead of a binary search
+        "   float a1=depth-layer;float b1=pD-pL;uv=mix(cur,pUv,clamp(a1/(a1-b1+1e-5),0.0,1.0));\n"+
+        // silhouettes: on step tops and door lintels the relief can run off the edge, so those pixels are cut away
+        "   if(vKind>0.5){if(vEdge.z>0.5&&vEdge.z<1.5&&uv.y<vEdge.x)discard;if(vEdge.z>1.5&&uv.y>vEdge.y)discard;}}\n"+
+        "  h0=texture2D(uNorm,uv).a;\n"+  vec3 nm=texture2D(uNorm,uv).rgb*2.0-1.0;Nw=normalize(T*nm.x+B*nm.y+N*nm.z);\n"+
         "  shadeK=(0.8+0.32*dot(nm,vec3(-0.36,-0.46,0.81)))/1.06;}\n"+
         " vec4 t=texture2D(uTex,uv);if(t.a<uAlphaCut)discard;vec3 alb=t.rgb;\n"+
         " vec3 m=surf?texture2D(uMat,uv).rgb:vec3(0.1,0.0,1.0);float smo=m.r;float metal=m.g;float ao=m.b;\n"+
@@ -147,18 +158,21 @@ final class GpuRenderer {
         " if(uPbr>0.5){float rough=max(0.08,1.0-smo);float a2=rough*rough*rough*rough;float NdV=max(dot(Nw,Vw),0.001);\n"+
         "  vec3 F0=mix(vec3(0.04),alb,metal);vec3 Fa=F0+(max(vec3(1.0-rough),F0)-F0)*pow(1.0-NdV,5.0);\n"+
         "  c=alb*(1.0-metal)*(1.0-Fa*0.5)*amb+Fa*amb*(0.3+0.7*smo);\n"+
-        "  float kk=(rough+1.0)*(rough+1.0)/8.0;\n"+
+        "  float kk=(rough+1.0)*(rough+1.0)/8.0;int budget=2;\n"+
         "  for(int i=0;i<16;i++){if(i>=uCount)break;vec3 dd=uL[i].xyz-vWorld;float d2=dot(dd,dd);if(d2<uL[i].w){float f=1.0-d2/uL[i].w;\n"+
         "   float sh=uShadowOn>0.5?shadowAt(float(i),uL[i].xyz,surf?1.0:0.0):1.0;if(sh<=0.0)continue;\n"+
-        "   vec3 Ld=dd*inversesqrt(max(d2,1e-4));vec3 rad=uLC[i]*(f*f*1.35*sh);float NdL=max(dot(Nw,Ld),0.0);\n"+
+        "   vec3 Ld=dd*inversesqrt(max(d2,1e-4));\n"+
+        "   if(surf&&amt>0.002&&budget>0&&f*f*sh>0.08){budget--;sh*=pomShadow(uv,vec3(dot(Ld,T),dot(Ld,B),dot(Ld,N)),amt,h0);}\n"+
+        "   vec3 rad=uLC[i]*(f*f*1.35*sh);float NdL=max(dot(Nw,Ld),0.0);\n"+
         "   if(!surf){c+=alb*rad;continue;}\n"+
         "   vec3 H=normalize(Ld+Vw);float NdH=max(dot(Nw,H),0.0);float dn=NdH*NdH*(a2-1.0)+1.0;float D=a2/(3.14159*dn*dn);\n"+
         "   float G=(NdV/(NdV*(1.0-kk)+kk))*(NdL/(NdL*(1.0-kk)+kk));vec3 F=F0+(1.0-F0)*pow(1.0-max(dot(H,Vw),0.0),5.0);\n"+
         "   vec3 spec=min(D*G*F/(4.0*NdV*NdL+0.001),vec3(6.0));vec3 kd=(1.0-F)*(1.0-metal);\n"+
         "   c+=(kd*alb*(0.15+0.85*NdL)+spec*NdL*0.6)*rad;}}\n"+
-        " }else{vec3 lc=vec3(0.0);\n"+
+        " }else{vec3 lc=vec3(0.0);int budget=2;\n"+
         "  for(int i=0;i<16;i++){if(i>=uCount)break;vec3 dd=uL[i].xyz-vWorld;float d2=dot(dd,dd);if(d2<uL[i].w){float f=1.0-d2/uL[i].w;\n"+
         "   float sh=uShadowOn>0.5?shadowAt(float(i),uL[i].xyz,surf?1.0:0.0):1.0;\n"+
+        "   if(surf&&amt>0.002&&budget>0&&f*f*sh>0.08){budget--;vec3 Ld2=dd*inversesqrt(max(d2,1e-4));sh*=pomShadow(uv,vec3(dot(Ld2,T),dot(Ld2,B),dot(Ld2,N)),amt,h0);}\n"+
         "   float diff=surf?(0.25+0.95*max(0.0,dot(Nw,dd*inversesqrt(max(d2,1e-4))))):1.0;lc+=uLC[i]*(f*f*diff*sh);}}\n"+
         "  c=alb*min(vec3(1.7),amb+lc*1.35);}\n"+
         " c=min(c,vec3(1.7));\n"+
@@ -235,12 +249,12 @@ final class GpuRenderer {
     }
 
     // ------------------------------------------------------------------ geometry building
-    static final int ST=20;   // floats per vertex: pos3 uv2 light2 id4 tangent3 kind1 pad1 gi3 pad1
+    static final int ST=24;   // floats per vertex: pos3 uv2 light2 id4 tangent3 kind1 pad1 gi3 pad1 edge3 pad1
     private float giR,giG,giB;   // sky/bounce light for the next vtx() call (sprites, decals)
     private float[] verts=new float[ST*4096];private int nv;
     private void ensure(int more){if((nv+more)*ST>verts.length)verts=java.util.Arrays.copyOf(verts,Math.max(verts.length*2,(nv+more)*ST));}
     private void vtx(float x,float y,float z,float u,float v,float L,float bright,int id){
-        int o=nv*ST;verts[o+11]=verts[o+12]=verts[o+13]=0;verts[o+14]=2;verts[o+15]=0;verts[o+16]=giR;verts[o+17]=giG;verts[o+18]=giB;verts[o+19]=0;verts[o]=x;verts[o+1]=y;verts[o+2]=z;verts[o+3]=u;verts[o+4]=v;verts[o+5]=L;verts[o+6]=bright;
+        int o=nv*ST;verts[o+11]=verts[o+12]=verts[o+13]=0;verts[o+14]=2;verts[o+15]=0;verts[o+16]=giR;verts[o+17]=giG;verts[o+18]=giB;verts[o+19]=0;verts[o+20]=verts[o+21]=verts[o+22]=verts[o+23]=0;verts[o]=x;verts[o+1]=y;verts[o+2]=z;verts[o+3]=u;verts[o+4]=v;verts[o+5]=L;verts[o+6]=bright;
         if(id<0){verts[o+7]=verts[o+8]=verts[o+9]=verts[o+10]=0;}
         else{verts[o+7]=((id>>>24)&255)/255f;verts[o+8]=((id>>16)&255)/255f;verts[o+9]=((id>>8)&255)/255f;verts[o+10]=(id&255)/255f;}
         nv++;
@@ -275,9 +289,9 @@ final class GpuRenderer {
             if(l.back<0||l.back>=level.sectors.size())wall(lists,a,b,len,f.floor,f.ceiling,r.materialFor(level,l,0,f.wallMaterial),L,Renderer.id(Renderer.ID_WALL,li<<1),0,l.from,l.to);
             else{Level.Sector k=level.sectors.get(l.back);
                 boolean lift=f.special==Level.SP_LIFT||k.special==Level.SP_LIFT,door=f.special==Level.SP_DOOR||k.special==Level.SP_DOOR;
-                if(f.floor!=k.floor){float lo=Math.min(f.floor,k.floor),hi=Math.max(f.floor,k.floor);wall(lists,a,b,len,lo,hi,r.materialFor(level,l,0,f.wallMaterial),L,Renderer.id(Renderer.ID_WALL,li<<1),lift?hi:0,l.from,l.to);}
+                if(f.floor!=k.floor){float lo=Math.min(f.floor,k.floor),hi=Math.max(f.floor,k.floor);wall(lists,a,b,len,lo,hi,r.materialFor(level,l,0,f.wallMaterial),L,Renderer.id(Renderer.ID_WALL,li<<1),lift?hi:0,l.from,l.to,1);}
                 boolean bothSky=f.ceilingMaterial==Textures.SKY&&k.ceilingMaterial==Textures.SKY;
-                if(f.ceiling!=k.ceiling&&!bothSky){float lo=Math.min(f.ceiling,k.ceiling),hi=Math.max(f.ceiling,k.ceiling);wall(lists,a,b,len,lo,hi,r.materialFor(level,l,1,f.wallMaterial),L,Renderer.id(Renderer.ID_WALL,(li<<1)|1),door?lo:0,l.from,l.to);}
+                if(f.ceiling!=k.ceiling&&!bothSky){float lo=Math.min(f.ceiling,k.ceiling),hi=Math.max(f.ceiling,k.ceiling);wall(lists,a,b,len,lo,hi,r.materialFor(level,l,1,f.wallMaterial),L,Renderer.id(Renderer.ID_WALL,(li<<1)|1),door?lo:0,l.from,l.to,2);}
             }
         }
         // sky ceilings first: they only fill depth, so whatever is behind them must not be drawn yet
@@ -321,14 +335,15 @@ final class GpuRenderer {
     }
     private void plane(ArrayList<float[]>[] lists,Level level,int a,int b,int c,float h,int mat,int L,int pid){
         ArrayList<float[]> l=list(lists,mat);boolean br=mat>=0&&mat<Textures.COUNT&&Textures.BRIGHT[mat];float[] id=idVec(pid);
-        for(int v:new int[]{a,b,c}){Level.Vertex w=level.vertices.get(v);l.add(new float[]{w.x,w.y,h,w.x*.5f,w.y*.5f,L,br?1:0,id[0],id[1],id[2],id[3],1,0,0,0,0,gv(v,0),gv(v,1),gv(v,2),0});}
+        for(int v:new int[]{a,b,c}){Level.Vertex w=level.vertices.get(v);l.add(new float[]{w.x,w.y,h,w.x*.5f,w.y*.5f,L,br?1:0,id[0],id[1],id[2],id[3],1,0,0,0,0,gv(v,0),gv(v,1),gv(v,2),0,0,0,0,0});}
     }
-    private void wall(ArrayList<float[]>[] lists,Level.Vertex a,Level.Vertex b,float len,float lo,float hi,int mat,int L,int pid,float peg){wall(lists,a,b,len,lo,hi,mat,L,pid,peg,-1,-1);}
-    private void wall(ArrayList<float[]>[] lists,Level.Vertex a,Level.Vertex b,float len,float lo,float hi,int mat,int L,int pid,float peg,int ia,int ib){
+    private void wall(ArrayList<float[]>[] lists,Level.Vertex a,Level.Vertex b,float len,float lo,float hi,int mat,int L,int pid,float peg,int ia,int ib){wall(lists,a,b,len,lo,hi,mat,L,pid,peg,ia,ib,0);}
+    /** {@code edge}: 1 = top edge is open (a step), 2 = bottom edge is open (a lintel); used for relief silhouettes. */
+    private void wall(ArrayList<float[]>[] lists,Level.Vertex a,Level.Vertex b,float len,float lo,float hi,int mat,int L,int pid,float peg,int ia,int ib,int edge){
         if(hi-lo<.001f)return;ArrayList<float[]> l=list(lists,mat);boolean br=mat>=0&&mat<Textures.COUNT&&Textures.BRIGHT[mat];float[] id=idVec(pid);float B=br?1:0;
         float u1=len*.5f,vt=-(hi-peg)*.5f,vb2=-(lo-peg)*.5f,tx=len<1e-6f?1:(b.x-a.x)/len,ty=len<1e-6f?0:(b.y-a.y)/len;
         float ar=gv(ia,0),ag=gv(ia,1),ab=gv(ia,2),br2=gv(ib,0),bg=gv(ib,1),bb=gv(ib,2);
-        float[] p0={a.x,a.y,hi,0,vt,L,B,id[0],id[1],id[2],id[3],tx,ty,0,1,0,ar,ag,ab,0},p1={b.x,b.y,hi,u1,vt,L,B,id[0],id[1],id[2],id[3],tx,ty,0,1,0,br2,bg,bb,0},p2={b.x,b.y,lo,u1,vb2,L,B,id[0],id[1],id[2],id[3],tx,ty,0,1,0,br2,bg,bb,0},p3={a.x,a.y,lo,0,vb2,L,B,id[0],id[1],id[2],id[3],tx,ty,0,1,0,ar,ag,ab,0};
+        float[] p0={a.x,a.y,hi,0,vt,L,B,id[0],id[1],id[2],id[3],tx,ty,0,1,0,ar,ag,ab,0,vt,vb2,edge,0},p1={b.x,b.y,hi,u1,vt,L,B,id[0],id[1],id[2],id[3],tx,ty,0,1,0,br2,bg,bb,0,vt,vb2,edge,0},p2={b.x,b.y,lo,u1,vb2,L,B,id[0],id[1],id[2],id[3],tx,ty,0,1,0,br2,bg,bb,0,vt,vb2,edge,0},p3={a.x,a.y,lo,0,vb2,L,B,id[0],id[1],id[2],id[3],tx,ty,0,1,0,ar,ag,ab,0,vt,vb2,edge,0};
         l.add(p0);l.add(p1);l.add(p2);l.add(p0);l.add(p2);l.add(p3);
     }
     @SuppressWarnings("unchecked")
@@ -494,6 +509,7 @@ final class GpuRenderer {
         b.position(11);GLES20.glVertexAttribPointer(4,3,GLES20.GL_FLOAT,false,stride,b);GLES20.glEnableVertexAttribArray(4);
         b.position(14);GLES20.glVertexAttribPointer(5,1,GLES20.GL_FLOAT,false,stride,b);GLES20.glEnableVertexAttribArray(5);
         b.position(16);GLES20.glVertexAttribPointer(6,3,GLES20.GL_FLOAT,false,stride,b);GLES20.glEnableVertexAttribArray(6);
+        b.position(20);GLES20.glVertexAttribPointer(7,3,GLES20.GL_FLOAT,false,stride,b);GLES20.glEnableVertexAttribArray(7);
         b.position(0);
     }
     private void camUniforms(int p){
@@ -534,7 +550,7 @@ final class GpuRenderer {
     private void quad(float x0,float y0,float x1,float y1,float u0,float v0,float u1,float v1){
         float[][] c={{x0,y0,u0,v0},{x1,y0,u1,v0},{x1,y1,u1,v1},{x0,y0,u0,v0},{x1,y1,u1,v1},{x0,y1,u0,v1}};float[] q=new float[6*ST];
         for(int i=0;i<6;i++){q[i*ST]=c[i][0];q[i*ST+1]=c[i][1];q[i*ST+3]=c[i][2];q[i*ST+4]=c[i][3];}
-        qb.clear();qb.put(q);qb.position(0);bindScene(0,qb);for(int a=2;a<7;a++)GLES20.glDisableVertexAttribArray(a);
+        qb.clear();qb.put(q);qb.position(0);bindScene(0,qb);for(int a=2;a<8;a++)GLES20.glDisableVertexAttribArray(a);
         GLES20.glDrawArrays(GLES20.GL_TRIANGLES,0,6);
     }
     private float[] cverts=new float[0];
@@ -550,7 +566,7 @@ final class GpuRenderer {
         FloatBuffer b=ByteBuffer.allocateDirect(n*ST*4).order(ByteOrder.nativeOrder()).asFloatBuffer();b.put(cverts,0,n*ST);b.position(0);
         GLES20.glUseProgram(progColor);camUniforms(progColor);atmosUniforms(progColor);
         GLES20.glEnable(GLES20.GL_BLEND);GLES20.glBlendFuncSeparate(GLES20.GL_SRC_ALPHA,GLES20.GL_ONE_MINUS_SRC_ALPHA,GLES20.GL_ZERO,GLES20.GL_ONE);GLES20.glDepthMask(false);
-        bindScene(progColor,b);GLES20.glDisableVertexAttribArray(1);GLES20.glDisableVertexAttribArray(2);GLES20.glDisableVertexAttribArray(4);GLES20.glDisableVertexAttribArray(5);GLES20.glDisableVertexAttribArray(6);
+        bindScene(progColor,b);GLES20.glDisableVertexAttribArray(1);GLES20.glDisableVertexAttribArray(2);GLES20.glDisableVertexAttribArray(4);GLES20.glDisableVertexAttribArray(5);GLES20.glDisableVertexAttribArray(6);GLES20.glDisableVertexAttribArray(7);
         GLES20.glDrawArrays(GLES20.GL_TRIANGLES,0,n);
         GLES20.glDepthMask(true);GLES20.glDisable(GLES20.GL_BLEND);
     }
