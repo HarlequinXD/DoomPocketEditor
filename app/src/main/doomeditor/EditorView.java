@@ -336,11 +336,13 @@ public class EditorView extends View {
     private String rendererLabel(){if(!Renderer.useGpu)return "Software";if(!renderer.onGpu()&&GpuRenderer.available()==false)return "Software (GPU not available)";return "GPU, "+Renderer.gpuLines+" lines";}
     private void chooseRenderer(){
         int cur=4;if(Renderer.useGpu)for(int i=0;i<RENDER_LINES.length;i++)if(RENDER_LINES[i]==Renderer.gpuLines)cur=i;
-        String[] items=java.util.Arrays.copyOf(RENDERERS,RENDERERS.length+3);
+        String[] items=java.util.Arrays.copyOf(RENDERERS,RENDERERS.length+4);
         items[RENDERERS.length]="Normal + parallax mapping: "+(GpuRenderer.relief?"ON (tap to turn off)":"off (tap to turn on)");
         items[RENDERERS.length+1]="Physically based shading (shine, metal): "+(GpuRenderer.pbr?"ON":"off");
         items[RENDERERS.length+2]="Sky light + bounce lighting: "+(GpuRenderer.gi?"ON":"off");
+        items[RENDERERS.length+3]="Dynamic shadows from lights: "+(GpuRenderer.shadows?"ON":"off");
         host.choose("3D renderer",items,cur,k->{
+            if(k==RENDERERS.length+3){GpuRenderer.shadows=!GpuRenderer.shadows;Renderer.savePrefs(getContext());hint(GpuRenderer.shadows?"Shadows on · walls, doors and monsters block torchlight":"Shadows off");invalidate();return;}
             if(k==RENDERERS.length+1){GpuRenderer.pbr=!GpuRenderer.pbr;Renderer.savePrefs(getContext());hint(GpuRenderer.pbr?"Physically based shading on · smooth and metal surfaces shine under lights":"Physically based shading off");invalidate();return;}
             if(k==RENDERERS.length+2){GpuRenderer.gi=!GpuRenderer.gi;Renderer.savePrefs(getContext());hint(GpuRenderer.gi?"Sky light on · open-sky sectors light up and light spills through doorways":"Sky light off");invalidate();return;}
             if(k==RENDERERS.length){GpuRenderer.relief=!GpuRenderer.relief;Renderer.savePrefs(getContext());hint(GpuRenderer.relief?"Relief on · textures get depth and react to lights (GPU only)":"Relief off · flat textures");invalidate();return;}
