@@ -34,15 +34,15 @@ final class HudLayout {
         Elem el=e[id];
         if(el.custom){out[0]=el.ax*w+el.ox*dp;out[1]=el.ay*h+el.oy*dp;clamp(id,w,h,dp,out);return;}
         float bar=BAR_H*dp;   // defaults leave room for the status bar even when it is hidden
-        float fr=38*dp,fx=w-24*dp-fr,fy=h-bar-16*dp-fr;
         switch(id){
-            case ATTACK:out[0]=fx;out[1]=fy;break;
-            case CAST:out[0]=fx-fr-38*dp;out[1]=fy-fr*.15f;break;
-            case JUMP:out[0]=fx-fr*.2f;out[1]=fy-fr-40*dp;break;
-            case USE:out[0]=fx-fr-(caster?94:40)*dp;out[1]=fy+(caster?18:8)*dp;break;
-            case POTION:out[0]=fx-fr-(caster?62:18)*dp;out[1]=fy-fr-(caster?44:30)*dp;break;
-            case BAG:{float top=16*dp;if(e[MINIMAP].visible)top+=boxW(MINIMAP,w,dp)+14*dp;   // under the minimap when it shows
-                out[0]=w-16*dp-22*dp*e[BAG].scale;out[1]=top+22*dp*e[BAG].scale;break;}
+            // right-hand cluster measured from the screen edge and the top of the status bar (dp):
+            // Attack in the corner, Use and Potion stacked to its left, Jump above, Bag at the top right of the group
+            case ATTACK:out[0]=w-73*dp;out[1]=h-bar-68*dp;break;
+            case CAST:out[0]=w-148*dp;out[1]=h-bar-42*dp;break;
+            case USE:out[0]=w-(caster?205:140)*dp;out[1]=h-bar-(caster?34:47)*dp;break;
+            case POTION:out[0]=w-(caster?150:145)*dp;out[1]=h-bar-(caster?108:101)*dp;break;
+            case JUMP:out[0]=w-105*dp;out[1]=h-bar-140*dp;break;
+            case BAG:out[0]=w-33*dp;out[1]=h-bar-148*dp;if(e[MINIMAP].visible)out[1]=Math.max(out[1],16*dp+boxH(MINIMAP,dp)+36*dp);break;
             case MENU:out[0]=14*dp+18*dp;out[1]=14*dp+18*dp;break;
             case JOYSTICK:out[0]=120*dp;out[1]=h-bar-110*dp;break;
             case QUEST:{float qw=boxW(QUEST,w,dp),right=e[MINIMAP].visible?w-16*dp-boxW(MINIMAP,w,dp)-14*dp:w-70*dp;out[0]=right-qw*.5f;out[1]=14*dp+boxH(QUEST,dp)*.5f;break;}
