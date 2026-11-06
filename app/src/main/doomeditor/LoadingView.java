@@ -20,7 +20,7 @@ final class LoadingView extends View {
         final Context app=c.getApplicationContext();
         Thread t=new Thread(()->{
             try{
-                run(0,()->{GameSettings.load(app);Perf.saver(app);});
+                run(0,()->{GameSettings.load(app);Perf.saver(app);Renderer.loadPrefs(app);});
                 run(1,Textures::init);
                 run(2,Sprites::init);
                 run(3,()->{for(int i=0;i<SoundFx.COUNT;i++)SoundFx.builtin(i);});

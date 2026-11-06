@@ -35,7 +35,7 @@ final class Renderer {
     // geometry cache
     private Level geoLevel;private long geoSig;
     ArrayList<Level.LineDef> lines=new ArrayList<>();
-    private int[][] tris=new int[0][];
+    int[][] tris=new int[0][];
     private float[] vx=new float[0],vz=new float[0];
     private int[] skyU=new int[0];
     // scratch polygon buffers (camera space in, clipped out)
@@ -44,7 +44,22 @@ final class Renderer {
     int highlight=-1;
     float fadeK=1.35f;
 
+    /** GPU back end (null = software). */
+    private GpuRenderer gpu;
+    /** Settings: draw the 3D scene on the GPU, and how many lines tall its picture is. */
+    static boolean useGpu=true;static int gpuLines=270;
+    static void loadPrefs(android.content.Context c){try{android.content.SharedPreferences p=c.getSharedPreferences("app",0);useGpu=p.getBoolean("gpu",true);gpuLines=p.getInt("gpuLines",270);}catch(Throwable ignored){}}
+    static void savePrefs(android.content.Context c){try{c.getSharedPreferences("app",0).edit().putBoolean("gpu",useGpu).putInt("gpuLines",gpuLines).apply();}catch(Throwable ignored){}}
+    boolean onGpu(){return gpu!=null;}
+
     Renderer(){blit.setFilterBitmap(false);blit.setAntiAlias(false);Textures.init();Sprites.init();}
+    /** Switches to the GPU when it's turned on and works on this phone; otherwise stays in software. */
+    private boolean gpuReady(){
+        if(!useGpu){gpu=null;return false;}
+        if(!GpuRenderer.available()){gpu=null;return false;}
+        if(gpu==null)gpu=new GpuRenderer(this);
+        return true;
+    }
 
     /** Picks an internal resolution that matches the viewport's shape (about 200 lines tall). */
     private void setup(float vw,float vh){
@@ -106,6 +121,16 @@ final class Renderer {
         present(out,dst);
     }
     void renderScene(Level level,float x,float y,float eyeZ,float angle,float pitch,float vw,float vh,List<SpriteDraw> sprites){
+        if(gpuReady()){
+            try{
+                int h=Math.max(120,Math.min(720,gpuLines)),w=Math.max(160,Math.min(1600,Math.round(h*vw/Math.max(1,vh))));
+                gpu.setup(w,h);W=w;H=h;geometry(level);
+                camX=x;camY=y;eye=eyeZ;cs=(float)Math.cos(angle);sn=(float)Math.sin(angle);
+                focal=W*.5f;kx=(W*.5f)/focal*1.04f;horizon=H*.5f+(float)Math.tan(Math.max(-.6f,Math.min(.6f,pitch)))*focal;
+                gpu.renderScene(level,x,y,eyeZ,angle,pitch,sprites);
+                lastCamX=camX;lastCamY=camY;lightCount=0;return;
+            }catch(Throwable e){android.util.Log.w("Renderer","GPU frame failed, switching to software",e);gpu=null;useGpu=false;W=H=0;pix=null;}
+        }
         setup(vw,vh);geometry(level);
         camX=x;camY=y;eye=eyeZ;cs=(float)Math.cos(angle);sn=(float)Math.sin(angle);
         focal=W*.5f;kx=(W*.5f)/focal*1.04f;
@@ -153,11 +178,15 @@ final class Renderer {
         atmospherePass();
         if(highlight>=0)tintHighlight();
     }
+    int materialFor(Level level,Level.LineDef l,int part,int fallback){return material(level,l,part,fallback);}
+    static int lightLevel(int sectorLight){return light(sectorLight);}
     private int material(Level level,Level.LineDef l,int part,int fallback){
         if(level.wallOverrides.isEmpty())return fallback;Integer m=level.wallOverrides.get(wallKey(level,l,part));return m==null?fallback:m;
     }
     private static int light(int sectorLight){return Math.max(0,Math.min(31,Math.round(sectorLight/255f*31f)));}
-    void present(Canvas out,RectF dst){bmp.setPixels(pix,0,W,0,0,W,H);out.drawBitmap(bmp,null,dst,blit);}
+    void present(Canvas out,RectF dst){
+        if(gpu!=null){try{out.drawBitmap(gpu.finish(),null,dst,blit);return;}catch(Throwable e){gpu=null;useGpu=false;return;}}
+        if(pix==null)return;bmp.setPixels(pix,0,W,0,0,W,H);out.drawBitmap(bmp,null,dst,blit);}
 
     private void drawSky(float angle){
         int[] sk=Textures.sky;int sw=Textures.SKY_W,sh=Textures.SKY_H;
@@ -278,11 +307,11 @@ final class Renderer {
     }
     // ------------------------------------------------------------------ atmosphere (Atmosphere.java)
     private boolean[] skyPix=new boolean[0];
-    private static final int MAX_LIGHTS=10;
-    private final float[] lx=new float[MAX_LIGHTS],ly=new float[MAX_LIGHTS],lz=new float[MAX_LIGHTS],lr2=new float[MAX_LIGHTS],lcr=new float[MAX_LIGHTS],lcg=new float[MAX_LIGHTS],lcb=new float[MAX_LIGHTS];
-    private int lightCount;
-    private int fogR,fogG,fogB;private float fogStart,fogEnd,fogAmt;
-    private int tintR=255,tintG=255,tintB=255;private float tintAmt;
+    private static final int MAX_LIGHTS=16;
+    final float[] lx=new float[MAX_LIGHTS],ly=new float[MAX_LIGHTS],lz=new float[MAX_LIGHTS],lr2=new float[MAX_LIGHTS],lcr=new float[MAX_LIGHTS],lcg=new float[MAX_LIGHTS],lcb=new float[MAX_LIGHTS];
+    int lightCount;
+    int fogR,fogG,fogB;float fogStart,fogEnd,fogAmt;
+    int tintR=255,tintG=255,tintB=255;float tintAmt;
     /** World-space particles drawn this frame (null for none). */
     Atmosphere.Particles particles;
     /** Adds a light for the next frame; the nearest lights to the camera are kept. */
@@ -442,12 +471,13 @@ final class Renderer {
     }
     /** Draws the first-person weapon (and muzzle flash) into the frame. */
     void weapon(int weapon,float bobX,float bobY,float raise,boolean attacking,int light){
-        if(pix==null)return;
+        if(pix==null&&gpu==null)return;
         Sprites.Sprite s=Sprites.fpSprite(weapon,attacking);
         // model sprites are sized by their real dimensions: one world unit is ~60% of the screen height
         float sc=H*.62f/s.ppu;int w=Math.round(s.w*sc),h=Math.round(s.h*sc);
         int x0=Math.round(W*.5f-w*.5f+bobX*W*.04f),y0=Math.round(H-h+Math.abs(bobY)*H*.05f+raise*h*.8f+H*.02f);
         int mulv=s.bright||attacking&&weapon==Rpg.FP_STAFF?256:Textures.lightMul(Math.max(10,Math.min(31,light(light)+4)));
+        if(gpu!=null){try{gpu.weapon(s,x0,y0,w,h,mulv);}catch(Throwable ignored){}return;}
         blitSprite(s,x0,y0,w,h,mulv);
     }
     private void blitSprite(Sprites.Sprite s,int x0,int y0,int w,int h,int mulv){
@@ -458,12 +488,16 @@ final class Renderer {
     }
     /** Full-screen colour tint for pain / pickup flashes. */
     void tint(int color,float amount){
-        if(amount<=0.01f||pix==null)return;int a=Math.round(Math.min(.7f,amount)*256),ia=256-a;
+        if(amount<=0.01f)return;
+        if(gpu!=null){try{gpu.tint(color,Math.min(.7f,amount));}catch(Throwable ignored){}return;}
+        if(pix==null)return;int a=Math.round(Math.min(.7f,amount)*256),ia=256-a;
         int cr=(color>>16)&255,cg=(color>>8)&255,cb=color&255;
         for(int i=0;i<pix.length;i++){int c=pix[i];pix[i]=0xff000000|((((c>>16)&255)*ia+cr*a)>>8<<16)|((((c>>8)&255)*ia+cg*a)>>8<<8)|(((c&255)*ia+cb*a)>>8);}
     }
     /** Returns the pick id under a view-space point, or -1. */
     int pick(float x,float y,RectF dst){
+        if(gpu!=null){if(!dst.contains(x,y)||W==0)return -1;
+            try{return gpu.pick(Math.max(0,Math.min(W-1,(int)((x-dst.left)/dst.width()*W))),Math.max(0,Math.min(H-1,(int)((y-dst.top)/dst.height()*H))));}catch(Throwable e){return -1;}}
         if(ids==null||!dst.contains(x,y))return -1;
         int px=Math.max(0,Math.min(W-1,(int)((x-dst.left)/dst.width()*W))),py=Math.max(0,Math.min(H-1,(int)((y-dst.top)/dst.height()*H)));
         return ids[py*W+px];

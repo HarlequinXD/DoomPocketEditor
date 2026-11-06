@@ -308,7 +308,7 @@ public class EditorView extends View {
                 sv?"Battery saver: ON (tap to turn off)":"Battery saver: off (30 fps, still backdrops)",
                 Sprites.pixel?"Built-in sprites: Pixel art (tap for HD)":"Built-in sprites: HD (tap for pixel art)","Reset level…","Back to projects",
                 frontEnd()?"Play: splash + main menu ON (tap to start straight in the level)":"Play: starts straight in the level (tap for splash + main menu)",
-                "Play from the cursor (testing)","Maps… (switch, add, rename, delete)","Search the project…"},-1,k->{
+                "Play from the cursor (testing)","Maps… (switch, add, rename, delete)","Search the project…","3D renderer: "+rendererLabel()},-1,k->{
             if(k==0)showMapCheck();
             else if(k==1)save(true);
             else if(k==2){Perf.setSaver(getContext(),!sv);hint(!sv?"Battery saver on · 30 fps game and 3D, still previews":"Battery saver off · 60 fps");lastInteraction=System.currentTimeMillis();}
@@ -316,6 +316,7 @@ public class EditorView extends View {
             else if(k==5){save(false);if(onExitToTitle!=null)onExitToTitle.run();}
             else if(k==8){mapsMenu();return;}
             else if(k==9){searchProject();return;}
+            else if(k==10){chooseRenderer();return;}
             else if(k==7){playFrom=new float[]{cursorX,cursorY,level.facing};playThisMap=project.currentMap;
                 if(level.sectorAt(cursorX,cursorY)<0)hint("The cursor is outside every sector · starting at the player start");changeMode(PLAY);}
             else if(k==6){GameSettings.frontEnd=!GameSettings.frontEnd;GameSettings.save(getContext());hint(GameSettings.frontEnd?"Play opens with the splash screen and main menu":"Play starts straight in the level");}
@@ -329,6 +330,17 @@ public class EditorView extends View {
         host.prompt("Search the project","Entities, states, actions, items, spells, conversations, quests, sounds, maps…",lastSearch,false,t->{String q=t.trim();if(q.isEmpty())return;lastSearch=q;showSearch(q.toLowerCase());});
     }
     private String lastSearch="";
+    // ---------------------------------------------------------------- renderer choice
+    private static final String[] RENDERERS={"GPU · retro pixels (200 lines)","GPU · sharp (270 lines)","GPU · high detail (360 lines)","GPU · full HD (540 lines)","Software (CPU, the old renderer)"};
+    private static final int[] RENDER_LINES={200,270,360,540};
+    private String rendererLabel(){if(!Renderer.useGpu)return "Software";if(!renderer.onGpu()&&GpuRenderer.available()==false)return "Software (GPU not available)";return "GPU, "+Renderer.gpuLines+" lines";}
+    private void chooseRenderer(){
+        int cur=4;if(Renderer.useGpu)for(int i=0;i<RENDER_LINES.length;i++)if(RENDER_LINES[i]==Renderer.gpuLines)cur=i;
+        host.choose("3D renderer",RENDERERS,cur,k->{
+            if(k==4)Renderer.useGpu=false;else{Renderer.useGpu=true;Renderer.gpuLines=RENDER_LINES[k];}
+            Renderer.savePrefs(getContext());renderer.invalidate();
+            hint(k==4?"Software renderer · lights and fog are drawn by the CPU":GpuRenderer.available()?"GPU renderer · "+RENDER_LINES[k]+" lines":"This phone's GPU couldn't start · using software");invalidate();});
+    }
     private void showSearch(String q){
         ArrayList<String> labels=new ArrayList<>();ArrayList<Runnable> go=new ArrayList<>();
         project.syncCurrent();

@@ -24,7 +24,7 @@ public class MainActivity extends Activity implements UiHost {
     private TitleView title;
 
     @Override public void onCreate(Bundle state) {
-        super.onCreate(state);
+        super.onCreate(state); Renderer.loadPrefs(this);
         String crash = getSharedPreferences(DoomApp.CRASH_PREFS, 0).getString(DoomApp.CRASH_KEY, null);
         if (crash != null) { showCrash(crash); return; }
         if (state != null) { showTitle(); handleViewIntent(getIntent()); return; }
