@@ -91,8 +91,11 @@ final class GpuRenderer {
         GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D,0,GLES20.GL_RGBA,w,h,0,GLES20.GL_RGBA,GLES20.GL_UNSIGNED_BYTE,rgba(argb,w*h,opaque));
         return t[0];
     }
+    /** Reused upload buffer: blood splats and sprites create textures often, and fresh native buffers each time pile up. */
+    private static ByteBuffer scratch;
     private static ByteBuffer rgba(int[] argb,int n,boolean opaque){
-        ByteBuffer b=ByteBuffer.allocateDirect(n*4).order(ByteOrder.nativeOrder());
+        if(scratch==null||scratch.capacity()<n*4)scratch=ByteBuffer.allocateDirect(Math.max(n*4,64*64*4)).order(ByteOrder.nativeOrder());
+        ByteBuffer b=scratch;b.clear();
         for(int i=0;i<n;i++){int c=argb[i];b.put((byte)(c>>16)).put((byte)(c>>8)).put((byte)c).put(opaque?(byte)255:(byte)(c>>>24));}
         b.position(0);return b;
     }
@@ -554,7 +557,7 @@ final class GpuRenderer {
         qb.clear();qb.put(q);qb.position(0);bindScene(0,qb);for(int a=2;a<8;a++)GLES20.glDisableVertexAttribArray(a);
         GLES20.glDrawArrays(GLES20.GL_TRIANGLES,0,6);
     }
-    private float[] cverts=new float[0];
+    private float[] cverts=new float[0];private FloatBuffer cbuf;
     private void drawColored(Level level){
         World fx=r.fx;Atmosphere.Particles ps=r.particles;
         int need=(fx==null?0:fx.drops.size())+(ps==null?0:ps.n);if(need==0)return;
@@ -564,7 +567,8 @@ final class GpuRenderer {
             int c=Textures.mul(d.color,Textures.lightMul(li));n=cquad(n,d.x,d.y,d.z,d.size*.5f,c,1f);}
         if(ps!=null)for(int i=0;i<ps.n;i++){float fade=Math.min(1,ps.life[i]/Math.max(.01f,ps.max[i])*2.2f);n=cquad(n,ps.x[i],ps.y[i],ps.z[i],Math.max(.012f,ps.size[i]*.5f),ps.col[i],fade*.8f);}
         if(n==0)return;
-        FloatBuffer b=ByteBuffer.allocateDirect(n*ST*4).order(ByteOrder.nativeOrder()).asFloatBuffer();b.put(cverts,0,n*ST);b.position(0);
+        if(cbuf==null||cbuf.capacity()<n*ST)cbuf=ByteBuffer.allocateDirect(Math.max(n*ST,6*ST*256)*4*2).order(ByteOrder.nativeOrder()).asFloatBuffer();
+        FloatBuffer b=cbuf;b.clear();b.put(cverts,0,n*ST);b.position(0);
         GLES20.glUseProgram(progColor);camUniforms(progColor);atmosUniforms(progColor);
         GLES20.glEnable(GLES20.GL_BLEND);GLES20.glBlendFuncSeparate(GLES20.GL_SRC_ALPHA,GLES20.GL_ONE_MINUS_SRC_ALPHA,GLES20.GL_ZERO,GLES20.GL_ONE);GLES20.glDepthMask(false);
         bindScene(progColor,b);GLES20.glDisableVertexAttribArray(1);GLES20.glDisableVertexAttribArray(2);GLES20.glDisableVertexAttribArray(4);GLES20.glDisableVertexAttribArray(5);GLES20.glDisableVertexAttribArray(6);GLES20.glDisableVertexAttribArray(7);
@@ -601,6 +605,7 @@ final class GpuRenderer {
         bmp.copyPixelsFromBuffer(read);return bmp;
     }
     /** Pick id at an internal pixel, by drawing last frame's surfaces and sprites with their ids. */
+    private final ByteBuffer pickBuf=ByteBuffer.allocateDirect(4).order(ByteOrder.nativeOrder());
     int pick(int px,int py){
         if(nv==0)return -1;
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER,idFbo);GLES20.glViewport(0,0,W,H);
@@ -609,7 +614,7 @@ final class GpuRenderer {
         GLES20.glUseProgram(progId);camUniforms(progId);GLES20.glUniform1i(GLES20.glGetUniformLocation(progId,"uTex"),0);
         bindScene(progId,vb);
         for(int[] b:batches){if(b[3]==2)continue;GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,b[3]==3?wallTex[0]:b[0]);GLES20.glDrawArrays(GLES20.GL_TRIANGLES,b[1],b[2]);}
-        ByteBuffer one=ByteBuffer.allocateDirect(4).order(ByteOrder.nativeOrder());
+        ByteBuffer one=pickBuf;one.clear();
         GLES20.glReadPixels(px,py,1,1,GLES20.GL_RGBA,GLES20.GL_UNSIGNED_BYTE,one);
         int a=one.get(0)&255,b=one.get(1)&255,c=one.get(2)&255,d=one.get(3)&255;
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER,fbo);GLES20.glColorMask(true,true,true,false);
