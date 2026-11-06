@@ -41,11 +41,12 @@ final class HudLayout {
             case JUMP:out[0]=fx-fr*.2f;out[1]=fy-fr-40*dp;break;
             case USE:out[0]=fx-fr-(caster?94:40)*dp;out[1]=fy+(caster?18:8)*dp;break;
             case POTION:out[0]=fx-fr-(caster?62:18)*dp;out[1]=fy-fr-(caster?44:30)*dp;break;
-            case BAG:out[0]=w-16*dp-22*dp;out[1]=16*dp+22*dp;break;
+            case BAG:{float top=16*dp;if(e[MINIMAP].visible)top+=boxW(MINIMAP,w,dp)+14*dp;   // under the minimap when it shows
+                out[0]=w-16*dp-22*dp*e[BAG].scale;out[1]=top+22*dp*e[BAG].scale;break;}
             case MENU:out[0]=14*dp+18*dp;out[1]=14*dp+18*dp;break;
             case JOYSTICK:out[0]=120*dp;out[1]=h-bar-110*dp;break;
-            case QUEST:{float qw=boxW(QUEST,w,dp);out[0]=w-70*dp-qw*.5f;out[1]=14*dp+boxH(QUEST,dp)*.5f;break;}
-            case MINIMAP:{float m=boxW(MINIMAP,w,dp);out[0]=w-16*dp-m*.5f;out[1]=70*dp+m*.5f;break;}
+            case QUEST:{float qw=boxW(QUEST,w,dp),right=e[MINIMAP].visible?w-16*dp-boxW(MINIMAP,w,dp)-14*dp:w-70*dp;out[0]=right-qw*.5f;out[1]=14*dp+boxH(QUEST,dp)*.5f;break;}
+            case MINIMAP:{float m=boxW(MINIMAP,w,dp);out[0]=w-16*dp-m*.5f;out[1]=16*dp+m*.5f;break;}
             case MESSAGE:out[0]=62*dp+boxW(MESSAGE,w,dp)*.5f;out[1]=13*dp+boxH(MESSAGE,dp)*.5f;break;
             default:out[0]=w*.5f;out[1]=h-bar*.5f;
         }
