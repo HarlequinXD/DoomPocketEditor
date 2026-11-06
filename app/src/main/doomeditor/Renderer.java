@@ -26,6 +26,10 @@ final class Renderer {
     private static final float NEAR=.06f;
     int W,H;
     private int[] pix;private float[] zb;int[] ids;private Bitmap bmp;
+    // per-pixel lighting: unlit surface colour and the sector (ambient) light it was drawn with, so coloured
+    // lights add to the ambient light instead of brightening the already-shaded pixel (only filled when lights exist)
+    private int[] alb;private short[] amb;private boolean litFrame;
+    private static final short[] LM=new short[32];static{for(int i=0;i<32;i++)LM[i]=(short)Textures.lightMul(i);}
     private float focal,horizon,eye,camX,camY,cs,sn,kx;
     private final Paint blit=new Paint();
     // geometry cache
@@ -46,7 +50,7 @@ final class Renderer {
     private void setup(float vw,float vh){
         int h=200,w=Math.max(160,Math.min(560,Math.round(h*vw/Math.max(1,vh))));
         if(w==W&&h==H&&pix!=null)return;
-        W=w;H=h;pix=new int[W*H];zb=new float[W*H];ids=new int[W*H];skyPix=new boolean[W*H];bmp=Bitmap.createBitmap(W,H,Bitmap.Config.ARGB_8888);skyU=new int[W];
+        W=w;H=h;pix=new int[W*H];zb=new float[W*H];ids=new int[W*H];skyPix=new boolean[W*H];alb=new int[W*H];amb=new short[W*H];bmp=Bitmap.createBitmap(W,H,Bitmap.Config.ARGB_8888);skyU=new int[W];
     }
     static long signature(Level l){
         long h=l.vertices.size()*1000003L+l.sectors.size();
@@ -109,6 +113,7 @@ final class Renderer {
         // background: sky if any sector uses it, else dark
         boolean sky=false;for(Level.Sector s:level.sectors)if(s.ceilingMaterial==Textures.SKY){sky=true;break;}
         Arrays.fill(zb,0f);Arrays.fill(ids,-1);Arrays.fill(skyPix,false);
+        litFrame=lightCount>0;if(litFrame)Arrays.fill(amb,(short)0);
         if(sky)drawSky(angle);else Arrays.fill(pix,0xff0c0c10);
         // camera-space vertices
         int nv=level.vertices.size();if(vx.length<nv){vx=new float[nv];vz=new float[nv];}
@@ -217,7 +222,7 @@ final class Renderer {
         int y0=Math.max(0,(int)Math.ceil(minY-.5f)),y1=Math.min(H-1,(int)Math.floor(maxY-.5f));
         if(y0>y1)return;
         int m=Math.max(0,Math.min(Textures.COUNT-1,mat));
-        int[][] table=Textures.table(m);boolean bright=Textures.BRIGHT[m];
+        int[][] table=Textures.table(m);boolean bright=Textures.BRIGHT[m];int[] src=Textures.base[m];boolean lit=litFrame&&src!=null;
         float fk=fadeK;int minL=Math.max(1,L/4);
         for(int y=y0;y<=y1;y++){
             float yc=y+.5f,xl=1e9f,xr=-1e9f;
@@ -234,7 +239,8 @@ final class Renderer {
                     float z=1f/iz;
                     int tu=((int)Math.floor(uz*z*64f))&63,tv=((int)Math.floor(vz*z*64f))&63;
                     int li;if(bright)li=31;else{li=(int)(L+3-z*fk);if(li<minL)li=minL;else if(li>31)li=31;}
-                    pix[o]=table[li][(tv<<6)|tu];zb[o]=iz;ids[o]=pid;
+                    int ti=(tv<<6)|tu;pix[o]=table[li][ti];zb[o]=iz;ids[o]=pid;
+                    if(lit){alb[o]=src[ti];amb[o]=bright?256:LM[li];}
                 }
                 iz+=dIzdx;uz+=dUdx;vz+=dVdx;
             }
@@ -263,8 +269,9 @@ final class Renderer {
                 if(al<250){ // anti-aliased sprite edge: blend over what's behind it
                     int b=pix[o],ia=255-al;
                     pix[o]=0xff000000|((((lit>>16)&255)*al+((b>>16)&255)*ia)/255<<16)|((((lit>>8)&255)*al+((b>>8)&255)*ia)/255<<8)|(((lit&255)*al+(b&255)*ia)/255);
+                    if(litFrame){int ab=alb[o];alb[o]=0xff000000|((((c>>16)&255)*al+((ab>>16)&255)*ia)/255<<16)|((((c>>8)&255)*al+((ab>>8)&255)*ia)/255<<8)|(((c&255)*al+(ab&255)*ia)/255);amb[o]=(short)((Math.min(256,mulv)*al+amb[o]*ia)/255);}
                     if(al<128)continue;
-                }else pix[o]=lit|0xff000000;
+                }else{pix[o]=lit|0xff000000;if(litFrame){alb[o]=c;amb[o]=(short)Math.min(256,mulv);}}
                 zb[o]=iz;if(d.pickId>=0)ids[o]=d.pickId;
             }
         }
@@ -310,7 +317,11 @@ final class Renderer {
                         float cx=(x+.5f-hw)*invF*z,wz=eye+ry*z,wx=camX+z*cs-cx*sn,wy=camY+z*sn+cx*cs;
                         float ar=0,ag=0,ab=0;
                         for(int k=0;k<nl;k++){float dx=wx-lx[k],dy=wy-ly[k],dz=wz-lz[k],d2=dx*dx+dy*dy+dz*dz;if(d2<lr2[k]){float f=1-d2/lr2[k];f*=f;ar+=lcr[k]*f;ag+=lcg[k]*f;ab+=lcb[k]*f;}}
-                        if(ar+ag+ab>0){R+=R*ar*1.6f+ar*30;G+=G*ag*1.6f+ag*30;B+=B*ab*1.6f+ab*30;}
+                        if(ar+ag+ab>0){int m=amb[o];
+                            if(m>0){   // light = sector ambient + coloured lights, applied to the unlit surface colour
+                                int a0=alb[o];float k=m/256f,A=(a0>>16)&255,Gc=(a0>>8)&255,Bc=a0&255;
+                                R=A*Math.min(1.7f,k+ar*1.35f);G=Gc*Math.min(1.7f,k+ag*1.35f);B=Bc*Math.min(1.7f,k+ab*1.35f);}
+                            else{R+=R*ar*1.6f+ar*30;G+=G*ag*1.6f+ag*30;B+=B*ab*1.6f+ab*30;}}
                     }
                     if(fa>0&&z>fs){float f=Math.min(1,(z-fs)*inv)*fa;R+=(fogR-R)*f;G+=(fogG-G)*f;B+=(fogB-B)*f;}
                 }else if(fa>0){float f=fa*.6f;R+=(fogR-R)*f;G+=(fogG-G)*f;B+=(fogB-B)*f;}
@@ -327,7 +338,7 @@ final class Renderer {
             float fade=Math.min(1,ps.life[i]/Math.max(.01f,ps.max[i])*2.2f);float iz=1f/cz;int col=ps.col[i];
             for(int yy=syp-rad;yy<=syp+rad;yy++){if(yy<0||yy>=H)continue;for(int xx=sxp-rad;xx<=sxp+rad;xx++){if(xx<0||xx>=W)continue;int o=yy*W+xx;if(iz<=zb[o])continue;
                 int b=pix[o];float a=fade*(rad==0?.85f:.75f);
-                pix[o]=0xff000000|((int)(((col>>16)&255)*a+((b>>16)&255)*(1-a))<<16)|((int)(((col>>8)&255)*a+((b>>8)&255)*(1-a))<<8)|(int)((col&255)*a+(b&255)*(1-a));}}
+                pix[o]=0xff000000|((int)(((col>>16)&255)*a+((b>>16)&255)*(1-a))<<16)|((int)(((col>>8)&255)*a+((b>>8)&255)*(1-a))<<8)|(int)((col&255)*a+(b&255)*(1-a));amb[o]=0;}}
         }
     }
     /** World whose blood droplets and splats are drawn this frame (null in the editor views). */
@@ -376,7 +387,7 @@ final class Renderer {
                     if(mu<0||mv<0||mu>=MS||mv>=MS)continue;
                     int shade=mask[(int)mv*MS+(int)mu];if(shade==0)continue;
                     float zz=zb[o];if(iz-zz>tol||zz-iz>tol)continue;
-                    pix[o]=shade==1?c1:shade==2?c2:shade==3?c3:c4;}
+                    pix[o]=shade==1?c1:shade==2?c2:shade==3?c3:c4;amb[o]=0;}
             }
             return;
         }
@@ -390,7 +401,7 @@ final class Renderer {
                 for(int y=y0,o=y0*W+x;y<=y1;y++,o+=W,mv+=dmv){
                     if(mv<0||mv>=MS)continue;int shade=mask[(int)mv*MS+imu];if(shade==0)continue;
                     float zz=zb[o];if(iz-zz>tol||zz-iz>tol)continue;
-                    pix[o]=shade==1?c1:shade==2?c2:shade==3?c3:c4;}
+                    pix[o]=shade==1?c1:shade==2?c2:shade==3?c3:c4;amb[o]=0;}
             }
             return;
         }
@@ -405,7 +416,7 @@ final class Renderer {
                 int shade=mask[mv*MS+mu];if(shade==0)continue;
                 int li=(int)(L+3-t*fadeK);if(li<minL)li=minL;else if(li>31)li=31;
                 int c=shade==2?Textures.mul(s.color,190):shade==3?Textures.mul(s.color,330):shade==4?Textures.mul(s.color,150):s.color;
-                pix[o]=Textures.mul(c,lt[li]);
+                pix[o]=Textures.mul(c,lt[li]);amb[o]=0;
             }
         }
     }
