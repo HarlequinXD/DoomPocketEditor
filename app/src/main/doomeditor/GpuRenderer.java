@@ -28,7 +28,7 @@ final class GpuRenderer {
     // ------------------------------------------------------------------ shared EGL context (one per app)
     private static EGLDisplay dpy=EGL14.EGL_NO_DISPLAY;private static EGLContext ctx=EGL14.EGL_NO_CONTEXT;private static EGLSurface surf=EGL14.EGL_NO_SURFACE;
     private static boolean failed,depth24;
-    private static int progScene,progColor,progSky,progScreen,progId;
+    private static int progScene,progColor,progSky,progScreen,progId,progSplat;
     private static final int[] wallTex=new int[Textures.COUNT],reliefTex=new int[Textures.COUNT],matTex=new int[Textures.COUNT];private static int skyTex,flatRelief,flatMat;
     private static final float[][] avg=new float[Textures.COUNT][];private static float[] skyAvg={.5f,.6f,.75f};
     /** Physically based shading, and sky light + bounce lighting between sectors (settings). */
@@ -53,7 +53,7 @@ final class GpuRenderer {
             surf=EGL14.eglCreatePbufferSurface(dpy,cfg[0],new int[]{EGL14.EGL_WIDTH,1,EGL14.EGL_HEIGHT,1,EGL14.EGL_NONE},0);
             if(surf==EGL14.EGL_NO_SURFACE||!makeCurrent())throw new RuntimeException("egl surface");
             String ext=GLES20.glGetString(GLES20.GL_EXTENSIONS);depth24=ext!=null&&ext.contains("GL_OES_depth24");
-            progScene=program(VS_SCENE,FS_SCENE);progColor=program(VS_COLOR,FS_COLOR);progSky=program(VS_SCREEN,FS_SKY);progScreen=program(VS_SCREEN,FS_SCREEN);progId=program(VS_SCENE,FS_ID);
+            progScene=program(VS_SCENE,FS_SCENE);progColor=program(VS_COLOR,FS_COLOR);progSky=program(VS_SCREEN,FS_SKY);progScreen=program(VS_SCREEN,FS_SCREEN);progId=program(VS_SCENE,FS_ID);progSplat=program(VS_SCENE,FS_SPLAT);
             Textures.init();
             for(int t=0;t<Textures.COUNT;t++){wallTex[t]=texture(Textures.base[t],Textures.SIZE,Textures.SIZE,true,true);reliefTex[t]=texture(Textures.relief(t),Textures.SIZE,Textures.SIZE,true,false);}
             flatRelief=texture(new int[]{0x808080ff|0x80000000},1,1,true,false);
@@ -184,6 +184,29 @@ final class GpuRenderer {
         " c*=uTint.rgb;\n"+
         " if(uHi.a>=0.0&&all(lessThan(abs(vId-uHi),vec4(0.002))))c=c*0.625+vec3(30.0,96.0,60.0)/255.0;\n"+
         " gl_FragColor=vec4(min(c,vec3(1.0)),t.a);}\n";
+    /**
+     * Blood splats drawn by a shader instead of a texture each: the shape (a wobbly blob, a few droplets around it,
+     * a darker rim and a wet highlight) is worked out from the splat's seed, in 8 x 8 steps per radius so it stays
+     * pixel-art. No textures are created or freed as blood appears, and all splats are one draw call.
+     */
+    private static final String FS_SPLAT=FS_HEAD+
+        "uniform float uFade;uniform vec4 uFog;uniform vec3 uFogC;uniform vec4 uTint;\n"+
+        "varying vec2 vUv;varying vec2 vLight;varying vec3 vWorld;varying float vZ;varying vec4 vId;varying vec3 vTan;varying float vKind;varying vec3 vGi;varying vec3 vEdge;\n"+
+        "float hs(float n){return fract(sin(n)*43758.5453);}\n"+
+        "void main(){vec2 p=floor((vUv*2.0-1.0)*1.9*8.0)/8.0+0.0625;float sd=vTan.x*977.0;\n"+
+        " float an=atan(p.y,p.x);float d=length(p);\n"+
+        " float rr=0.72+0.2*sin(an*3.0+hs(sd)*6.283)+0.12*sin(an*5.0+hs(sd+1.0)*6.283)+0.07*sin(an*9.0+hs(sd+2.0)*6.283);\n"+
+        " float inside=d<rr?1.0:0.0;float core=d/rr;\n"+
+        " for(int i=0;i<5;i++){float fi=float(i);float a=hs(sd+10.0+fi)*6.283;vec2 c=vec2(cos(a),sin(a))*(1.05+hs(sd+20.0+fi)*0.7);float r=0.07+0.13*hs(sd+30.0+fi);\n"+
+        "  if(length(p-c)<r){inside=1.0;core=0.6;}}\n"+
+        // wall splats run: a drip straight down from the blob
+        " if(vTan.y>0.5){float dx=abs(p.x-(hs(sd+40.0)-0.5)*0.8);float len=0.9+hs(sd+41.0)*0.9;if(dx<0.09&&p.y<0.0&&p.y>-(rr+len)){inside=1.0;core=0.7;}}\n"+
+        " if(inside<0.5)discard;\n"+
+        " vec3 col=vId.rgb*(1.12-0.42*core);if(length(p-vec2(-0.28,-0.26))<0.16)col=min(col*1.45+0.05,vec3(1.0));\n"+
+        " float L=vLight.x;float li=clamp(floor(L+3.0-vZ*uFade),max(1.0,floor(L/4.0)),31.0);float k=pow(li/31.0,1.25)*1.06;\n"+
+        " vec3 c=col*min(vec3(1.5),vec3(k)+vGi*0.6);\n"+
+        " if(uFog.z>0.0&&vZ>uFog.x){float f=min(1.0,(vZ-uFog.x)*uFog.y)*uFog.z;c=mix(c,uFogC,f);}\n"+
+        " gl_FragColor=vec4(min(c*uTint.rgb,vec3(1.0)),0.94);}\n";
     private static final String FS_ID=FS_HEAD+
         "uniform sampler2D uTex;varying vec2 vUv;varying vec2 vLight;varying vec3 vWorld;varying float vZ;varying vec4 vId;\n"+
         "void main(){if(texture2D(uTex,vUv).a<0.5)discard;gl_FragColor=vId;}\n";
@@ -318,7 +341,7 @@ final class GpuRenderer {
             batches.add(new int[]{m==Textures.SKY?-1:wallTex[Math.max(0,Math.min(nm-1,m))],first,nv-first,m==Textures.SKY?3:0,m});}
         // ---- splats (decals lying on surfaces)
         World fx=r.fx;
-        if(fx!=null&&!fx.splats.isEmpty())for(World.Splat s:fx.splats)splat(level,s);
+        if(fx!=null&&!fx.splats.isEmpty()){int first=nv;for(World.Splat s:fx.splats)splat(level,s);if(nv>first)batches.add(new int[]{0,first,nv-first,4});}
         // ---- sprites (camera-facing quads)
         if(sprites!=null)for(Renderer.SpriteDraw d:sprites)sprite(level,d);
         // ---- draw
@@ -333,6 +356,11 @@ final class GpuRenderer {
         GLES20.glUseProgram(progScene);sceneUniforms(progScene);int uRel=GLES20.glGetUniformLocation(progScene,"uRelief");
         bindScene(progScene,vb);
         for(int[] b:batches){
+            if(b[3]==4){GLES20.glUseProgram(progSplat);camUniforms(progSplat);atmosUniforms(progSplat);GLES20.glUniform1f(GLES20.glGetUniformLocation(progSplat,"uFade"),r.fadeK);
+                GLES20.glEnable(GLES20.GL_BLEND);GLES20.glBlendFuncSeparate(GLES20.GL_SRC_ALPHA,GLES20.GL_ONE_MINUS_SRC_ALPHA,GLES20.GL_ZERO,GLES20.GL_ONE);
+                GLES20.glDepthMask(false);GLES20.glEnable(GLES20.GL_POLYGON_OFFSET_FILL);GLES20.glPolygonOffset(-1,-4);
+                GLES20.glDrawArrays(GLES20.GL_TRIANGLES,b[1],b[2]);
+                GLES20.glDisable(GLES20.GL_POLYGON_OFFSET_FILL);GLES20.glDepthMask(true);GLES20.glDisable(GLES20.GL_BLEND);GLES20.glUseProgram(progScene);continue;}
             if(b[3]==3){GLES20.glColorMask(false,false,false,false);GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,wallTex[0]);GLES20.glDrawArrays(GLES20.GL_TRIANGLES,b[1],b[2]);GLES20.glColorMask(true,true,true,false);continue;}
             if(b[3]==2){GLES20.glEnable(GLES20.GL_BLEND);GLES20.glBlendFuncSeparate(GLES20.GL_SRC_ALPHA,GLES20.GL_ONE_MINUS_SRC_ALPHA,GLES20.GL_ZERO,GLES20.GL_ONE);
                 GLES20.glDepthMask(false);GLES20.glEnable(GLES20.GL_POLYGON_OFFSET_FILL);GLES20.glPolygonOffset(-1,-4);GLES20.glUniform1f(GLES20.glGetUniformLocation(progScene,"uAlphaCut"),.5f);}
@@ -396,19 +424,12 @@ final class GpuRenderer {
         float dx=s.x-cx,dy=s.y-cy,ccz=dx*cs+dy*sn,R=s.r*SPAN;if(ccz<-R||ccz>40)return;
         float ux,uy,uz,vx2,vy2,vz2;
         if(nz>.5f){ux=1;uy=0;uz=0;vx2=0;vy2=1;vz2=0;}else{ux=-ny;uy=nx;uz=0;vx2=0;vy2=0;vz2=1;}
-        byte[] mask=s.mask;if(mask==null){mask=SplatDesigns.mask(s.type,s.ang,nz<.5f,s.seed,MS,SPAN);s.mask=mask;}
-        int[] e=splatTex.get(s);
-        if(e==null&&splatTex.size()>=260){World.Splat oldest=null;int age=Integer.MAX_VALUE;for(Map.Entry<World.Splat,int[]> en:splatTex.entrySet())if(en.getValue()[1]<age){age=en.getValue()[1];oldest=en.getKey();}
-            if(oldest!=null){GLES20.glDeleteTextures(1,splatTex.remove(oldest),0);}}
-        if(e==null){int[] px=new int[MS*MS];int c1=s.color|0xff000000,c2=Textures.mul(s.color,190),c3=Textures.mul(s.color,330),c4=Textures.mul(s.color,150);
-            for(int i=0;i<px.length;i++){int sh=mask[i];px[i]=sh==0?0:sh==1?c1:sh==2?c2:sh==3?c3:c4;}
-            e=new int[]{texture(px,MS,MS,false),frame};splatTex.put(s,e);}
-        e[1]=frame;
         int si=level.sectorAt(s.x+nx*.02f,s.y+ny*.02f);int L=si<0?24:Renderer.lightLevel(level.sectors.get(si).light);
-        int first=nv;ensure(6);setGi(si);
+        ensure(6);setGi(si);float seed=(s.seed%1000)/1000f+.001f,wallF=nz<.5f?1:0;
+        float cr=((s.color>>16)&255)/255f,cg=((s.color>>8)&255)/255f,cb=(s.color&255)/255f;
         for(int q=0;q<6;q++){int k=q<3?q:(q==3?0:q==4?2:3);float a=(k==0||k==3)?-R:R,b=k<2?-R:R;
-            vtx(s.x+ux*a+vx2*b,s.y+uy*a+vy2*b,s.z+uz*a+vz2*b,(a/R+1)*.5f,(b/R+1)*.5f,L,0,-1);}
-        batches.add(new int[]{e[0],first,6,2});
+            int o=nv*ST;vtx(s.x+ux*a+vx2*b,s.y+uy*a+vy2*b,s.z+uz*a+vz2*b,(a/R+1)*.5f,(b/R+1)*.5f,L,0,-1);
+            verts[o+7]=cr;verts[o+8]=cg;verts[o+9]=cb;verts[o+10]=1;verts[o+11]=seed;verts[o+12]=wallF;}
     }
     // ------------------------------------------------------------------ sky light and bounce light
     private float[] giV=new float[0],giS=new float[0];
@@ -655,7 +676,7 @@ final class GpuRenderer {
         GLES20.glEnable(GLES20.GL_DEPTH_TEST);GLES20.glDepthFunc(GLES20.GL_LEQUAL);GLES20.glDisable(GLES20.GL_BLEND);GLES20.glColorMask(true,true,true,true);
         GLES20.glUseProgram(progId);camUniforms(progId);GLES20.glUniform1i(GLES20.glGetUniformLocation(progId,"uTex"),0);
         bindScene(progId,vb);
-        for(int[] b:batches){if(b[3]==2)continue;GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,b[3]==3?wallTex[0]:b[0]);GLES20.glDrawArrays(GLES20.GL_TRIANGLES,b[1],b[2]);}
+        for(int[] b:batches){if(b[3]==2||b[3]==4)continue;GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,b[3]==3?wallTex[0]:b[0]);GLES20.glDrawArrays(GLES20.GL_TRIANGLES,b[1],b[2]);}
         ByteBuffer one=pickBuf;one.clear();
         GLES20.glReadPixels(px,py,1,1,GLES20.GL_RGBA,GLES20.GL_UNSIGNED_BYTE,one);
         int a=one.get(0)&255,b=one.get(1)&255,c=one.get(2)&255,d=one.get(3)&255;
