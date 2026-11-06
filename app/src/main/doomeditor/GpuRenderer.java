@@ -202,11 +202,11 @@ final class GpuRenderer {
         // wall splats run: a drip straight down from the blob
         " if(vTan.y>0.5){float dx=abs(p.x-(hs(sd+40.0)-0.5)*0.8);float len=0.9+hs(sd+41.0)*0.9;if(dx<0.09&&p.y<0.0&&p.y>-(rr+len)){inside=1.0;core=0.7;}}\n"+
         " if(inside<0.5)discard;\n"+
-        " vec3 col=vId.rgb*(1.12-0.42*core);if(length(p-vec2(-0.28,-0.26))<0.16)col=min(col*1.45+0.05,vec3(1.0));\n"+
-        " float L=vLight.x;float li=clamp(floor(L+3.0-vZ*uFade),max(1.0,floor(L/4.0)),31.0);float k=pow(li/31.0,1.25)*1.06;\n"+
-        " vec3 c=col*min(vec3(1.5),vec3(k)+vGi*0.6);\n"+
-        " if(uFog.z>0.0&&vZ>uFog.x){float f=min(1.0,(vZ-uFog.x)*uFog.y)*uFog.z;c=mix(c,uFogC,f);}\n"+
-        " gl_FragColor=vec4(min(c*uTint.rgb,vec3(1.0)),0.94);}\n";
+        // multiply: the stain darkens and reddens whatever is under it, so it is lit, relief-mapped and shadowed
+        // exactly like that surface for free (rim darker, a lighter wet spot)
+        " vec3 tint=clamp(vId.rgb*1.6,0.0,1.0);vec3 m=tint*(1.05-0.35*core);if(length(p-vec2(-0.28,-0.26))<0.16)m=mix(m,vec3(1.0),0.35);\n"+
+        " if(uFog.z>0.0&&vZ>uFog.x){float f=min(1.0,(vZ-uFog.x)*uFog.y)*uFog.z;m=mix(m,vec3(1.0),f);}\n"+
+        " gl_FragColor=vec4(m,1.0);}\n";
     private static final String FS_ID=FS_HEAD+
         "uniform sampler2D uTex;varying vec2 vUv;varying vec2 vLight;varying vec3 vWorld;varying float vZ;varying vec4 vId;\n"+
         "void main(){if(texture2D(uTex,vUv).a<0.5)discard;gl_FragColor=vId;}\n";
@@ -356,8 +356,8 @@ final class GpuRenderer {
         GLES20.glUseProgram(progScene);sceneUniforms(progScene);int uRel=GLES20.glGetUniformLocation(progScene,"uRelief");
         bindScene(progScene,vb);
         for(int[] b:batches){
-            if(b[3]==4){GLES20.glUseProgram(progSplat);camUniforms(progSplat);atmosUniforms(progSplat);GLES20.glUniform1f(GLES20.glGetUniformLocation(progSplat,"uFade"),r.fadeK);
-                GLES20.glEnable(GLES20.GL_BLEND);GLES20.glBlendFuncSeparate(GLES20.GL_SRC_ALPHA,GLES20.GL_ONE_MINUS_SRC_ALPHA,GLES20.GL_ZERO,GLES20.GL_ONE);
+            if(b[3]==4){GLES20.glUseProgram(progSplat);camUniforms(progSplat);atmosUniforms(progSplat);
+                GLES20.glEnable(GLES20.GL_BLEND);GLES20.glBlendFunc(GLES20.GL_DST_COLOR,GLES20.GL_ZERO);   // multiply
                 GLES20.glDepthMask(false);GLES20.glEnable(GLES20.GL_POLYGON_OFFSET_FILL);GLES20.glPolygonOffset(-1,-4);
                 GLES20.glDrawArrays(GLES20.GL_TRIANGLES,b[1],b[2]);
                 GLES20.glDisable(GLES20.GL_POLYGON_OFFSET_FILL);GLES20.glDepthMask(true);GLES20.glDisable(GLES20.GL_BLEND);GLES20.glUseProgram(progScene);continue;}
