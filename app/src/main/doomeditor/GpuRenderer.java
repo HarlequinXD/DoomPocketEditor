@@ -29,7 +29,9 @@ final class GpuRenderer {
     private static EGLDisplay dpy=EGL14.EGL_NO_DISPLAY;private static EGLContext ctx=EGL14.EGL_NO_CONTEXT;private static EGLSurface surf=EGL14.EGL_NO_SURFACE;
     private static boolean failed,depth24;
     private static int progScene,progColor,progSky,progScreen,progId;
-    private static final int[] wallTex=new int[Textures.COUNT];private static int skyTex;
+    private static final int[] wallTex=new int[Textures.COUNT],reliefTex=new int[Textures.COUNT];private static int skyTex,flatRelief;
+    /** Normal + parallax mapping on textured surfaces (setting). */
+    static boolean relief=true;
     /** False when the GPU path can't be used on this device (the software renderer takes over). */
     static synchronized boolean available(){
         if(failed)return false;
@@ -47,7 +49,8 @@ final class GpuRenderer {
             String ext=GLES20.glGetString(GLES20.GL_EXTENSIONS);depth24=ext!=null&&ext.contains("GL_OES_depth24");
             progScene=program(VS_SCENE,FS_SCENE);progColor=program(VS_COLOR,FS_COLOR);progSky=program(VS_SCREEN,FS_SKY);progScreen=program(VS_SCREEN,FS_SCREEN);progId=program(VS_SCENE,FS_ID);
             Textures.init();
-            for(int t=0;t<Textures.COUNT;t++)wallTex[t]=texture(Textures.base[t],Textures.SIZE,Textures.SIZE,true,true);
+            for(int t=0;t<Textures.COUNT;t++){wallTex[t]=texture(Textures.base[t],Textures.SIZE,Textures.SIZE,true,true);reliefTex[t]=texture(Textures.relief(t),Textures.SIZE,Textures.SIZE,true,false);}
+            flatRelief=texture(new int[]{0x808080ff|0x80000000},1,1,true,false);
             skyTex=texture(Textures.sky,Textures.SKY_W,Textures.SKY_H,true,true);
             return true;
         }catch(Throwable e){failed=true;android.util.Log.w("GpuRenderer","GPU renderer unavailable, using software",e);return false;}
@@ -56,7 +59,7 @@ final class GpuRenderer {
     private static int program(String vs,String fs){
         int v=shader(GLES20.GL_VERTEX_SHADER,vs),f=shader(GLES20.GL_FRAGMENT_SHADER,fs),p=GLES20.glCreateProgram();
         GLES20.glAttachShader(p,v);GLES20.glAttachShader(p,f);
-        GLES20.glBindAttribLocation(p,0,"aPos");GLES20.glBindAttribLocation(p,1,"aUv");GLES20.glBindAttribLocation(p,2,"aLight");GLES20.glBindAttribLocation(p,3,"aId");
+        GLES20.glBindAttribLocation(p,0,"aPos");GLES20.glBindAttribLocation(p,1,"aUv");GLES20.glBindAttribLocation(p,2,"aLight");GLES20.glBindAttribLocation(p,3,"aId");GLES20.glBindAttribLocation(p,4,"aTan");GLES20.glBindAttribLocation(p,5,"aKind");
         GLES20.glLinkProgram(p);int[] ok=new int[1];GLES20.glGetProgramiv(p,GLES20.GL_LINK_STATUS,ok,0);
         if(ok[0]==0)throw new RuntimeException("link: "+GLES20.glGetProgramInfoLog(p));return p;
     }
@@ -84,21 +87,37 @@ final class GpuRenderer {
     // scene vertex: world position, texture coords, (sector light, bright flag), pick id bytes
     private static final String VS_SCENE=
         "uniform vec3 uCam;uniform vec2 uCS;uniform vec3 uProj;\n"+
-        "attribute vec3 aPos;attribute vec2 aUv;attribute vec2 aLight;attribute vec4 aId;\n"+
-        "varying vec2 vUv;varying vec2 vLight;varying vec3 vWorld;varying float vZ;varying vec4 vId;\n"+
+        "attribute vec3 aPos;attribute vec2 aUv;attribute vec2 aLight;attribute vec4 aId;attribute vec3 aTan;attribute float aKind;\n"+
+        "varying vec2 vUv;varying vec2 vLight;varying vec3 vWorld;varying float vZ;varying vec4 vId;varying vec3 vTan;varying float vKind;\n"+
         "void main(){vec2 d=aPos.xy-uCam.xy;float x=-d.x*uCS.y+d.y*uCS.x;float z=d.x*uCS.x+d.y*uCS.y;float y=aPos.z-uCam.z;\n"+
-        " vUv=aUv;vLight=aLight;vWorld=aPos;vZ=z;vId=aId;\n"+
+        " vUv=aUv;vLight=aLight;vWorld=aPos;vZ=z;vId=aId;vTan=aTan;vKind=aKind;\n"+
         " gl_Position=vec4(x,uProj.y*z-y*uProj.x,(z*uProj.z-2.0*0.06*120.0/(120.0-0.06)),z);}\n";
     private static final String FS_HEAD=
         "#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\nprecision mediump float;\n#endif\n";
+    // vKind: 0 floor/ceiling, 1 wall, 2 sprite/decal (no relief). Tangent frame: walls T = along the wall,
+    // B = down (texture v grows downward), N = facing the camera; floors T = +x, B = +y, N = up or down.
     private static final String FS_SCENE=FS_HEAD+
-        "uniform sampler2D uTex;uniform float uFade;uniform int uCount;uniform vec4 uL[16];uniform vec3 uLC[16];\n"+
+        "uniform sampler2D uTex;uniform sampler2D uNorm;uniform float uRelief;uniform vec3 uCamPos;\n"+
+        "uniform float uFade;uniform int uCount;uniform vec4 uL[16];uniform vec3 uLC[16];\n"+
         "uniform vec4 uFog;uniform vec3 uFogC;uniform vec4 uTint;uniform vec4 uHi;uniform float uAlphaCut;\n"+
-        "varying vec2 vUv;varying vec2 vLight;varying vec3 vWorld;varying float vZ;varying vec4 vId;\n"+
-        "void main(){vec4 t=texture2D(uTex,vUv);if(t.a<uAlphaCut)discard;\n"+
+        "varying vec2 vUv;varying vec2 vLight;varying vec3 vWorld;varying float vZ;varying vec4 vId;varying vec3 vTan;varying float vKind;\n"+
+        "void main(){vec2 uv=vUv;vec3 Nw=vec3(0.0);float shadeK=1.0;bool rel=uRelief>0.0&&vKind<1.5;\n"+
+        " if(rel){vec3 V=uCamPos-vWorld;vec3 T;vec3 B;vec3 N;\n"+
+        "  if(vKind>0.5){T=normalize(vec3(vTan.xy,0.0));N=vec3(T.y,-T.x,0.0);if(dot(N,V)<0.0)N=-N;B=vec3(0.0,0.0,-1.0);}\n"+
+        "  else{T=vec3(1.0,0.0,0.0);B=vec3(0.0,1.0,0.0);N=vec3(0.0,0.0,V.z>0.0?1.0:-1.0);}\n"+
+        "  vec3 Vt=normalize(vec3(dot(V,T),dot(V,B),dot(V,N)));\n"+
+        // steep parallax: walk into the surface until the height map is reached (fades out with distance)
+        "  float amt=uRelief*0.045*clamp(1.0-vZ/14.0,0.0,1.0);\n"+
+        "  if(amt>0.0){vec2 delta=Vt.xy/max(Vt.z,0.3)*amt/8.0;float layer=0.0;float depth=1.0-texture2D(uNorm,uv).a;\n"+
+        "   for(int i=0;i<8;i++){if(layer>=depth)break;uv-=delta;depth=1.0-texture2D(uNorm,uv).a;layer+=0.125;}}\n"+
+        "  vec3 nm=texture2D(uNorm,uv).rgb*2.0-1.0;Nw=normalize(T*nm.x+B*nm.y+N*nm.z);\n"+
+        // soft key light from above-left in texture space, so relief shows even without lights
+        "  shadeK=(0.8+0.32*dot(nm,vec3(-0.36,-0.46,0.81)))/1.06;}\n"+
+        " vec4 t=texture2D(uTex,uv);if(t.a<uAlphaCut)discard;\n"+
         " float L=vLight.x;float li;if(vLight.y>0.5)li=31.0;else{li=floor(L+3.0-vZ*uFade);li=clamp(li,max(1.0,floor(L/4.0)),31.0);}\n"+
-        " float k=pow(li/31.0,1.25)*1.06;vec3 lc=vec3(0.0);\n"+
-        " for(int i=0;i<16;i++){if(i>=uCount)break;vec3 dd=vWorld-uL[i].xyz;float d2=dot(dd,dd);if(d2<uL[i].w){float f=1.0-d2/uL[i].w;lc+=uLC[i]*(f*f);}}\n"+
+        " float k=pow(li/31.0,1.25)*1.06*shadeK;vec3 lc=vec3(0.0);\n"+
+        " for(int i=0;i<16;i++){if(i>=uCount)break;vec3 dd=uL[i].xyz-vWorld;float d2=dot(dd,dd);if(d2<uL[i].w){float f=1.0-d2/uL[i].w;\n"+
+        "   float diff=rel?(0.25+0.95*max(0.0,dot(Nw,dd*inversesqrt(max(d2,1e-4))))):1.0;lc+=uLC[i]*(f*f*diff);}}\n"+
         " vec3 c=t.rgb*min(vec3(1.7),vec3(k)+lc*1.35);\n"+
         " if(uFog.z>0.0&&vZ>uFog.x){float f=min(1.0,(vZ-uFog.x)*uFog.y)*uFog.z;c=mix(c,uFogC,f);}\n"+
         " c*=uTint.rgb;\n"+
@@ -173,13 +192,14 @@ final class GpuRenderer {
     }
 
     // ------------------------------------------------------------------ geometry building
-    private float[] verts=new float[12*4096];private int nv;
-    private void ensure(int more){if((nv+more)*12>verts.length)verts=java.util.Arrays.copyOf(verts,Math.max(verts.length*2,(nv+more)*12));}
+    static final int ST=16;   // floats per vertex: pos3 uv2 light2 id4 tangent3 kind1 pad1
+    private float[] verts=new float[ST*4096];private int nv;
+    private void ensure(int more){if((nv+more)*ST>verts.length)verts=java.util.Arrays.copyOf(verts,Math.max(verts.length*2,(nv+more)*ST));}
     private void vtx(float x,float y,float z,float u,float v,float L,float bright,int id){
-        int o=nv*12;verts[o]=x;verts[o+1]=y;verts[o+2]=z;verts[o+3]=u;verts[o+4]=v;verts[o+5]=L;verts[o+6]=bright;
+        int o=nv*ST;verts[o+11]=verts[o+12]=verts[o+13]=0;verts[o+14]=2;verts[o+15]=0;verts[o]=x;verts[o+1]=y;verts[o+2]=z;verts[o+3]=u;verts[o+4]=v;verts[o+5]=L;verts[o+6]=bright;
         if(id<0){verts[o+7]=verts[o+8]=verts[o+9]=verts[o+10]=0;}
         else{verts[o+7]=((id>>>24)&255)/255f;verts[o+8]=((id>>16)&255)/255f;verts[o+9]=((id>>8)&255)/255f;verts[o+10]=(id&255)/255f;}
-        verts[o+11]=0;nv++;
+        nv++;
     }
     private static float[] idVec(int id){return id<0?new float[]{0,0,0,0}:new float[]{((id>>>24)&255)/255f,((id>>16)&255)/255f,((id>>8)&255)/255f,(id&255)/255f};}
 
@@ -217,8 +237,8 @@ final class GpuRenderer {
         // sky ceilings first: they only fill depth, so whatever is behind them must not be drawn yet
         int[] order=new int[nm];order[0]=Textures.SKY;for(int m=0,k=1;m<nm;m++)if(m!=Textures.SKY)order[k++]=m;
         for(int m:order){ArrayList<float[]> lst=lists[m];if(lst==null)continue;int first=nv;ensure(lst.size());
-            for(float[] q:lst){System.arraycopy(q,0,verts,nv*12,12);nv++;}
-            batches.add(new int[]{m==Textures.SKY?-1:wallTex[Math.max(0,Math.min(nm-1,m))],first,nv-first,m==Textures.SKY?3:0});}
+            for(float[] q:lst){System.arraycopy(q,0,verts,nv*ST,ST);nv++;}
+            batches.add(new int[]{m==Textures.SKY?-1:wallTex[Math.max(0,Math.min(nm-1,m))],first,nv-first,m==Textures.SKY?3:0,m});}
         // ---- splats (decals lying on surfaces)
         World fx=r.fx;
         if(fx!=null&&!fx.splats.isEmpty())for(World.Splat s:fx.splats)splat(level,s);
@@ -233,7 +253,7 @@ final class GpuRenderer {
         if(sky)drawSky();
         vb=upload();
         GLES20.glEnable(GLES20.GL_DEPTH_TEST);GLES20.glDepthFunc(GLES20.GL_LEQUAL);
-        GLES20.glUseProgram(progScene);sceneUniforms(progScene);
+        GLES20.glUseProgram(progScene);sceneUniforms(progScene);int uRel=GLES20.glGetUniformLocation(progScene,"uRelief");
         bindScene(progScene,vb);
         for(int[] b:batches){
             if(b[3]==3){GLES20.glColorMask(false,false,false,false);GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,wallTex[0]);GLES20.glDrawArrays(GLES20.GL_TRIANGLES,b[1],b[2]);GLES20.glColorMask(true,true,true,false);continue;}
@@ -242,7 +262,9 @@ final class GpuRenderer {
             else if(b[3]==1){GLES20.glEnable(GLES20.GL_BLEND);GLES20.glBlendFuncSeparate(GLES20.GL_SRC_ALPHA,GLES20.GL_ONE_MINUS_SRC_ALPHA,GLES20.GL_ZERO,GLES20.GL_ONE);
                 GLES20.glDepthMask(true);GLES20.glDisable(GLES20.GL_POLYGON_OFFSET_FILL);GLES20.glUniform1f(GLES20.glGetUniformLocation(progScene,"uAlphaCut"),.5f);}
             else{GLES20.glDisable(GLES20.GL_BLEND);GLES20.glDepthMask(true);GLES20.glDisable(GLES20.GL_POLYGON_OFFSET_FILL);GLES20.glUniform1f(GLES20.glGetUniformLocation(progScene,"uAlphaCut"),-1f);}
-            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,b[0]);GLES20.glDrawArrays(GLES20.GL_TRIANGLES,b[1],b[2]);
+            GLES20.glActiveTexture(GLES20.GL_TEXTURE1);GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,b[3]==0&&b.length>4?reliefTex[b[4]]:flatRelief);
+            GLES20.glUniform1f(uRel,b[3]==0&&b.length>4&&relief?Textures.RELIEF[b[4]]:0f);
+            GLES20.glActiveTexture(GLES20.GL_TEXTURE0);GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,b[0]);GLES20.glDrawArrays(GLES20.GL_TRIANGLES,b[1],b[2]);
         }
         GLES20.glDisable(GLES20.GL_POLYGON_OFFSET_FILL);GLES20.glDepthMask(true);
         // ---- drops and particles: coloured quads
@@ -252,12 +274,12 @@ final class GpuRenderer {
     }
     private void plane(ArrayList<float[]>[] lists,Level level,int a,int b,int c,float h,int mat,int L,int pid){
         ArrayList<float[]> l=list(lists,mat);boolean br=mat>=0&&mat<Textures.COUNT&&Textures.BRIGHT[mat];float[] id=idVec(pid);
-        for(int v:new int[]{a,b,c}){Level.Vertex w=level.vertices.get(v);l.add(new float[]{w.x,w.y,h,w.x*.5f,w.y*.5f,L,br?1:0,id[0],id[1],id[2],id[3],0});}
+        for(int v:new int[]{a,b,c}){Level.Vertex w=level.vertices.get(v);l.add(new float[]{w.x,w.y,h,w.x*.5f,w.y*.5f,L,br?1:0,id[0],id[1],id[2],id[3],1,0,0,0,0});}
     }
     private void wall(ArrayList<float[]>[] lists,Level.Vertex a,Level.Vertex b,float len,float lo,float hi,int mat,int L,int pid,float peg){
         if(hi-lo<.001f)return;ArrayList<float[]> l=list(lists,mat);boolean br=mat>=0&&mat<Textures.COUNT&&Textures.BRIGHT[mat];float[] id=idVec(pid);float B=br?1:0;
-        float u1=len*.5f,vt=-(hi-peg)*.5f,vb2=-(lo-peg)*.5f;
-        float[] p0={a.x,a.y,hi,0,vt,L,B,id[0],id[1],id[2],id[3],0},p1={b.x,b.y,hi,u1,vt,L,B,id[0],id[1],id[2],id[3],0},p2={b.x,b.y,lo,u1,vb2,L,B,id[0],id[1],id[2],id[3],0},p3={a.x,a.y,lo,0,vb2,L,B,id[0],id[1],id[2],id[3],0};
+        float u1=len*.5f,vt=-(hi-peg)*.5f,vb2=-(lo-peg)*.5f,tx=len<1e-6f?1:(b.x-a.x)/len,ty=len<1e-6f?0:(b.y-a.y)/len;
+        float[] p0={a.x,a.y,hi,0,vt,L,B,id[0],id[1],id[2],id[3],tx,ty,0,1,0},p1={b.x,b.y,hi,u1,vt,L,B,id[0],id[1],id[2],id[3],tx,ty,0,1,0},p2={b.x,b.y,lo,u1,vb2,L,B,id[0],id[1],id[2],id[3],tx,ty,0,1,0},p3={a.x,a.y,lo,0,vb2,L,B,id[0],id[1],id[2],id[3],tx,ty,0,1,0};
         l.add(p0);l.add(p1);l.add(p2);l.add(p0);l.add(p2);l.add(p3);
     }
     @SuppressWarnings("unchecked")
@@ -307,15 +329,17 @@ final class GpuRenderer {
         for(Iterator<Map.Entry<World.Splat,int[]>> it=splatTex.entrySet().iterator();it.hasNext();){int[] e=it.next().getValue();if(frame-e[1]>120){GLES20.glDeleteTextures(1,e,0);it.remove();}}
     }
     private FloatBuffer upload(){
-        FloatBuffer b=vb.capacity()>=nv*12?vb:ByteBuffer.allocateDirect(Math.max(nv*12,4096)*4*2).order(ByteOrder.nativeOrder()).asFloatBuffer();
-        b.clear();b.put(verts,0,nv*12);b.position(0);return b;
+        FloatBuffer b=vb.capacity()>=nv*ST?vb:ByteBuffer.allocateDirect(Math.max(nv*ST,4096)*4*2).order(ByteOrder.nativeOrder()).asFloatBuffer();
+        b.clear();b.put(verts,0,nv*ST);b.position(0);return b;
     }
     private void bindScene(int prog,FloatBuffer b){
-        int stride=12*4;
+        int stride=ST*4;
         b.position(0);GLES20.glVertexAttribPointer(0,3,GLES20.GL_FLOAT,false,stride,b);GLES20.glEnableVertexAttribArray(0);
         b.position(3);GLES20.glVertexAttribPointer(1,2,GLES20.GL_FLOAT,false,stride,b);GLES20.glEnableVertexAttribArray(1);
         b.position(5);GLES20.glVertexAttribPointer(2,2,GLES20.GL_FLOAT,false,stride,b);GLES20.glEnableVertexAttribArray(2);
         b.position(7);GLES20.glVertexAttribPointer(3,4,GLES20.GL_FLOAT,false,stride,b);GLES20.glEnableVertexAttribArray(3);
+        b.position(11);GLES20.glVertexAttribPointer(4,3,GLES20.GL_FLOAT,false,stride,b);GLES20.glEnableVertexAttribArray(4);
+        b.position(14);GLES20.glVertexAttribPointer(5,1,GLES20.GL_FLOAT,false,stride,b);GLES20.glEnableVertexAttribArray(5);
         b.position(0);
     }
     private void camUniforms(int p){
@@ -333,7 +357,8 @@ final class GpuRenderer {
     private final float[] lp=new float[16*4],lc=new float[16*3];
     private void sceneUniforms(int p){
         camUniforms(p);atmosUniforms(p);
-        GLES20.glUniform1i(GLES20.glGetUniformLocation(p,"uTex"),0);GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
+        GLES20.glUniform1i(GLES20.glGetUniformLocation(p,"uTex"),0);GLES20.glUniform1i(GLES20.glGetUniformLocation(p,"uNorm"),1);GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
+        GLES20.glUniform3f(GLES20.glGetUniformLocation(p,"uCamPos"),cx,cy,eye);
         GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uFade"),r.fadeK);GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uAlphaCut"),-1f);
         int n=Math.min(16,r.lightCount);
         for(int i=0;i<n;i++){lp[i*4]=r.lx[i];lp[i*4+1]=r.ly[i];lp[i*4+2]=r.lz[i];lp[i*4+3]=r.lr2[i];lc[i*3]=r.lcr[i];lc[i*3+1]=r.lcg[i];lc[i*3+2]=r.lcb[i];}
@@ -349,34 +374,35 @@ final class GpuRenderer {
         GLES20.glUniform1i(GLES20.glGetUniformLocation(progSky,"uTex"),0);GLES20.glActiveTexture(GLES20.GL_TEXTURE0);GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,skyTex);
         quad(0,0,W,H,0,0,1,1);
     }
-    private final FloatBuffer qb=ByteBuffer.allocateDirect(6*12*4).order(ByteOrder.nativeOrder()).asFloatBuffer();
+    private final FloatBuffer qb=ByteBuffer.allocateDirect(6*ST*4).order(ByteOrder.nativeOrder()).asFloatBuffer();
     /** Screen-space quad in internal pixels (top-left origin). */
     private void quad(float x0,float y0,float x1,float y1,float u0,float v0,float u1,float v1){
-        float[] q={x0,y0,0,u0,v0,0,0,0,0,0,0,0, x1,y0,0,u1,v0,0,0,0,0,0,0,0, x1,y1,0,u1,v1,0,0,0,0,0,0,0, x0,y0,0,u0,v0,0,0,0,0,0,0,0, x1,y1,0,u1,v1,0,0,0,0,0,0,0, x0,y1,0,u0,v1,0,0,0,0,0,0,0};
-        qb.clear();qb.put(q);qb.position(0);bindScene(0,qb);GLES20.glDisableVertexAttribArray(2);GLES20.glDisableVertexAttribArray(3);
+        float[][] c={{x0,y0,u0,v0},{x1,y0,u1,v0},{x1,y1,u1,v1},{x0,y0,u0,v0},{x1,y1,u1,v1},{x0,y1,u0,v1}};float[] q=new float[6*ST];
+        for(int i=0;i<6;i++){q[i*ST]=c[i][0];q[i*ST+1]=c[i][1];q[i*ST+3]=c[i][2];q[i*ST+4]=c[i][3];}
+        qb.clear();qb.put(q);qb.position(0);bindScene(0,qb);for(int a=2;a<6;a++)GLES20.glDisableVertexAttribArray(a);
         GLES20.glDrawArrays(GLES20.GL_TRIANGLES,0,6);
     }
     private float[] cverts=new float[0];
     private void drawColored(Level level){
         World fx=r.fx;Atmosphere.Particles ps=r.particles;
         int need=(fx==null?0:fx.drops.size())+(ps==null?0:ps.n);if(need==0)return;
-        if(cverts.length<need*6*12)cverts=new float[need*6*12];int n=0;
+        if(cverts.length<need*6*ST)cverts=new float[need*6*ST];int n=0;
         if(fx!=null)for(World.Drop d:fx.drops){float dx=d.x-cx,dy=d.y-cy,cz=dx*cs+dy*sn;if(cz<.12f)continue;
             int si=level.sectorAt(d.x,d.y);int L=si<0?24:Renderer.lightLevel(level.sectors.get(si).light);int li=Math.max(Math.max(1,L/4),Math.min(31,(int)(L+3-cz*r.fadeK)));
             int c=Textures.mul(d.color,Textures.lightMul(li));n=cquad(n,d.x,d.y,d.z,d.size*.5f,c,1f);}
         if(ps!=null)for(int i=0;i<ps.n;i++){float fade=Math.min(1,ps.life[i]/Math.max(.01f,ps.max[i])*2.2f);n=cquad(n,ps.x[i],ps.y[i],ps.z[i],Math.max(.012f,ps.size[i]*.5f),ps.col[i],fade*.8f);}
         if(n==0)return;
-        FloatBuffer b=ByteBuffer.allocateDirect(n*12*4).order(ByteOrder.nativeOrder()).asFloatBuffer();b.put(cverts,0,n*12);b.position(0);
+        FloatBuffer b=ByteBuffer.allocateDirect(n*ST*4).order(ByteOrder.nativeOrder()).asFloatBuffer();b.put(cverts,0,n*ST);b.position(0);
         GLES20.glUseProgram(progColor);camUniforms(progColor);atmosUniforms(progColor);
         GLES20.glEnable(GLES20.GL_BLEND);GLES20.glBlendFuncSeparate(GLES20.GL_SRC_ALPHA,GLES20.GL_ONE_MINUS_SRC_ALPHA,GLES20.GL_ZERO,GLES20.GL_ONE);GLES20.glDepthMask(false);
-        bindScene(progColor,b);GLES20.glDisableVertexAttribArray(1);GLES20.glDisableVertexAttribArray(2);
+        bindScene(progColor,b);GLES20.glDisableVertexAttribArray(1);GLES20.glDisableVertexAttribArray(2);GLES20.glDisableVertexAttribArray(4);GLES20.glDisableVertexAttribArray(5);
         GLES20.glDrawArrays(GLES20.GL_TRIANGLES,0,n);
         GLES20.glDepthMask(true);GLES20.glDisable(GLES20.GL_BLEND);
     }
     private int cquad(int n,float x,float y,float z,float h,int col,float a){
         float rx=-sn*h,ry=cs*h,R=((col>>16)&255)/255f,G=((col>>8)&255)/255f,B=(col&255)/255f;
         float[][] p={{x-rx,y-ry,z+h},{x+rx,y+ry,z+h},{x+rx,y+ry,z-h},{x-rx,y-ry,z+h},{x+rx,y+ry,z-h},{x-rx,y-ry,z-h}};
-        for(float[] q:p){int o=n*12;cverts[o]=q[0];cverts[o+1]=q[1];cverts[o+2]=q[2];for(int k=3;k<7;k++)cverts[o+k]=0;cverts[o+7]=R;cverts[o+8]=G;cverts[o+9]=B;cverts[o+10]=a;cverts[o+11]=0;n++;}
+        for(float[] q:p){int o=n*ST;cverts[o]=q[0];cverts[o+1]=q[1];cverts[o+2]=q[2];for(int k=3;k<7;k++)cverts[o+k]=0;cverts[o+7]=R;cverts[o+8]=G;cverts[o+9]=B;cverts[o+10]=a;for(int k=11;k<ST;k++)cverts[o+k]=0;n++;}
         return n;
     }
 

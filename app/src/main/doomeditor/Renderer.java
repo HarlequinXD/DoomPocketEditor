@@ -48,8 +48,8 @@ final class Renderer {
     private GpuRenderer gpu;
     /** Settings: draw the 3D scene on the GPU, and how many lines tall its picture is. */
     static boolean useGpu=true;static int gpuLines=270;
-    static void loadPrefs(android.content.Context c){try{android.content.SharedPreferences p=c.getSharedPreferences("app",0);useGpu=p.getBoolean("gpu",true);gpuLines=p.getInt("gpuLines",270);}catch(Throwable ignored){}}
-    static void savePrefs(android.content.Context c){try{c.getSharedPreferences("app",0).edit().putBoolean("gpu",useGpu).putInt("gpuLines",gpuLines).apply();}catch(Throwable ignored){}}
+    static void loadPrefs(android.content.Context c){try{android.content.SharedPreferences p=c.getSharedPreferences("app",0);useGpu=p.getBoolean("gpu",true);gpuLines=p.getInt("gpuLines",270);GpuRenderer.relief=p.getBoolean("relief",true);}catch(Throwable ignored){}}
+    static void savePrefs(android.content.Context c){try{c.getSharedPreferences("app",0).edit().putBoolean("gpu",useGpu).putInt("gpuLines",gpuLines).putBoolean("relief",GpuRenderer.relief).apply();}catch(Throwable ignored){}}
     boolean onGpu(){return gpu!=null;}
 
     Renderer(){blit.setFilterBitmap(false);blit.setAntiAlias(false);Textures.init();Sprites.init();}

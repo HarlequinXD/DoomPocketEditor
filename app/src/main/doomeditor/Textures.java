@@ -22,6 +22,33 @@ final class Textures {
     /** Textures that ignore distance fading (glowing liquids, lights, magic). */
     static final boolean[] BRIGHT=new boolean[COUNT];
     static{for(int i:new int[]{7,8,11,12,41,44,49,62,63,76,77,80,82,88})BRIGHT[i]=true;}
+    /** How strongly each texture's relief (normal + parallax) shows: liquids, ice and glass stay nearly flat. */
+    static final float[] RELIEF=new float[COUNT];
+    static{java.util.Arrays.fill(RELIEF,1f);RELIEF[SKY]=0;
+        for(int i=0;i<COUNT;i++){String n=NAMES[i].toLowerCase(java.util.Locale.US);
+            if(n.contains("water")||n.contains("lava")||n.contains("bog")||n.contains("blood pool")||n.contains("ice")||n.contains("stained glass")||n.contains("slime"))RELIEF[i]=.2f;
+            else if(n.contains("carpet")||n.contains("rug")||n.contains("plaster")||n.contains("snow")||n.contains("sand")||n.contains("banner"))RELIEF[i]=.5f;}}
+    /**
+     * Relief map for a texture: RGB = tangent-space normal, A = height (bright = raised). Height comes from the
+     * texture's own brightness, softened and stretched to its full range, so mortar and cracks sink and bricks,
+     * planks and stones stand out; the normal is the slope of that height.
+     */
+    static int[] relief(int t){
+        int[] src=base[t];int S=SIZE,n=S*S;float[] h=new float[n],b=new float[n];
+        for(int i=0;i<n;i++){int c=src[i];h[i]=(((c>>16)&255)*.3f+((c>>8)&255)*.59f+(c&255)*.11f)/255f;}
+        for(int y=0;y<S;y++)for(int x=0;x<S;x++){float sum=0;   // soften (wrapping, so tiles stay seamless)
+            for(int dy=-1;dy<=1;dy++)for(int dx=-1;dx<=1;dx++)sum+=h[((y+dy)&(S-1))*S+((x+dx)&(S-1))]*(dx==0&&dy==0?4:dx==0||dy==0?2:1);
+            b[y*S+x]=sum/16f;}
+        float lo=1,hi=0;for(float v:b){lo=Math.min(lo,v);hi=Math.max(hi,v);}
+        float range=hi-lo;for(int i=0;i<n;i++)b[i]=range<.02f?.5f:(float)Math.pow((b[i]-lo)/range,.8f);
+        float k=5f*RELIEF[t];int[] out=new int[n];
+        for(int y=0;y<S;y++)for(int x=0;x<S;x++){
+            float dx=b[y*S+((x+1)&(S-1))]-b[y*S+((x-1)&(S-1))],dy=b[((y+1)&(S-1))*S+x]-b[((y-1)&(S-1))*S+x];
+            float nx=-dx*k,ny=-dy*k,nz=1,l=(float)Math.sqrt(nx*nx+ny*ny+nz*nz);nx/=l;ny/=l;nz/=l;
+            int H=Math.round((RELIEF[t]<=0?.5f:b[y*S+x])*255);
+            out[y*S+x]=(H<<24)|(Math.round((nx*.5f+.5f)*255)<<16)|(Math.round((ny*.5f+.5f)*255)<<8)|Math.round((nz*.5f+.5f)*255);}
+        return out;
+    }
     static final int[][] base=new int[COUNT][];
     /** Pre-shaded light tables, built the first time a texture is drawn. */
     private static final int[][][] shaded=new int[COUNT][][];

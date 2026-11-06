@@ -336,7 +336,10 @@ public class EditorView extends View {
     private String rendererLabel(){if(!Renderer.useGpu)return "Software";if(!renderer.onGpu()&&GpuRenderer.available()==false)return "Software (GPU not available)";return "GPU, "+Renderer.gpuLines+" lines";}
     private void chooseRenderer(){
         int cur=4;if(Renderer.useGpu)for(int i=0;i<RENDER_LINES.length;i++)if(RENDER_LINES[i]==Renderer.gpuLines)cur=i;
-        host.choose("3D renderer",RENDERERS,cur,k->{
+        String[] items=java.util.Arrays.copyOf(RENDERERS,RENDERERS.length+1);
+        items[RENDERERS.length]="Normal + parallax mapping: "+(GpuRenderer.relief?"ON (tap to turn off)":"off (tap to turn on)");
+        host.choose("3D renderer",items,cur,k->{
+            if(k==RENDERERS.length){GpuRenderer.relief=!GpuRenderer.relief;Renderer.savePrefs(getContext());hint(GpuRenderer.relief?"Relief on · textures get depth and react to lights (GPU only)":"Relief off · flat textures");invalidate();return;}
             if(k==4)Renderer.useGpu=false;else{Renderer.useGpu=true;Renderer.gpuLines=RENDER_LINES[k];}
             Renderer.savePrefs(getContext());renderer.invalidate();
             hint(k==4?"Software renderer · lights and fog are drawn by the CPU":GpuRenderer.available()?"GPU renderer · "+RENDER_LINES[k]+" lines":"This phone's GPU couldn't start · using software");invalidate();});
