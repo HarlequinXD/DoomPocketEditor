@@ -47,8 +47,8 @@ final class GpuRenderer {
             String ext=GLES20.glGetString(GLES20.GL_EXTENSIONS);depth24=ext!=null&&ext.contains("GL_OES_depth24");
             progScene=program(VS_SCENE,FS_SCENE);progColor=program(VS_COLOR,FS_COLOR);progSky=program(VS_SCREEN,FS_SKY);progScreen=program(VS_SCREEN,FS_SCREEN);progId=program(VS_SCENE,FS_ID);
             Textures.init();
-            for(int t=0;t<Textures.COUNT;t++)wallTex[t]=texture(Textures.base[t],Textures.SIZE,Textures.SIZE,true);
-            skyTex=texture(Textures.sky,Textures.SKY_W,Textures.SKY_H,true);
+            for(int t=0;t<Textures.COUNT;t++)wallTex[t]=texture(Textures.base[t],Textures.SIZE,Textures.SIZE,true,true);
+            skyTex=texture(Textures.sky,Textures.SKY_W,Textures.SKY_H,true,true);
             return true;
         }catch(Throwable e){failed=true;android.util.Log.w("GpuRenderer","GPU renderer unavailable, using software",e);return false;}
     }
@@ -65,17 +65,18 @@ final class GpuRenderer {
         if(ok[0]==0)throw new RuntimeException("shader: "+GLES20.glGetShaderInfoLog(s));return s;
     }
     /** Uploads ARGB pixels as an RGBA texture (nearest filtering; repeat or clamp). */
-    private static int texture(int[] argb,int w,int h,boolean repeat){
+    private static int texture(int[] argb,int w,int h,boolean repeat){return texture(argb,w,h,repeat,false);}
+    private static int texture(int[] argb,int w,int h,boolean repeat,boolean opaque){
         int[] t=new int[1];GLES20.glGenTextures(1,t,0);GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,t[0]);
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_MIN_FILTER,GLES20.GL_NEAREST);GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_MAG_FILTER,GLES20.GL_NEAREST);
         boolean pot=(w&(w-1))==0&&(h&(h-1))==0;int wrap=repeat&&pot?GLES20.GL_REPEAT:GLES20.GL_CLAMP_TO_EDGE;
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_WRAP_S,wrap);GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_WRAP_T,wrap);
-        GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D,0,GLES20.GL_RGBA,w,h,0,GLES20.GL_RGBA,GLES20.GL_UNSIGNED_BYTE,rgba(argb,w*h));
+        GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D,0,GLES20.GL_RGBA,w,h,0,GLES20.GL_RGBA,GLES20.GL_UNSIGNED_BYTE,rgba(argb,w*h,opaque));
         return t[0];
     }
-    private static ByteBuffer rgba(int[] argb,int n){
+    private static ByteBuffer rgba(int[] argb,int n,boolean opaque){
         ByteBuffer b=ByteBuffer.allocateDirect(n*4).order(ByteOrder.nativeOrder());
-        for(int i=0;i<n;i++){int c=argb[i];b.put((byte)(c>>16)).put((byte)(c>>8)).put((byte)c).put((byte)(c>>>24));}
+        for(int i=0;i<n;i++){int c=argb[i];b.put((byte)(c>>16)).put((byte)(c>>8)).put((byte)c).put(opaque?(byte)255:(byte)(c>>>24));}
         b.position(0);return b;
     }
 
