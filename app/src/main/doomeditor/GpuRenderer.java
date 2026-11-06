@@ -149,8 +149,8 @@ final class GpuRenderer {
         "  c=alb*(1.0-metal)*(1.0-Fa*0.5)*amb+Fa*amb*(0.3+0.7*smo);\n"+
         "  float kk=(rough+1.0)*(rough+1.0)/8.0;\n"+
         "  for(int i=0;i<16;i++){if(i>=uCount)break;vec3 dd=uL[i].xyz-vWorld;float d2=dot(dd,dd);if(d2<uL[i].w){float f=1.0-d2/uL[i].w;\n"+
-        "   float sh=uShadowOn>0.5?shadowAt(float(i),uL[i].xyz,surf?1.0:0.0):1.0;if(sh<=0.0)continue;
-   vec3 Ld=dd*inversesqrt(max(d2,1e-4));vec3 rad=uLC[i]*(f*f*1.35*sh);float NdL=max(dot(Nw,Ld),0.0);\n"+
+        "   float sh=uShadowOn>0.5?shadowAt(float(i),uL[i].xyz,surf?1.0:0.0):1.0;if(sh<=0.0)continue;\n"+
+        "   vec3 Ld=dd*inversesqrt(max(d2,1e-4));vec3 rad=uLC[i]*(f*f*1.35*sh);float NdL=max(dot(Nw,Ld),0.0);\n"+
         "   if(!surf){c+=alb*rad;continue;}\n"+
         "   vec3 H=normalize(Ld+Vw);float NdH=max(dot(Nw,H),0.0);float dn=NdH*NdH*(a2-1.0)+1.0;float D=a2/(3.14159*dn*dn);\n"+
         "   float G=(NdV/(NdV*(1.0-kk)+kk))*(NdL/(NdL*(1.0-kk)+kk));vec3 F=F0+(1.0-F0)*pow(1.0-max(dot(H,Vw),0.0),5.0);\n"+
