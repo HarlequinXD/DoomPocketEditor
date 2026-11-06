@@ -28,12 +28,12 @@ final class MeshModels {
         synchronized(cache){if(m==null){failed[id]=true;return null;}if(cache[id]==null)cache[id]=m;return cache[id];}
     }
     /** Builds the character meshes ahead of time (loading screen), so the first fight doesn't hitch. */
-    static void warm(){for(int id:new int[]{Sprites.HERO,Sprites.SKELETON,Sprites.GOBLIN,Sprites.ORC,Sprites.CULTIST,Sprites.VILLAGER})get(id);}
+    static void warm(){for(int id:new int[]{Sprites.HERO,Sprites.SKELETON,Sprites.GOBLIN,Sprites.ORC,Sprites.CULTIST,Sprites.VILLAGER,Sprites.HERO_RANGER,Sprites.HERO_ROGUE,Sprites.HERO_WIZARD,Sprites.HERO_CLERIC})get(id);}
     // ------------------------------------------------------------------ build
     static final int BUDGET=500;   // triangles per character (items get 320)
     private static int budget=BUDGET;
     static Mesh build(int id){
-        if(id==Sprites.HERO)return FighterMesh.build();   // hand box-modelled
+        if(BoxMesh.has(id))return BoxMesh.build(id);   // characters: hand box-modelled
         Mesh out=new Mesh();budget=id==Sprites.HERO||id==Sprites.SKELETON||id==Sprites.GOBLIN||id==Sprites.ORC||id==Sprites.CULTIST||id==Sprites.VILLAGER||(id>=Sprites.HERO_RANGER&&id<=Sprites.HERO_CLERIC)?500:320;
         SpriteModels.Model first=model(id,0);if(first==null)return null;
         int[] lv=plan(first);
