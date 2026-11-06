@@ -335,6 +335,8 @@ final class Renderer {
     int tintR=255,tintG=255,tintB=255;float tintAmt;
     /** World-space particles drawn this frame (null for none). */
     Atmosphere.Particles particles;
+    /** The hero has darkvision (elves, dwarves...): nearby darkness is seen as dim light (GPU renderer). */
+    boolean darkvision;
     /** Adds a light for the next frame; the nearest lights to the camera are kept. */
     void addLight(float x,float y,float z,float radius,float r,float g,float b){
         float d=(x-lastCamX)*(x-lastCamX)+(y-lastCamY)*(y-lastCamY);if(d>(radius+24)*(radius+24))return;

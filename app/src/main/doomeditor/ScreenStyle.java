@@ -20,6 +20,8 @@ final class ScreenStyle {
     // title card
     int cardStyle;float cardSeconds=3f;boolean chapter=true;
     // death
+    /** Character creation screen when a new game starts (race, class, look, abilities, name). */
+    boolean charCreate=true;
     boolean death=true;String deathTitle="You have fallen",deathText="Your tale is not over yet.";int deathTint;float deathDelay=1.2f;
     String lRetry="Try again",lLoadSave="Load last save";
     // victory
@@ -28,14 +30,14 @@ final class ScreenStyle {
     JSONObject toJson()throws Exception{
         JSONObject o=new JSONObject();
         o.put("cardStyle",cardStyle);o.put("cardSeconds",(double)cardSeconds);o.put("chapter",chapter);
-        o.put("death",death);o.put("deathTitle",deathTitle);o.put("deathText",deathText);o.put("deathTint",deathTint);o.put("deathDelay",(double)deathDelay);o.put("lRetry",lRetry);o.put("lLoadSave",lLoadSave);
+        o.put("charCreate",charCreate);o.put("death",death);o.put("deathTitle",deathTitle);o.put("deathText",deathText);o.put("deathTint",deathTint);o.put("deathDelay",(double)deathDelay);o.put("lRetry",lRetry);o.put("lLoadSave",lLoadSave);
         o.put("winTitle",winTitle);o.put("winText",winText);o.put("lAgain",lAgain);o.put("winStats",winStats);o.put("winHero",winHero);
         return o;
     }
     void read(JSONObject o){
         if(o==null)return;
         cardStyle=Math.max(0,Math.min(CARD_STYLES.length-1,o.optInt("cardStyle",0)));cardSeconds=(float)Math.max(1,Math.min(8,o.optDouble("cardSeconds",3)));chapter=o.optBoolean("chapter",true);
-        death=o.optBoolean("death",true);deathTitle=o.optString("deathTitle","You have fallen");deathText=o.optString("deathText","Your tale is not over yet.");
+        charCreate=o.optBoolean("charCreate",true);death=o.optBoolean("death",true);deathTitle=o.optString("deathTitle","You have fallen");deathText=o.optString("deathText","Your tale is not over yet.");
         deathTint=Math.max(0,Math.min(DEATH_TINTS.length-1,o.optInt("deathTint",0)));deathDelay=(float)Math.max(0,Math.min(5,o.optDouble("deathDelay",1.2)));
         lRetry=o.optString("lRetry","Try again");lLoadSave=o.optString("lLoadSave","Load last save");
         winTitle=o.optString("winTitle","Quest complete");winText=o.optString("winText","");lAgain=o.optString("lAgain","Play again");winStats=o.optBoolean("winStats",true);winHero=o.optBoolean("winHero",true);

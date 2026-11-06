@@ -144,7 +144,7 @@ final class World {
         float sx=level.playerX,sy=level.playerY,sa=level.facing;
         if(arrival!=null&&!arrival.isEmpty())for(Level.Thing t:level.things)if(arrival.equals(t.def)){sx=t.x;sy=t.y;sa=t.angle;break;}
         player=makeActor(pd,sx,sy,sa);player.isPlayer=true;
-        if(from!=null&&from.hero!=null){hero=from.hero;player.sprite=from.player.sprite;player.health=Math.max(1,from.player.health);
+        if(from!=null&&from.hero!=null){hero=from.hero;player.sprite=from.player.sprite;player.health=Math.max(1,from.player.health);if(hero.race!=null)player.speed=pd.speed*hero.race.speed;hero.relentlessUsed=false;
             quests.putAll(from.quests);globals.putAll(from.globals);}
         else{hero=Hero.create(pd);player.sprite=pd.lookSprite();player.health=hero.maxHp;}
         weapon=hero.weaponOrFists().fp;
@@ -475,6 +475,17 @@ final class World {
     void teleport(Actor a,float x,float y){if(level.sectorAt(x,y)<0)return;float ox=a.x,oy=a.y;a.x=x;a.y=y;if(!tryMove(a,x,y)){a.x=ox;a.y=oy;return;}a.z=floorAt(x,y);effect(Sprites.FX_TELEPORT,x,y,a.z+.8f);sound(SoundFx.TELEPORT,a);}
 
     // ------------------------------------------------------------------ combat
+    /** Plays as a hero made on the character creation screen: its race, class, scores and 3D look. */
+    void applyCharacter(CharLook look){
+        if(look==null||player==null)return;EntityDef pd=project.playerDef();
+        hero=Hero.create(pd,look);applyHeroLook();player.health=hero.maxHp;weapon=hero.weaponOrFists().fp;
+    }
+    /** Shows the hero's created look (after creating or loading a game) and applies racial speed. */
+    void applyHeroLook(){
+        if(hero==null||hero.look==null||player==null)return;EntityDef pd=project.playerDef();
+        if(project.builtinLook(pd,pd.sprite)){CharLook.setCurrent(hero.look);player.sprite=Sprites.CREATED;}
+        if(hero.race!=null)player.speed=pd.speed*hero.race.speed;
+    }
     void damage(Actor t,int amount,Actor src){damage(t,amount,src,false);}
     /** Applies damage, shows the number, awards XP to the hero for kills and sends DAMAGED / DIED to the FSM. */
     void damage(Actor t,int amount,Actor src,boolean crit){
@@ -486,6 +497,7 @@ final class World {
         t.health-=amount;
         bleed(t,src,amount,crit,t.health<=0);
         if(src!=null&&src!=t&&!t.isPlayer&&src.alive)t.target=src;
+        if(t.health<=0&&t.isPlayer&&hero!=null&&hero.savage()&&!hero.relentlessUsed){hero.relentlessUsed=true;t.health=1;floater(t,"Relentless!",0xffffa040);}
         if(t.health<=0){
             t.health=0;t.alive=false;t.shootable=false;t.solid=false;t.vx*=.3f;t.vy*=.3f;t.animClip=null;
             if(t.isPlayer){sound(SoundFx.PLAYER_DEATH,t);}
@@ -582,9 +594,10 @@ final class World {
             if(victim!=null){
                 if(p.pDice==null){   // legacy projectile (min..max damage)
                     int roll=Rpg.d20(rng);if(roll!=1&&(roll==20||roll+p.pAttack>=ac(victim)))damage(victim,p.dmgMin+rng.nextInt(Math.max(1,p.dmgMax-p.dmgMin+1)),p.owner,roll==20);else floater(victim,"miss",0xffb0b8c0);}
-                else{int roll=p.pAuto?10:Rpg.d20(rng);boolean crit=!p.pAuto&&roll==20;
+                else{int roll=p.pAuto?10:Rpg.d20(rng);if(roll==1&&!p.pAuto&&p.owner==player&&hero!=null&&hero.lucky())roll=Rpg.d20(rng);boolean crit=!p.pAuto&&roll==20;
                     if(p.pAuto||(roll!=1&&(crit||roll+p.pAttack>=ac(victim)))){int dmg=crit?p.pDice.rollCrit(rng):p.pDice.roll(rng);
                         if(p.owner==player&&hero!=null&&hero.sneakDice()>0&&victim.target!=player){Rpg.Dice sd=new Rpg.Dice(hero.sneakDice()*(crit?2:1),6,0);dmg+=sd.roll(rng);floater(victim,"sneak attack",0xffc8a0ff);}
+                        if(victim==player&&hero!=null&&hero.resists(p.pType)){dmg/=2;floater(victim,"resisted",0xffa0c0ff);}
                         damage(victim,Math.max(1,dmg),p.owner,crit);if(p.projectileType==P_ARROW)sound(SoundFx.HIT,victim);}
                     else floater(victim,"miss",0xffb0b8c0);}
             }
@@ -616,9 +629,10 @@ final class World {
         sound(SoundFx.SWING,player);
         Actor t=meleeTarget(w.reach);
         if(t==null)return FIRE_NO_TARGET;
-        int roll=Rpg.d20(rng);boolean crit=roll==20;
+        int roll=Rpg.d20(rng);if(roll==1&&hero.lucky()){roll=Rpg.d20(rng);floater(player,"lucky",0xffffe080);}boolean crit=roll==20;
         if(roll==1||(!crit&&roll+hero.attackBonus(w)<ac(t))){floater(t,"miss",0xffb0b8c0);if(t.fsm!=null&&t.target==null){t.target=player;t.fsm.send("DAMAGED");}return FIRE_OK;}
         int dmg=(crit?w.damage.rollCrit(rng):w.damage.roll(rng))+hero.damageBonus(w);
+        if(crit&&hero.savage()&&w.damage.sides>0)dmg+=new Rpg.Dice(1,w.damage.sides,0).roll(rng);   // half-orc savage attacks
         if(hero.sneakDice()>0&&t.target!=player){dmg+=new Rpg.Dice(hero.sneakDice()*(crit?2:1),6,0).roll(rng);floater(t,"sneak attack",0xffc8a0ff);}
         effect(Sprites.FX_BLOOD,t.x-(float)Math.cos(player.angle)*t.radius*.6f,t.y-(float)Math.sin(player.angle)*t.radius*.6f,t.z+t.height*.6f);
         damage(t,Math.max(1,dmg),player,crit);sound(SoundFx.HIT,t);if(crit)shake(.12f,.12f);
@@ -684,7 +698,9 @@ final class World {
         src.attackTimer=.35f;sound(SoundFx.SWING,src);
         int roll=Rpg.d20(rng);boolean crit=roll==20;
         if(roll==1||(!crit&&roll+src.def.attackBonus<ac(t))){floater(t,"miss",0xffb0b8c0);return true;}
-        Rpg.Dice dd=Rpg.Dice.parse(src.def.damage);damage(t,Math.max(1,crit?dd.rollCrit(rng):dd.roll(rng)),src,crit);sound(SoundFx.HIT,t);return true;
+        Rpg.Dice dd=Rpg.Dice.parse(src.def.damage);int md=crit?dd.rollCrit(rng):dd.roll(rng);
+        if(t==player&&hero!=null&&hero.resists(src.def.damageType)){md/=2;floater(t,"resisted",0xffa0c0ff);}
+        damage(t,Math.max(1,md),src,crit);sound(SoundFx.HIT,t);return true;
     }
     /** Monster ranged attack (arrow or bolt) using its own stats. */
     void rangedAttack(Actor src,int type){

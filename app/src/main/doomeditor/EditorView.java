@@ -292,6 +292,7 @@ public class EditorView extends View {
     /** Android back: close the launcher, leave Play, leave an editor for Home; false means leave the project. */
     boolean goBack(){
         if(launcherOpen){launcherOpen=false;invalidate();return true;}
+        if(mode==PLAY&&creator!=null){creator.back();invalidate();return true;}
         if(mode==PLAY&&menu!=null&&menu.active()){if(!menu.back())leavePlay();invalidate();return true;}
         if(mode==PLAY&&world!=null&&debug!=null&&debug.open){debug.close(world);invalidate();return true;}
         if(mode==PLAY&&world!=null&&world.shop!=null){world.closeShop();invalidate();return true;}
@@ -1212,13 +1213,13 @@ public class EditorView extends View {
     private GameMenu menu;
     private GameMenu menu(){
         if(menu==null)menu=new GameMenu(getContext(),ui,project,renderer,sfx,new GameMenu.Listener(){
-            @Override public void newGame(){startPlay();hint("Left: move · right: look · Attack, Cast, Use and Potion on the right · Bag top right");}
+            @Override public void newGame(){if(project.screens.charCreate)openCreator(project.startMap);else{playing=null;startPlay();hint("Left: move · right: look · Attack, Cast, Use and Potion on the right · Bag top right");}}
             @Override public void resume(){if(world==null)startPlay();else{world.paused=bagOpen;}}
             @Override public void restart(){if(world!=null)startPlay(world.mapNum);else startPlay();}
             @Override public boolean saveGame(String slot){return world!=null&&GameSave.save(getContext(),project,world,slot);}
             @Override public boolean loadGame(String slot){
                 project.syncCurrent();World w=GameSave.load(getContext(),project,sfx,slot);if(w==null)return false;
-                sfx.start();world=w;bagOpen=false;mapFade=1f;for(int i=0;i<buttonPointer.length;i++)buttonPointer[i]=-1;joyPointer=lookPointer=-1;joyVisible=false;
+                sfx.start();world=w;playing=w.hero!=null?w.hero.look:null;bagOpen=false;mapFade=1f;for(int i=0;i<buttonPointer.length;i++)buttonPointer[i]=-1;joyPointer=lookPointer=-1;joyVisible=false;
                 startCard();return true;}
             @Override public void exitToEditor(){leavePlay();}
         });
@@ -1278,8 +1279,20 @@ public class EditorView extends View {
         return true;   // swallow other taps while the death screen is up
     }
     private void backFromEnd(){if(frontEnd()){world=null;menu().paused=false;menu().state=GameMenu.MAIN;}else leavePlay();}
-    private void startPlay(int mapNum){bagOpen=false;mapFade=0;cardTime=-1;deathTime=0;deathSave=null;world=new World(project,sfx,mapNum,null,"");sfx.start();for(int i=0;i<buttonPointer.length;i++)buttonPointer[i]=-1;joyPointer=lookPointer=-1;joyVisible=false;}
+    // ---------------------------------------------------------------- character creation (New Game)
+    /** The hero made on the creation screen for this play session (null = the player entity's own hero). */
+    private CharLook playing;private CharacterCreator creator;
+    private void openCreator(int mapNum){
+        creator=new CharacterCreator(ui,project,CharLook.last(getContext()),new CharacterCreator.Listener(){
+            @Override public void begin(CharLook l){playing=l;CharLook.remember(getContext(),l);creator=null;startPlay(mapNum);startCard();
+                hint(l.name+" the "+l.raceInfo().name+" "+Rpg.heroClass(l.cls).name+" · Left: move · right: look");invalidate();}
+            @Override public void back(){creator=null;if(frontEnd()){world=null;menu().state=GameMenu.MAIN;}else leavePlay();invalidate();}
+            @Override public void prompt(String title,String value,java.util.function.Consumer<String> done){if(host!=null)host.prompt(title,null,value,false,t->{done.accept(t);invalidate();});}
+        });
+    }
+    private void startPlay(int mapNum){bagOpen=false;mapFade=0;cardTime=-1;deathTime=0;deathSave=null;world=new World(project,sfx,mapNum,null,"");if(playing!=null)world.applyCharacter(playing);sfx.start();for(int i=0;i<buttonPointer.length;i++)buttonPointer[i]=-1;joyPointer=lookPointer=-1;joyVisible=false;}
     private void drawPlay(Canvas c,float dt){
+        if(creator!=null){creator.draw(c,w,h,dt);nextFrame();return;}
         if(menu!=null&&menu.active()){menu.draw(c,w,h,dt);nextFrame();return;}
         if(world==null)startPlay();
         if(world.restartRequested){startPlay(world.mapNum);hint("Level restarted");}
@@ -1311,7 +1324,7 @@ public class EditorView extends View {
         for(Actor a:world.actors){if(a.removed)continue;
             if(a.projectileType>=0){renderer.addLight(a.x,a.y,a.z,3.5f,a.projectileType==2?.35f:1f,a.projectileType==2?.55f:.55f,a.projectileType==2?1f:.2f);continue;}
             if(a.def==null||(!a.visible&&!a.isPlayer))continue;float[] g=Atmosphere.glowFor(a.def,a.sprite,a.lightOverride);if(g!=null)Atmosphere.addLight(renderer,a.x,a.y,a.z+a.height*.8f,g,world.time,a.thingIndex*7+3);}
-        renderer.particles=world.particles;
+        renderer.particles=world.particles;renderer.darkvision=world.hero!=null&&world.hero.darkvision();
         renderer.fx=world;renderer.renderScene(world.level,cx,cy,world.camZ(),world.camAngle(),world.camPitch(),w,h,spriteList);
         if(pl.alive&&!tp){float b=world.bob();int si=world.sectorIndex(pl);renderer.weapon(world.weapon,(float)Math.cos(world.bobPhase*Math.PI*.5f)*Math.min(1,(float)Math.hypot(pl.vx,pl.vy)/6f),b*8,world.weaponRaise,world.weaponFlash>0,si<0?160:world.level.sectors.get(si).light);}
         if(world.damageFlash>0)renderer.tint(0xffff2020,world.damageFlash*.6f);
@@ -1573,7 +1586,7 @@ public class EditorView extends View {
     private void flushSave(){removeCallbacks(saveTask);saveQueued=false;project.save(getContext());}
     private void resetLevel(){project.level=new Level();level=project.level;sectorEditor=new SectorEditor(level);entityUndo.reset();pending.clear();selKind=0;walker=null;cancelStage();changed("Level reset");}
     private void changeMode(int next){
-        if(mode==PLAY&&next!=PLAY){sfx.stopMusic(0);sfx.stopSounds();sfx.stop();world=null;if(menu!=null)menu.state=GameMenu.OFF;}
+        if(mode==PLAY&&next!=PLAY){creator=null;playing=null;renderer.darkvision=false;sfx.stopMusic(0);sfx.stopSounds();sfx.stop();world=null;if(menu!=null)menu.state=GameMenu.OFF;}
         if(next==PLAY&&mode!=PLAY)returnMode=mode;
         if(next==HOME)save(false);
         launcherOpen=false;
@@ -1583,7 +1596,7 @@ public class EditorView extends View {
         if(next==PLAY){project.syncCurrent();if(playThisMap>0){int m=playThisMap;playThisMap=-1;if(menu!=null)menu.state=GameMenu.OFF;startPlay(m);
                 if(playFrom!=null&&world.level.sectorAt(playFrom[0],playFrom[1])>=0){world.player.x=playFrom[0];world.player.y=playFrom[1];world.player.angle=playFrom[2];world.player.z=world.floorAt(playFrom[0],playFrom[1]);world.syncView();}
                 playFrom=null;}
-            else if(frontEnd()){world=null;menu().begin();}else startPlay(project.currentMap);}
+            else if(frontEnd()){world=null;playing=null;menu().begin();}else if(project.screens.charCreate){world=null;openCreator(project.currentMap);}else{playing=null;startPlay(project.currentMap);}}
         setKeepScreenOn(next==PLAY);   // the screen may sleep normally while editing
         if(next!=HOME&&!(next==PLAY&&frontEnd()))hint(next==PLAY?"Left: move · right: look · Attack, Cast, Use and Potion on the right · Bag top right":next==POLY?"Pick a tool, move the cursor, tap Apply":next==THINGS?"Pick an entity type, then Apply to place it":"Left: move · right: look · double-tap a surface to texture it");
     }
@@ -1720,6 +1733,7 @@ public class EditorView extends View {
         return true;
     }
     private boolean playTouch(MotionEvent e,int a,int idx,float x,float y){
+        if(creator!=null){if(a==MotionEvent.ACTION_DOWN)creator.down(x,y);else if(a==MotionEvent.ACTION_MOVE)creator.move(x,y);else if(a==MotionEvent.ACTION_UP)creator.up(x,y);invalidate();return true;}
         if(menu!=null&&menu.active()){
             if(a==MotionEvent.ACTION_DOWN)menu.down(x,y);else if(a==MotionEvent.ACTION_MOVE)menu.move(x,y);else if(a==MotionEvent.ACTION_UP||a==MotionEvent.ACTION_CANCEL)menu.up();
             invalidate();return true;}

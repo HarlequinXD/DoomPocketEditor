@@ -10,14 +10,16 @@ final class Sprites {
             HERO_RANGER=29,HERO_ROGUE=30,HERO_WIZARD=31,HERO_CLERIC=32,
             // box-modelled decorations (PropMesh)
             CAMPFIRE=33,FIREPLACE=34,BED=35,CABINET=36,WARDROBE=37,TABLE=38,CHAIR=39,STOOL=40,BENCH=41,BOOKSHELF=42,CRATE=43,CANDELABRA=44,CAULDRON=45,RUG=46,
-            BANNER=47,PLANT=48,WEAPON_RACK=49,SACK=50,CANDLE=51,DRESSER=52;
+            BANNER=47,PLANT=48,WEAPON_RACK=49,SACK=50,CANDLE=51,DRESSER=52,
+            // the hero made on the character creation screen (its look is CharLook.current)
+            CREATED=53;
     // Fantasy names for the same ids
     static final int HERO=PLAYER,SKELETON=TROOPER,GOBLIN=IMP,ORC=DEMON,CULTIST=SERGEANT,VILLAGER=NPC,
             POTION_HEALING=MEDKIT,DRAUGHT=STIMPACK,DAGGER=CLIP,POTION_ARCANA=SHELLS,TREASURE=ROCKETBOX,ARMOUR=ARMOR,SWORD=SHOTGUN_PICKUP,BOW=CHAINGUN_PICKUP,STAFF=LAUNCHER_PICKUP,
             KEY_BRONZE=KEY_BLUE,KEY_SILVER=KEY_YELLOW,KEY_GOLD=KEY_RED,PILLAR=COLUMN,LEVER=SWITCH,LEVER_ON=SWITCH_ON,BRAZIER=LAMP;
     static final String[] NAMES={"Hero · Fighter","Skeleton","Goblin","Orc","Healing Potion","Healing Draught","Dagger","Arcana Potion","Treasure","Armour","Sword","Bow","Staff",
             "Bronze Key","Silver Key","Gold Key","Barrel","Torch","Pillar","Lever","Lever (pulled)","Brazier","Cultist","Shield","Scroll","Villager","Chest","Chest (open)","Gold","Hero · Ranger","Hero · Rogue","Hero · Wizard","Hero · Cleric",
-            "Campfire","Fireplace","Bed","Cabinet","Wardrobe","Table","Chair","Stool","Bench","Bookshelf","Crate","Candelabra","Cauldron","Rug","Banner","Potted Plant","Weapon Rack","Grain Sack","Candle","Chest of Drawers"};
+            "Campfire","Fireplace","Bed","Cabinet","Wardrobe","Table","Chair","Stool","Bench","Bookshelf","Crate","Candelabra","Cauldron","Rug","Banner","Potted Plant","Weapon Rack","Grain Sack","Candle","Chest of Drawers","Created Character"};
     static final String NAMES_JOINED=join(NAMES);
     static String join(String[] a){StringBuilder b=new StringBuilder();for(int i=0;i<a.length;i++){if(i>0)b.append('|');b.append(a[i]);}return b.toString();}
     static final int COUNT=NAMES.length;
@@ -118,10 +120,12 @@ final class Sprites {
         synchronized(requests){for(int[] r:requests)if(r[0]==id&&r[1]==f&&r[2]==view)return;requests.addFirst(new int[]{id,f,view});requests.notifyAll();}
     }
     /** Characters have 8 rotations (front, front-right, right, back-right, back, back-left, left, front-left). */
-    static final int[] CHARACTERS={PLAYER,TROOPER,SERGEANT,IMP,DEMON,NPC,HERO_RANGER,HERO_ROGUE,HERO_WIZARD,HERO_CLERIC};
+    static final int[] CHARACTERS={PLAYER,TROOPER,SERGEANT,IMP,DEMON,NPC,HERO_RANGER,HERO_ROGUE,HERO_WIZARD,HERO_CLERIC,CREATED};
     /** Built-in hero look for a class (Fighter, Ranger, Rogue, Wizard, Cleric). */
     static int heroFor(String cls){if(cls==null)return HERO;switch(cls){case "Ranger":return HERO_RANGER;case "Rogue":return HERO_ROGUE;case "Wizard":return HERO_WIZARD;case "Cleric":return HERO_CLERIC;default:return HERO;}}
-    static boolean isHero(int id){return id==HERO||(id>=HERO_RANGER&&id<=HERO_CLERIC);}
+    static boolean isHero(int id){return id==HERO||(id>=HERO_RANGER&&id<=HERO_CLERIC)||id==CREATED;}
+    /** Drops every rendered picture of a sprite (the created hero's look changed). */
+    static void invalidate(int id){if(cache==null||id<0||id>=COUNT)return;synchronized(lock){for(int f=0;f<FRAMES;f++)cache[id][f]=null;}}
     static boolean hasAngles(int id){for(int c:CHARACTERS)if(c==id)return true;return false;}
     static Sprite get(int id,int frame){return get(id,frame,0);}
     private static int frameSlot(int id,int frame){return hasAngles(id)?frame:PropMesh.fire(id)?(frame&1):0;}
@@ -158,7 +162,7 @@ final class Sprites {
         }
         return null;
     }
-    private static java.io.File diskFile(int id,int f,int view){return diskDir==null?null:new java.io.File(diskDir,id+"_"+f+"_"+view+".spr");}
+    private static java.io.File diskFile(int id,int f,int view){return diskDir==null||id==CREATED?null:new java.io.File(diskDir,id+"_"+f+"_"+view+".spr");}
     private static Sprite loadDisk(int id,int f,int view){
         java.io.File file=diskFile(id,f,view);if(file==null||!file.exists())return null;
         try(java.io.DataInputStream in=new java.io.DataInputStream(new java.io.BufferedInputStream(new java.util.zip.InflaterInputStream(new java.io.FileInputStream(file))))){
@@ -178,6 +182,7 @@ final class Sprites {
     private static Sprite build(int id,int frame,int view){Sprite s=buildHd(id,frame,view);return pixel?pixelate(s,PIXEL_K):s;}
     private static Sprite buildHd(int id,int frame,int view){
         SpriteModels.Model m;float elev;boolean bright=PropMesh.fire(id);
+        if(id==CREATED){MeshModels.Mesh mesh=MeshModels.get(id);if(mesh!=null)return MeshModels.raster(mesh,frame,(float)(view*Math.PI/4),.15f,MODEL_PPU,false);}
         if(PropMesh.has(id)){   // box-modelled objects: the sprite is a picture of the same low-poly model
             MeshModels.Mesh mesh=MeshModels.get(id);
             if(mesh!=null)return MeshModels.raster(mesh,frame,id==RUG?.6f:.55f,id==RUG?.7f:.3f,MODEL_PPU,bright);}

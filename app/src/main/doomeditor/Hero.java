@@ -5,6 +5,9 @@ import java.util.ArrayList;
 /** The player character: class, ability scores, level, hit points, spell points, equipment and inventory. */
 final class Hero {
     Rpg.HeroClass cls;
+    /** Race (null for heroes not made on the creation screen: plain human-ish defaults), name and look. */
+    Rpg.Race race;String name="";CharLook look;
+    boolean relentlessUsed;
     int level=1,xp,gold,maxHp,sp,maxSp;
     final int[] scores=new int[6];
     Rpg.Item weapon,armour,shield;
@@ -16,6 +19,21 @@ final class Hero {
     float wardTime;int wardAC;
     int kills;
 
+    /** A hero made on the character creation screen: its race, class and scores replace the player entity's. */
+    static Hero create(EntityDef d,CharLook look){
+        if(look==null)return create(d);
+        String keep=d==null?null:d.heroClass;boolean keepCustom=d!=null&&d.customAbilities;
+        if(d!=null){d.heroClass=look.cls;d.customAbilities=false;}
+        Hero h;try{h=create(d);}finally{if(d!=null){d.heroClass=keep;d.customAbilities=keepCustom;}}
+        h.cls=Rpg.heroClass(look.cls);h.race=look.raceInfo();h.name=look.name;h.look=look.copy();
+        int[] sc=look.finalScores();int oldCon=Rpg.mod(h.scores[Rpg.CON]);System.arraycopy(sc,0,h.scores,0,6);
+        h.maxHp+=(Rpg.mod(h.scores[Rpg.CON])-oldCon)*h.level;if(h.race.name.equals("Dwarf"))h.maxHp+=h.level;h.maxHp=Math.max(1,h.maxHp);
+        return h;
+    }
+    boolean resists(int damageType){if(race==null)return false;switch(race.name){case "Dwarf":return damageType==Rpg.POISON;case "Tiefling":case "Dragonborn":return damageType==Rpg.FIRE;default:return false;}}
+    boolean lucky(){return race!=null&&race.name.equals("Halfling");}
+    boolean savage(){return race!=null&&race.name.equals("Half-Orc");}
+    boolean darkvision(){return race!=null&&race.darkvision;}
     static Hero create(EntityDef d){
         Hero h=new Hero();h.cls=Rpg.heroClass(d==null?"Fighter":d.heroClass);
         System.arraycopy(h.cls.scores,0,h.scores,0,6);
@@ -70,7 +88,7 @@ final class Hero {
     /** Average hit die + CON per level, more spell points, new spells. */
     void levelUp(){
         level++;
-        int gain=Math.max(1,cls.hitDie/2+1+mod(Rpg.CON));maxHp+=gain;
+        int gain=Math.max(1,cls.hitDie/2+1+mod(Rpg.CON))+(race!=null&&race.name.equals("Dwarf")?1:0);maxHp+=gain;
         if(isCaster())maxSp=Rpg.SPELL_POINTS[Math.min(Rpg.SPELL_POINTS.length-1,level-1)];
         // ability score improvement at 4, 8, 12, 16, 19: +2 to the primary ability (max 20)
         if(level==4||level==8||level==12||level==16||level==19)scores[cls.primary]=Math.min(20,scores[cls.primary]+2);

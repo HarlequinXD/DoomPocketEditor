@@ -370,6 +370,8 @@ public class UiEditorView extends View {
         val("Length",CARD_SECS[nearest(CARD_SEC_V,ss.cardSeconds)],()->pick("Title card length",CARD_SECS,nearest(CARD_SEC_V,ss.cardSeconds),k->{ss.cardSeconds=CARD_SEC_V[k];screenT=0;}));
         tog("Show \"Chapter 1, 2, 3…\"",ss.chapter,()->ss.chapter=!ss.chapter);
         for(Project.GameMap m:project.maps)val("Line under "+m.name,m.card.isEmpty()?"None":m.card,()->text("Title card line for "+m.name,"e.g. \"The road north\"",m.card,t->{m.card=t;screenPreview=0;screenT=0;}));
+        head("Character creation");
+        tog("Create a hero on New Game (race, class, looks, name)",ss.charCreate,()->ss.charCreate=!ss.charCreate);
         head("Death screen");
         tog("Show the death screen",ss.death,()->{ss.death=!ss.death;screenPreview=1;screenT=0;});
         if(ss.death){

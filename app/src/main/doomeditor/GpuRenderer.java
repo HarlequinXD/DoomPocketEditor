@@ -122,7 +122,7 @@ final class GpuRenderer {
     // sector light, sky light and up to 8 point lights (Lambert on the polygon's own normal) with dynamic shadows.
     private static final String FS_SCENE=FS_HEAD+
         "uniform sampler2D uTex;uniform vec3 uCamPos;\n"+
-        "uniform float uFade;uniform int uCount;uniform vec4 uL[8];uniform vec3 uLC[8];uniform int uShadowN;\n"+
+        "uniform float uFade;uniform int uCount;uniform vec4 uL[8];uniform vec3 uLC[8];uniform int uShadowN;uniform float uDark;\n"+
         "uniform vec4 uFog;uniform vec3 uFogC;uniform vec4 uTint;uniform vec4 uHi;uniform float uAlphaCut;uniform float uAffine;uniform float uDither;\n"+
         "uniform sampler2D uShadow;uniform float uShadowOn;\n"+
         "varying vec3 vUvA;varying vec2 vUv;varying vec2 vLight;varying vec3 vWorld;varying float vZ;varying vec4 vId;varying vec3 vTan;varying float vKind;varying vec3 vGi;varying vec3 vEdge;\n"+
@@ -143,6 +143,7 @@ final class GpuRenderer {
         " else N=normalize(vec3(V.xy,0.0001));\n"+
         " vec4 t=texture2D(uTex,uv);if(t.a<uAlphaCut)discard;vec3 alb=t.rgb;\n"+
         " float L=vLight.x;float li;if(vLight.y>0.5)li=31.0;else{li=floor(L+3.0-vZ*uFade);li=clamp(li,max(1.0,floor(L/4.0)),31.0);}\n"+
+        " li=max(li,uDark*clamp(15.0-vZ*1.4,0.0,13.0));\n"+   // darkvision: nearby darkness seen as dim grey light
         " float k=pow(li/31.0,1.25)*1.06;\n"+
         " float hemi=0.55+0.45*N.z;vec3 amb=vec3(k)+vGi*hemi;\n"+
         " if(model)amb*=0.75+0.25*max(0.0,dot(N,normalize(vec3(-0.4,-0.3,0.85))))+0.1;\n"+
@@ -415,8 +416,10 @@ final class GpuRenderer {
     }
 
     // ------------------------------------------------------------------ 3D models (PS1-style vertex-animated meshes)
-    private static final int[][] modelTex=new int[Sprites.COUNT][];
+    private static final int[][] modelTex=new int[Sprites.COUNT][];private static final MeshModels.Mesh[] modelTexOf=new MeshModels.Mesh[Sprites.COUNT];
     private static int[] modelTextures(int id,MeshModels.Mesh m){
+        if(modelTex[id]!=null&&modelTexOf[id]!=m){GLES20.glDeleteTextures(1,modelTex[id],0);modelTex[id]=null;}   // rebuilt mesh (created hero changed)
+        modelTexOf[id]=m;
         if(modelTex[id]==null){int S=m.atlas*MeshModels.TILE;modelTex[id]=new int[]{texture(m.color,S,S,false,true)};}
         return modelTex[id];
     }
@@ -635,7 +638,7 @@ final class GpuRenderer {
         GLES20.glUniform1i(GLES20.glGetUniformLocation(p,"uTex"),0);GLES20.glUniform1i(GLES20.glGetUniformLocation(p,"uShadow"),3);
         GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uShadowOn"),shadows&&nl>0?1:0);GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
         GLES20.glUniform3f(GLES20.glGetUniformLocation(p,"uCamPos"),cx,cy,eye);
-        GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uFade"),r.fadeK);GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uAlphaCut"),-1f);
+        GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uFade"),r.fadeK);GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uDark"),r.darkvision?1f:0f);GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uAlphaCut"),-1f);
         int n=nl;
         for(int j=0;j<n;j++){int i=order[j];lp[j*4]=r.lx[i];lp[j*4+1]=r.ly[i];lp[j*4+2]=r.lz[i];lp[j*4+3]=r.lr2[i];lc[j*3]=r.lcr[i];lc[j*3+1]=r.lcg[i];lc[j*3+2]=r.lcb[i];}
         GLES20.glUniform1i(GLES20.glGetUniformLocation(p,"uShadowN"),Math.min(SHADOW_LIGHTS,n));

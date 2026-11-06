@@ -168,6 +168,31 @@ final class Rpg {
         new HeroClass("Wizard",6,INT,INT,new int[]{8,14,13,15,12,10},new String[]{"quarterstaff","mana_potion","healing_potion"},new String[]{"fire_bolt","magic_missile","shield","burning_hands","fireball"},false,"Fragile master of arcane fire and force."),
         new HeroClass("Cleric",8,WIS,WIS,new int[]{13,10,14,8,15,12},new String[]{"mace","shield","scalemail","healing_potion"},new String[]{"sacred_flame","cure_wounds","shield"},true,"Armoured healer who smites with radiant light."),
     };
+    // ------------------------------------------------------------------ races (the nine Player's Handbook races, 5e rules)
+    static final class Race {
+        final String name,desc,traits;final int[] bonus;final float speed;final boolean darkvision;final int[] skins;
+        Race(String name,int[] bonus,float speed,boolean dv,int[] skins,String traits,String desc){this.name=name;this.bonus=bonus;this.speed=speed;darkvision=dv;this.skins=skins;this.traits=traits;this.desc=desc;}
+        /** Scores after racial bonuses. Half-elves add +1 to the two best abilities other than Charisma. */
+        int[] apply(int[] base){int[] s=base.clone();for(int i=0;i<6;i++)s[i]+=bonus[i];
+            if(name.equals("Half-Elf")){int a=-1,b=-1;for(int i=0;i<5;i++){if(a<0||base[i]>base[a]){b=a;a=i;}else if(b<0||base[i]>base[b])b=i;}s[a]++;s[b]++;}
+            for(int i=0;i<6;i++)s[i]=Math.min(20,s[i]);return s;}
+        String bonusText(){StringBuilder b=new StringBuilder();String[] n={"STR","DEX","CON","INT","WIS","CHA"};
+            for(int i=0;i<6;i++)if(bonus[i]>0){if(b.length()>0)b.append(", ");b.append(n[i]).append(" +").append(bonus[i]);}
+            if(name.equals("Half-Elf"))b.append(", +1 to two others");return b.toString();}
+    }
+    private static final int[] HUMAN_SKIN={0xfff0c8a8,0xffd8a880,0xffc08a64,0xff9a6a48,0xff74482c,0xff4a2e1c};
+    static final Race[] RACES={
+        new Race("Human",new int[]{1,1,1,1,1,1},1f,false,HUMAN_SKIN,"+1 to every ability","Versatile and ambitious, found in every land."),
+        new Race("Elf",new int[]{0,2,0,1,0,0},1f,true,new int[]{0xfff4dcc4,0xffe0bc98,0xffc8a07a,0xff8a6a8a,0xff5a4a6a},"Darkvision · keen senses","Graceful, long-lived and attuned to magic."),
+        new Race("Dwarf",new int[]{0,0,2,0,1,0},.85f,true,new int[]{0xffe8bc98,0xffd0a07a,0xffb08060,0xff8a5a3c,0xff5a3a24},"Darkvision · poison resistance · +1 HP per level · slower","Stout, stubborn folk of stone and steel."),
+        new Race("Halfling",new int[]{0,2,0,0,0,1},.85f,false,HUMAN_SKIN,"Lucky (rerolls natural 1s on attacks) · slower","Small, cheerful and surprisingly brave."),
+        new Race("Gnome",new int[]{0,0,1,2,0,0},.85f,true,new int[]{0xfff0d0b0,0xffd8b090,0xffb88a68,0xff8a6448},"Darkvision · slower","Tiny tinkerers bursting with curiosity."),
+        new Race("Half-Elf",new int[]{0,0,0,0,0,2},1f,true,HUMAN_SKIN,"Darkvision","Between two worlds, at home in neither."),
+        new Race("Half-Orc",new int[]{2,0,1,0,0,0},1f,true,new int[]{0xff8a9a68,0xff6a7a50,0xff9a9a88,0xff7a8a7a,0xffa0886a},"Darkvision · relentless (once per map, drop to 1 HP instead of 0) · savage crits","Fierce and strong, with orcish blood."),
+        new Race("Tiefling",new int[]{0,0,0,1,0,2},1f,true,new int[]{0xffb83a32,0xff8a2a3a,0xff6a3a7a,0xffc87a6a,0xff4a3a5a,0xffd8a890},"Darkvision · fire resistance · horns and tail","Marked by an infernal bloodline."),
+        new Race("Dragonborn",new int[]{2,0,0,0,0,1},1f,false,new int[]{0xffb08a3a,0xff9a5a2a,0xffb03a2a,0xff3a5aa0,0xff3a8a4a,0xffd8d8d0,0xff2a2a30,0xffd0b040,0xffa0a8b0,0xffb86a40},"Fire resistance · draconic scales","Proud dragon-folk with scales of many colours."),
+    };
+    static Race race(String name){if(name!=null)for(Race r:RACES)if(r.name.equalsIgnoreCase(name))return r;return RACES[0];}
     static ArrayList<HeroClass> CLASSES=new ArrayList<>(java.util.Arrays.asList(BUILTIN_CLASSES));
     static final String CLASSES_JOINED;
     static{String[] n=new String[BUILTIN_CLASSES.length];for(int i=0;i<n.length;i++)n[i]=BUILTIN_CLASSES[i].name;CLASSES_JOINED=Sprites.join(n);}

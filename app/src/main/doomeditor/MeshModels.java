@@ -27,6 +27,8 @@ final class MeshModels {
         Mesh m=null;try{m=build(id);}catch(Throwable t){m=null;}
         synchronized(cache){if(m==null){failed[id]=true;return null;}if(cache[id]==null)cache[id]=m;return cache[id];}
     }
+    /** Forgets a built mesh so it is made again on next use (the created hero's look changed). */
+    static void invalidate(int id){if(id<0||id>=Sprites.COUNT)return;synchronized(cache){cache[id]=null;failed[id]=false;}}
     /** Builds the character meshes ahead of time (loading screen), so the first fight doesn't hitch. */
     static void warm(){for(int id:new int[]{Sprites.HERO,Sprites.SKELETON,Sprites.GOBLIN,Sprites.ORC,Sprites.CULTIST,Sprites.VILLAGER,Sprites.HERO_RANGER,Sprites.HERO_ROGUE,Sprites.HERO_WIZARD,Sprites.HERO_CLERIC})get(id);}
     // ------------------------------------------------------------------ build

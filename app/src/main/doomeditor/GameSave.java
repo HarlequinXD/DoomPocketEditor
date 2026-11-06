@@ -82,7 +82,7 @@ final class GameSave {
         JSONObject st=o.optJSONObject("shopStock");if(st!=null){Iterator<String> k=st.keys();while(k.hasNext()){String key=k.next();ses.shopStock.put(key,st.optInt(key,0));}}
         JSONObject meta=o.optJSONObject("meta");if(meta!=null)ses.playTime=(float)meta.optDouble("playTime",0);
         World w=new World(p,sfx,mapNum,null,"",ses);
-        Hero h=readHero(o.optJSONObject("hero"),p);if(h!=null){w.hero=h;w.weapon=h.weaponOrFists().fp;}
+        Hero h=readHero(o.optJSONObject("hero"),p);if(h!=null){w.hero=h;w.weapon=h.weaponOrFists().fp;w.applyHeroLook();}
         JSONObject pl=o.optJSONObject("player");
         if(pl!=null){float x=(float)pl.optDouble("x",w.player.x),y=(float)pl.optDouble("y",w.player.y);
             if(w.level.sectorAt(x,y)>=0){w.player.x=x;w.player.y=y;w.player.z=w.floorAt(x,y);}
@@ -99,12 +99,14 @@ final class GameSave {
         o.put("maxHp",h.maxHp);o.put("sp",h.sp);o.put("maxSp",h.maxSp);o.put("selectedSpell",h.selectedSpell);
         JSONArray sc=new JSONArray();for(int v:h.scores)sc.put(v);o.put("scores",sc);
         JSONArray inv=new JSONArray();for(Hero.Stack s:h.inventory){JSONObject j=new JSONObject();j.put("id",s.item.id);j.put("count",s.count);inv.put(j);}o.put("inventory",inv);
+        if(h.look!=null)o.put("look",h.look.toJson());
         o.put("weapon",h.weapon==null?"":h.weapon.id);o.put("armour",h.armour==null?"":h.armour.id);o.put("shield",h.shield==null?"":h.shield.id);
         return o;
     }
     private static Hero readHero(JSONObject o,Project p){
         if(o==null)return null;
-        Hero h=Hero.create(p.playerDef());
+        JSONObject lk=o.optJSONObject("look");CharLook look=lk==null?null:CharLook.fromJson(lk);
+        Hero h=look!=null?Hero.create(p.playerDef(),look):Hero.create(p.playerDef());
         h.cls=Rpg.heroClass(o.optString("class",h.cls.name));
         h.level=Math.max(1,o.optInt("level",1));h.xp=o.optInt("xp",0);h.gold=o.optInt("gold",0);h.maxHp=Math.max(1,o.optInt("maxHp",h.maxHp));
         h.sp=o.optInt("sp",h.sp);h.maxSp=o.optInt("maxSp",h.maxSp);

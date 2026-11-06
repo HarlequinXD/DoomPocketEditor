@@ -27,7 +27,8 @@ final class PropMesh {
     static float flameZ(int id){switch(id){case Sprites.TORCH:return 1.12f;case Sprites.BRAZIER:return .95f;case Sprites.CAMPFIRE:return .12f;case Sprites.FIREPLACE:return .16f;case Sprites.CANDELABRA:return 1.3f;case Sprites.CANDLE:return .2f;default:return -1;}}
     static boolean bigFire(int id){return id==Sprites.CAMPFIRE||id==Sprites.FIREPLACE||id==Sprites.BRAZIER;}
 
-    static MeshModels.Mesh build(int id){
+    static MeshModels.Mesh build(int id){synchronized(BoxMesh.class){return make(id);}}
+    private static MeshModels.Mesh make(int id){
         SpriteModels.Model m=new SpriteModels.Model();mats(id,m);
         MeshModels.Mesh out=new MeshModels.Mesh();out.atlas=4;
         for(int f=0;f<Sprites.FRAMES;f++){BoxMesh.begin(m);shape(id,f);out.frames[f]=BoxMesh.end();}
