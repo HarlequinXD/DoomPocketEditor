@@ -33,6 +33,42 @@ final class Textures {
      * texture's own brightness, softened and stretched to its full range, so mortar and cracks sink and bricks,
      * planks and stones stand out; the normal is the slope of that height.
      */
+    /** Average colour of each texture (0..1 RGB), used for bounce light colour. */
+    static float[] average(int t){int[] p=base[t];float r=0,g=0,b=0;for(int c:p){r+=(c>>16)&255;g+=(c>>8)&255;b+=c&255;}float n=p.length*255f;return new float[]{r/n,g/n,b/n};}
+    /** Physically based material values by texture: {smoothness 0..1, metalness 0..1}. */
+    static float[] pbr(int t){
+        String n=NAMES[t].toLowerCase(java.util.Locale.US);float sm=.25f,me=0;
+        if(n.contains("wood")||n.contains("plank")||n.contains("oak")||n.contains("birch")||n.contains("timber")||n.contains("bark")||n.contains("bookshel")||n.contains("shingle")||n.contains("supports"))sm=.35f;
+        if(n.contains("grass")||n.contains("dirt")||n.contains("sand")||n.contains("gravel")||n.contains("thatch")||n.contains("ash floor")||n.contains("forest")||n.contains("rug")||n.contains("carpet")||n.contains("banner")||n.contains("wattle")||n.contains("snow"))sm=.08f;
+        if(n.contains("marble")||n.contains("tiles")||n.contains("mosaic")||n.contains("moonstone"))sm=.75f;
+        if(n.contains("obsidian")||n.contains("black granite")||n.contains("crystal")||n.contains("stained glass"))sm=.85f;
+        if(n.contains("wet")||n.contains("damp")||n.contains("slime")||n.contains("bog"))sm=.6f;
+        if(n.contains("water")||n.contains("blood pool")||n.contains("ice"))sm=.93f;
+        if(n.contains("lava"))sm=.5f;
+        if(n.contains("iron")||n.contains("bars")||n.contains("grate")||n.contains("portcullis")){me=.85f;sm=.55f;}
+        if(n.contains("rusted")){me=.45f;sm=.2f;}
+        if(n.contains("bronze")||n.contains("filigree")||n.contains("gold")){me=.9f;sm=.65f;}
+        if(n.contains("banded door")||n.contains("chained")||n.contains("ore vein")||n.contains("rune bands")){me=.35f;sm=.4f;}
+        return new float[]{sm,me};
+    }
+    /**
+     * Material map for a texture: R = smoothness, G = metalness, B = ambient occlusion. Smoothness follows the
+     * material type and the height map: raised, worn faces are smoother than mortar and cracks. Metal parts are
+     * found by colour (grey or golden texels in a metal texture). Cavities that sit below their surroundings get
+     * ambient occlusion.
+     */
+    static int[] material(int t){
+        int[] rel=relief(t),src=base[t];int S=SIZE,n=S*S;float[] pb=pbr(t);float[] h=new float[n],wide=new float[n];
+        for(int i=0;i<n;i++)h[i]=((rel[i]>>>24)&255)/255f;
+        for(int y=0;y<S;y++)for(int x=0;x<S;x++){float sum=0;for(int dy=-3;dy<=3;dy++)for(int dx=-3;dx<=3;dx++)sum+=h[((y+dy)&(S-1))*S+((x+dx)&(S-1))];wide[y*S+x]=sum/49f;}
+        int[] out=new int[n];
+        for(int i=0;i<n;i++){int c=src[i];float r=((c>>16)&255)/255f,g=((c>>8)&255)/255f,b=(c&255)/255f,mx=Math.max(r,Math.max(g,b)),mn=Math.min(r,Math.min(g,b));
+            float sm=pb[0]*(.65f+.5f*h[i]);float me=pb[1];
+            if(me>0){boolean metalish=(mx-mn<.12f&&mx>.25f)||(r>g&&g>b&&r-b>.2f&&mx>.35f);me=metalish?me:me*.25f;}
+            float ao=1-Math.max(0,Math.min(.6f,(wide[i]-h[i])*2.2f));
+            out[i]=0xff000000|(Math.round(Math.min(1,sm)*255)<<16)|(Math.round(me*255)<<8)|Math.round(ao*255);}
+        return out;
+    }
     static int[] relief(int t){
         int[] src=base[t];int S=SIZE,n=S*S;float[] h=new float[n],b=new float[n];
         for(int i=0;i<n;i++){int c=src[i];h[i]=(((c>>16)&255)*.3f+((c>>8)&255)*.59f+(c&255)*.11f)/255f;}
