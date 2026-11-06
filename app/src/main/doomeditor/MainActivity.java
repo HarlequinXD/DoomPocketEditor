@@ -27,6 +27,7 @@ public class MainActivity extends Activity implements UiHost {
         super.onCreate(state); Renderer.loadPrefs(this);
         String crash = getSharedPreferences(DoomApp.CRASH_PREFS, 0).getString(DoomApp.CRASH_KEY, null);
         if (crash != null) { showCrash(crash); return; }
+        if (state == null) { String exit = Diag.previousExit(this); if (exit != null) { showCrash(exit); return; } }
         if (state != null) { showTitle(); handleViewIntent(getIntent()); return; }
         // fresh launch: loading screen, then the project manager
         fullscreen();

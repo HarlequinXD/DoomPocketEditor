@@ -1252,6 +1252,8 @@ public class EditorView extends View {
         if(pl!=null&&pl.alive)deathSave=null;else if(deathTime>0&&deathTime<dt*1.5f)deathSave=GameSave.latest(getContext(),project);
     }
     private GameSave.Info deathSave;
+    String diagState(){if(world==null)return "";int alive=0;for(Actor a:world.actors)if(a.alive&&!a.removed&&!a.isPlayer)alive++;
+        return renderer.stats()+", actors "+world.actors.size()+" ("+alive+" alive), drops "+world.drops.size()+", splats "+world.splats.size()+", particles "+(world.particles==null?0:world.particles.n);}
     private static final int H_POPUP=560;
     /** Show Popup action: a themed box with the title, wrapped text and one or two buttons. */
     private void drawPopup(Canvas c){
@@ -1313,6 +1315,7 @@ public class EditorView extends View {
         if(world.pickupFlash>0)renderer.tint(world.flashColor,world.pickupFlash*.35f);
         if(!pl.alive)renderer.tint(0xff800000,.35f);
         renderer.present(c,view3d);
+        Diag.noteState(getContext(),this);
         if(world.weather>0)weather.draw(c,p,world.weather,w,h,Math.min(dt,.05f),world.camAngle(),ui.dp);
         if(mapFade>0){ui.rect(c,0,0,w,h,((int)(Math.min(1,mapFade)*255))<<24);mapFade-=dt*2.2f;}
         if(tp&&pl.alive){float mx=w*.5f,my=h*.5f;p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(1.5f));p.setColor(0xccffffff);

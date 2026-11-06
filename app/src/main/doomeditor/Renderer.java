@@ -51,6 +51,8 @@ final class Renderer {
     static void loadPrefs(android.content.Context c){try{android.content.SharedPreferences p=c.getSharedPreferences("app",0);useGpu=p.getBoolean("gpu",true);gpuLines=p.getInt("gpuLines",270);GpuRenderer.relief=p.getBoolean("relief",true);GpuRenderer.pbr=p.getBoolean("pbr",true);GpuRenderer.gi=p.getBoolean("gi",true);GpuRenderer.shadows=p.getBoolean("shadows",true);}catch(Throwable ignored){}}
     static void savePrefs(android.content.Context c){try{c.getSharedPreferences("app",0).edit().putBoolean("gpu",useGpu).putInt("gpuLines",gpuLines).putBoolean("relief",GpuRenderer.relief).putBoolean("pbr",GpuRenderer.pbr).putBoolean("gi",GpuRenderer.gi).putBoolean("shadows",GpuRenderer.shadows).apply();}catch(Throwable ignored){}}
     boolean onGpu(){return gpu!=null;}
+    /** One-line state for crash diagnostics. */
+    String stats(){return (gpu!=null?"GPU "+W+"x"+H+" (size step "+dynLevel+"), last frame "+Math.round(frameAvg)+" ms":"software "+W+"x"+H)+", lights "+lightCount;}
     // dynamic resolution: if frames get slow (big fights, lots of lights) the 3D picture drops a size until it's
     // smooth again, then climbs back; a very slow frame drops straight to the smallest size so the phone never stalls
     private static final float[] DYN={1f,.85f,.72f,.6f,.5f};
