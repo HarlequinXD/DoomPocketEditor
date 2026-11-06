@@ -14,10 +14,22 @@ final class MeshModels {
     private MeshModels(){}
     static final int TILE=64;
 
-    /** One animation frame: per vertex x,y,z, normal x,y,z, u,v, glow (0/1). */
+    /** One animation frame: per vertex x,y,z, normal x,y,z (texture coordinates and glow are shared: Mesh.uvg). While building: 9 floats per vertex. */
     static final class Frame {float[] v;int count;}
     /** All frames of one built-in sprite plus its texture atlases (colour, relief = normal+height, material). */
-    static final class Mesh {Frame[] frames=new Frame[Sprites.FRAMES];int atlas;int[] color,relief,mat;}
+    static final class Mesh {Frame[] frames=new Frame[Sprites.FRAMES];int atlas;int[] color,relief,mat;
+        /** Per vertex u, v, glow — the same in every frame. */
+        float[] uvg;}
+    /**
+     * Keeps only what changes per frame (position and normal) and stores texture coordinates once: a character with
+     * 26 animation poses then costs about 36 KB per pose instead of 54 KB.
+     */
+    static void pack(Mesh m){
+        Frame f0=m.frames[0];if(f0==null)return;int n=f0.count;m.uvg=new float[n*3];
+        for(int i=0;i<n;i++){m.uvg[i*3]=f0.v[i*9+6];m.uvg[i*3+1]=f0.v[i*9+7];m.uvg[i*3+2]=f0.v[i*9+8];}
+        for(int f=0;f<m.frames.length;f++){Frame fr=m.frames[f];if(fr==null){m.frames[f]=f0;continue;}if(fr.v.length==fr.count*6)continue;
+            float[] p=new float[fr.count*6];for(int i=0;i<fr.count;i++)System.arraycopy(fr.v,i*9,p,i*6,6);fr.v=p;}
+    }
 
     private static final Mesh[] cache=new Mesh[Sprites.COUNT];private static final boolean[] failed=new boolean[Sprites.COUNT];
     /** The mesh for a built-in sprite id (built on first use, then kept); null if it has none. */
@@ -42,7 +54,7 @@ final class MeshModels {
         int[] lv=plan(first);
         int n=Math.max(1,first.mats.size());int g=1;while(g*g<n)g++;out.atlas=g;
         for(int f=0;f<Sprites.FRAMES;f++){SpriteModels.Model m=f==0?first:model(id,f);if(m==null)m=first;out.frames[f]=mesh(m,lv,g);}
-        paint(out,first,g);
+        paint(out,first,g);pack(out);
         return out;
     }
     private static SpriteModels.Model model(int id,int frame){
@@ -221,7 +233,8 @@ final class MeshModels {
         float[] dH={-cy,-sy,0},u={sy,-cy,0},w={dH[0]*ce,dH[1]*ce,-se},up={dH[0]*se,dH[1]*se,ce};
         float lx=-.55f*u[0]+.78f*up[0]-.42f*w[0],ly=-.55f*u[1]+.78f*up[1]-.42f*w[1],lz=-.55f*u[2]+.78f*up[2]-.42f*w[2];float ll=(float)Math.sqrt(lx*lx+ly*ly+lz*lz);lx/=ll;ly/=ll;lz/=ll;
         int n=fr.count;float[] X=new float[n],Y=new float[n],Z=new float[n];float half=0,top=-1e9f,bot=1e9f;
-        for(int i=0;i<n;i++){int o=i*9;float px=fr.v[o],py=fr.v[o+1],pz=fr.v[o+2];
+        float[] uvg=m.uvg;
+        for(int i=0;i<n;i++){int o=i*6;float px=fr.v[o],py=fr.v[o+1],pz=fr.v[o+2];
             X[i]=px*u[0]+py*u[1]+pz*u[2];Y[i]=px*up[0]+py*up[1]+pz*up[2];Z[i]=px*w[0]+py*w[1]+pz*w[2];
             half=Math.max(half,Math.abs(X[i]));top=Math.max(top,Y[i]);bot=Math.min(bot,Y[i]);}
         int W=Math.max(2,(int)Math.ceil(half*ppu)*2+2),H=Math.max(2,(int)Math.ceil((top-bot)*ppu)+2);
@@ -231,17 +244,17 @@ final class MeshModels {
             float[] sxv=new float[3],syv=new float[3];
             for(int k=0;k<3;k++){sxv[k]=W*.5f+X[t+k]*ppu;syv[k]=H-1-(Y[t+k]-bot)*ppu;}
             float area=(sxv[1]-sxv[0])*(syv[2]-syv[0])-(sxv[2]-sxv[0])*(syv[1]-syv[0]);if(Math.abs(area)<1e-6f)continue;
-            int o=t*9;float nx=fr.v[o+3]+fr.v[o+12]+fr.v[o+21],ny=fr.v[o+4]+fr.v[o+13]+fr.v[o+22],nz=fr.v[o+5]+fr.v[o+14]+fr.v[o+23];
+            int o=t*6,q=t*3;float nx=fr.v[o+3]+fr.v[o+9]+fr.v[o+15],ny=fr.v[o+4]+fr.v[o+10]+fr.v[o+16],nz=fr.v[o+5]+fr.v[o+11]+fr.v[o+17];
             float nl=(float)Math.sqrt(nx*nx+ny*ny+nz*nz);if(nl>0){nx/=nl;ny/=nl;nz/=nl;}
             if(nx*w[0]+ny*w[1]+nz*w[2]>0){nx=-nx;ny=-ny;nz=-nz;}
-            boolean glow=fr.v[o+8]>.5f;float shade=glow?1.1f:.42f+.68f*Math.max(0,nx*lx+ny*ly+nz*lz);
+            boolean glow=uvg[q+2]>.5f;float shade=glow?1.1f:.42f+.68f*Math.max(0,nx*lx+ny*ly+nz*lz);
             int x0=Math.max(0,(int)Math.floor(Math.min(sxv[0],Math.min(sxv[1],sxv[2])))),x1=Math.min(W-1,(int)Math.ceil(Math.max(sxv[0],Math.max(sxv[1],sxv[2]))));
             int y0=Math.max(0,(int)Math.floor(Math.min(syv[0],Math.min(syv[1],syv[2])))),y1=Math.min(H-1,(int)Math.ceil(Math.max(syv[0],Math.max(syv[1],syv[2]))));
             for(int py=y0;py<=y1;py++)for(int px=x0;px<=x1;px++){float qx=px+.5f,qy=py+.5f;
                 float b0=((sxv[1]-qx)*(syv[2]-qy)-(sxv[2]-qx)*(syv[1]-qy))/area,b1=((sxv[2]-qx)*(syv[0]-qy)-(sxv[0]-qx)*(syv[2]-qy))/area,b2=1-b0-b1;
                 if(b0<-1e-4f||b1<-1e-4f||b2<-1e-4f)continue;
                 float z=b0*Z[t]+b1*Z[t+1]+b2*Z[t+2];int pi=py*W+px;if(z>=zb[pi])continue;zb[pi]=z;
-                float tu=b0*fr.v[o+6]+b1*fr.v[o+15]+b2*fr.v[o+24],tv=b0*fr.v[o+7]+b1*fr.v[o+16]+b2*fr.v[o+25];
+                float tu=b0*uvg[q]+b1*uvg[q+3]+b2*uvg[q+6],tv=b0*uvg[q+1]+b1*uvg[q+4]+b2*uvg[q+7];
                 int c=m.color[Math.min(S-1,Math.max(0,(int)(tv*S)))*S+Math.min(S-1,Math.max(0,(int)(tu*S)))];
                 sp.px[pi]=0xff000000|(c255(((c>>16)&255)/255f*shade)<<16)|(c255(((c>>8)&255)/255f*shade)<<8)|c255((c&255)/255f*shade);}
         }

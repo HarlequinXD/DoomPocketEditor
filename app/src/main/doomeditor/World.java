@@ -241,7 +241,8 @@ final class World {
             a.wishActive=false;
             if(a.fsm!=null)a.fsm.tick(this,a,dt);
             physics(a,dt);
-            if(a.painTimer>0)a.painTimer-=dt;if(a.attackTimer>0)a.attackTimer-=dt;
+            a.clock+=dt;if(a.attackTimer>a.attackPrev+1e-4f)a.attackLen=a.attackTimer;if(a.landTimer>0)a.landTimer-=dt;
+            if(a.painTimer>0)a.painTimer-=dt;if(a.attackTimer>0)a.attackTimer-=dt;a.attackPrev=Math.max(0,a.attackTimer);
             if(!a.alive)a.deadTime+=dt;
             if(a.animClip!=null)a.animTime+=dt*a.animSpeed;
             if(a.projectileType>=0)projectileStep(a,dt);
@@ -385,8 +386,9 @@ final class World {
         if(a.noGravity){a.z+=a.vz*dt;a.vz*=Math.max(0,1-4*dt);if(a.z<floor)a.z=floor;a.onGround=a.z<=floor+.01f;}
         else if(a.z>floor+.001f||a.vz>0){
             a.vz-=GRAVITY*dt;a.z+=a.vz*dt;
-            if(a.z<=floor){if(a.isPlayer&&a.vz<-8f)sound(SoundFx.OOF,a);a.z=floor;a.vz=0;a.onGround=true;}else a.onGround=false;
+            if(a.z<=floor){if(a.isPlayer&&a.vz<-8f)sound(SoundFx.OOF,a);if(a.airTime>.18f&&a.vz<-2.5f)a.landTimer=a.landLen=Math.min(.42f,.16f-a.vz*.025f);a.z=floor;a.vz=0;a.onGround=true;}else a.onGround=false;
         }else{a.z=floor;a.vz=0;a.onGround=true;}
+        if(a.onGround)a.airTime=0;else a.airTime+=dt;
         if(a.z+a.height>ceil){a.z=Math.max(floor,ceil-a.height);if(a.vz>0)a.vz=0;}
     }
     /** Highest floor under the actor's footprint so it stands on ledges like Doom. */

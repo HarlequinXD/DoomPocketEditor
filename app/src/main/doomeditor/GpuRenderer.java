@@ -425,18 +425,19 @@ final class GpuRenderer {
     }
     private boolean model(Level level,Renderer.SpriteDraw d){
         MeshModels.Mesh mm=MeshModels.get(d.model);if(mm==null)return false;
-        MeshModels.Frame A=mm.frames[Math.max(0,Math.min(Sprites.FRAMES-1,d.fa))],B=mm.frames[Math.max(0,Math.min(Sprites.FRAMES-1,d.fb))];
+        int nf=mm.frames.length;MeshModels.Frame A=mm.frames[Math.max(0,Math.min(nf-1,d.fa))],B=mm.frames[Math.max(0,Math.min(nf-1,d.fb))];if(mm.uvg==null)return false;
         if(A==null)return false;boolean blend=B!=null&&B.count==A.count&&d.lerp>.001f;float t=blend?d.lerp:0;
         float dx=d.x-cx,dy=d.y-cy;if(dx*cs+dy*sn<-2f)return true;   // behind the camera
         int[] tex=modelTextures(d.model,mm);
         int si=level.sectorAt(d.x,d.y);int L=si<0?24:Renderer.lightLevel(level.sectors.get(si).light);setGi(si);
         float ca=(float)Math.cos(d.angle),sa=(float)Math.sin(d.angle);
         int n=A.count,first=nv;ensure(n);float[] a=A.v,b=blend?B.v:A.v;boolean bright=d.bright;
-        for(int i=0;i<n;i++){int k=i*9;
+        float[] uvg=mm.uvg;
+        for(int i=0;i<n;i++){int k=i*6,q=i*3;
             float mx=a[k]+(b[k]-a[k])*t,my=a[k+1]+(b[k+1]-a[k+1])*t,mz=a[k+2]+(b[k+2]-a[k+2])*t;
             float nx=a[k+3]+(b[k+3]-a[k+3])*t,ny=a[k+4]+(b[k+4]-a[k+4])*t,nz=a[k+5]+(b[k+5]-a[k+5])*t;
             int o=nv*ST;
-            vtx(d.x+ca*mx-sa*my,d.y+sa*mx+ca*my,d.z+mz,a[k+6],a[k+7],L,(bright||a[k+8]>.5f)?1:0,d.pickId);
+            vtx(d.x+ca*mx-sa*my,d.y+sa*mx+ca*my,d.z+mz,uvg[q],uvg[q+1],L,(bright||uvg[q+2]>.5f)?1:0,d.pickId);
             verts[o+11]=ca*nx-sa*ny;verts[o+12]=sa*nx+ca*ny;verts[o+13]=nz;verts[o+14]=3;}
         batches.add(new int[]{tex[0],first,n,5});
         return true;

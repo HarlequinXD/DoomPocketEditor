@@ -8,6 +8,8 @@ final class Actor {
     int health,sprite;
     boolean alive=true,removed,countedItem,solid,shootable,visible=true,invulnerable,noGravity,onGround,blocked,wishActive,isPlayer,touching,corpse;
     float painTimer,attackTimer,walkPhase,moveDist,deadTime,reactTimer;
+    /** Animation timing: how long the current attack lasts, the landing recovery, time in the air, a running clock. */
+    float attackLen,attackPrev,landTimer,landLen,airTime,clock;
     int sectorHint=-1;
     Actor target;
     /** Animation chosen by the FSM (null = automatic: idle/walk/attack/pain/death picked by the engine). */

@@ -71,9 +71,10 @@ final class BoxMesh {
     private static MeshModels.Mesh make(Spec sp,int paintId){
         S=sp;G=4;for(int i=0;i<16;i++)glowTile[i]=i<sp.m.mats.size()&&sp.m.mats.get(i).glow;
         MeshModels.Mesh out=new MeshModels.Mesh();out.atlas=G;
-        for(int f=0;f<Sprites.FRAMES;f++)out.frames[f]=frame(f);
+        out.frames=new MeshModels.Frame[ANIM_FRAMES];
+        for(int f=0;f<ANIM_FRAMES;f++)out.frames[f]=frame(f);
         MeshModels.paint(out,sp.m,G);
-        paintFace(out);paintExtra(out,paintId);
+        paintFace(out);paintExtra(out,paintId);MeshModels.pack(out);
         S=null;buf=null;
         return out;
     }
@@ -176,97 +177,206 @@ final class BoxMesh {
         return s;
     }
 
-    // ------------------------------------------------------------------ posing
+    // ------------------------------------------------------------------ animation
+    /**
+     * Animation poses. 0-5 are the classic frames (idle, walk A, walk B, attack, pain, dead) and the rest give smooth,
+     * grounded motion: a breathing idle, 6-pose walk and run cycles (feet placed by IK: heel strike, roll, toe off,
+     * swing; a flight phase when running), jump take-off, in-air, falling, landing, and a three-stage attack
+     * (wind-up, strike, follow-through) shaped for each weapon. The renderer blends neighbouring poses.
+     */
+    static final int A_IDLE2=6,A_WALK=7,A_RUN=13,A_JUMP=19,A_AIR=20,A_FALL=21,A_LAND=22,A_WINDUP=23,A_STRIKE=24,A_FOLLOW=25,ANIM_FRAMES=26,CYCLE=6;
+    /** Distance covered by one full walk / run cycle (two steps), in grid units. */
+    static final float WALK_STRIDE=1.35f,RUN_STRIDE=2.4f,RUN_SPEED=3.6f;
+    static final class Anim {
+        float bob=-.015f,sway,lean=.02f,twist,headPitch,headYaw;
+        float[] fL,fR;float pL,pR;            // foot sole targets on the ground (x forward, y right, z up) and toe pitch (+ = toes up)
+        float swL=.06f,swR=.06f,elL=.25f,elR=.25f,spread;   // free arms: forward swing, elbow bend, sideways lift
+        int atk=-1;boolean dead,pain,air;     // atk: 0 wind-up, 1 strike, 2 follow-through
+        float handSwing,handLift,trail=.03f,tailSway,robeSway;
+    }
+    private static float smooth(float x){x=Math.max(0,Math.min(1,x));return x*x*(3-2*x);}
+    private static float cosT(float t){return (float)Math.cos(2*Math.PI*t);}
+    /** One foot through a step: {x, height, toe pitch} at cycle phase t (0 = heel strike, front). */
+    private static float[] footPath(float t,boolean run){
+        t=t-(float)Math.floor(t);float st=run?.38f:.6f,half=run?.5f:.3f,lift=run?.26f:.085f;
+        if(t<st){float s=t/st;float pitch=s<.15f?(run?.15f:.35f)*(1-s/.15f):s>.7f?-(run?.85f:.55f)*(s-.7f)/.3f:0;return new float[]{half-2*half*s,0,pitch};}
+        float s=(t-st)/(1-st),e=smooth(s);float x=-half+2*half*e;if(run)x-=.22f*(float)Math.sin(Math.PI*s)*(1-s);
+        float z=lift*(float)Math.sin(Math.PI*Math.pow(s,run?.7f:.85f));float pitch=-(run?.85f:.55f)*(1-s)*(1-s)+(s>.75f?(run?.15f:.35f)*(s-.75f)/.25f:0);
+        return new float[]{x,z,pitch};
+    }
+    private static void cycle(Anim A,float t,boolean run,float hw){
+        float[] l=footPath(t,run),r=footPath(t+.5f,run);
+        A.fL=v(l[0],-hw,l[1]);A.pL=l[2];A.fR=v(r[0],hw,r[1]);A.pR=r[2];
+        float c2=(float)Math.cos(4*Math.PI*(t-(run?.19f:0)));
+        A.bob=run?-.04f-.035f*c2:-.02f-.014f*c2;
+        A.sway=-(run?.01f:.018f)*cosT(t-(run?.19f:.3f));
+        float amp=run?.7f:.32f;A.swR=amp*cosT(t);A.swL=-amp*cosT(t);
+        A.elR=run?1.45f:.25f+.3f*Math.max(0,A.swR)/amp;A.elL=run?1.45f:.25f+.3f*Math.max(0,A.swL)/amp;
+        A.twist=-(run?.16f:.08f)*cosT(t);A.headYaw=-A.twist*.8f;A.lean=run?.22f:.06f;A.headPitch=run?-.2f:-.03f;
+        A.handSwing=run?.12f:.07f;A.handLift=run?.04f:0;A.trail=run?.26f:.12f;A.tailSway=.09f*(float)Math.sin(2*Math.PI*t);A.robeSway=(l[0]+r[0])*.25f;
+    }
+    /** The pose for animation frame f. */
+    private static Anim anim(int f,Spec sp,SpriteModels.Body b){
+        Anim A=new Anim();float hw=b.hipW;A.fL=v(.02f,-hw,0);A.fR=v(-.02f,hw,0);
+        switch(f){
+            case Sprites.F_DEAD:A.dead=true;A.fL=v(.05f,-hw-.05f,0);A.fR=v(-.1f,hw+.06f,0);A.bob=-.02f;A.swL=.25f;A.swR=.15f;return A;   // laid down afterwards
+            case Sprites.F_PAIN:A.pain=true;A.lean=-.28f;A.headPitch=-.3f;A.bob=-.07f;A.fL=v(.12f,-hw,0);A.fR=v(-.12f,hw,0);A.pR=-.3f;A.swL=.6f;A.swR=.5f;A.elL=A.elR=.6f;A.spread=.35f;A.twist=.15f;break;
+            case A_IDLE2:A.bob=-.008f;A.lean=-.012f;A.swL=A.swR=.09f;A.spread=.04f;A.headPitch=-.03f;break;
+            case Sprites.F_WALK1:cycle(A,0,false,hw);break;
+            case Sprites.F_WALK2:cycle(A,.5f,false,hw);break;
+            case A_JUMP:A.air=true;A.bob=.03f;A.fL=v(.16f,-hw,.24f);A.pL=-.3f;A.fR=v(-.15f,hw,.07f);A.pR=-.85f;A.swL=1.3f;A.swR=-.45f;A.elL=.6f;A.elR=.3f;A.lean=-.04f;A.trail=.2f;A.headPitch=-.1f;A.handLift=.08f;break;
+            case A_AIR:A.air=true;A.bob=.04f;A.fL=v(.09f,-hw*1.25f,.23f);A.pL=-.25f;A.fR=v(-.05f,hw*1.25f,.16f);A.pR=-.45f;A.swL=A.swR=.9f;A.spread=.7f;A.elL=A.elR=.4f;A.lean=.06f;A.trail=.22f;A.handLift=.1f;break;
+            case A_FALL:A.air=true;A.bob=0;A.fL=v(.11f,-hw*1.15f,.04f);A.pL=.1f;A.fR=v(-.04f,hw*1.15f,.1f);A.pR=-.25f;A.swL=A.swR=1.55f;A.spread=.9f;A.elL=A.elR=.3f;A.lean=-.05f;A.trail=.28f;A.headPitch=.18f;A.handLift=.12f;break;
+            case A_LAND:A.bob=-.28f;A.fL=v(.13f,-hw*1.4f,0);A.fR=v(-.07f,hw*1.4f,0);A.pR=-.15f;A.lean=.36f;A.headPitch=-.38f;A.swL=A.swR=.55f;A.spread=.35f;A.elL=A.elR=.5f;A.trail=.06f;A.handLift=-.06f;break;
+            case Sprites.F_ATTACK:case A_STRIKE:attackPose(A,sp,1,hw);break;
+            case A_WINDUP:attackPose(A,sp,0,hw);break;
+            case A_FOLLOW:attackPose(A,sp,2,hw);break;
+            default:
+                if(f>=A_WALK&&f<A_WALK+CYCLE)cycle(A,(f-A_WALK)/(float)CYCLE,false,hw);
+                else if(f>=A_RUN&&f<A_RUN+CYCLE)cycle(A,(f-A_RUN)/(float)CYCLE,true,hw);
+        }
+        if(sp.crouch&&!A.dead&&!A.pain){A.lean+=.25f;A.bob-=.08f;A.headPitch-=.2f;}
+        return A;
+    }
+    /** Body and feet for an attack stage (0 wind-up, 1 strike, 2 follow-through); the hands come from hands(). */
+    private static void attackPose(Anim A,Spec sp,int stage,float hw){
+        A.atk=stage;A.trail=stage==1?.14f:.08f;
+        switch(sp.weapon){
+            case W_BOW:   // side-on archer's stance
+                A.fL=v(.14f,-hw*1.3f,0);A.fR=v(-.12f,hw*1.2f,0);A.twist=stage==0?.35f:.25f;A.lean=.02f;A.bob=-.03f;A.headYaw=-A.twist;break;
+            case W_STAFF:case W_CAST:   // step in and thrust the magic forward
+                A.fL=v(stage==0?.08f:.26f,-hw*1.15f,0);A.fR=v(-.16f,hw,0);A.pR=stage==0?0:-.35f;A.lean=stage==0?-.08f:.16f;A.bob=stage==0?-.02f:-.06f;A.headPitch=stage==0?-.1f:0;break;
+            case W_NONE:A.lean=-.02f;break;   // a friendly wave
+            case W_DAGGERS:
+                A.fL=v(stage==0?.1f:.32f,-hw*1.2f,0);A.fR=v(-.18f,hw*1.1f,0);A.pR=stage==0?0:-.45f;A.twist=stage==0?.3f:stage==1?-.35f:.25f;A.lean=stage==0?.1f:.22f;A.bob=stage==0?-.05f:-.08f;A.headYaw=-A.twist*.7f;break;
+            case W_AXE:   // two-handed overhead chop
+                A.fL=v(.2f,-hw*1.25f,0);A.fR=v(-.18f,hw*1.15f,0);A.pR=stage==0?0:-.3f;A.twist=stage==0?.15f:-.1f;A.lean=stage==0?-.1f:stage==1?.3f:.36f;A.bob=stage==0?-.02f:-.1f;A.headPitch=stage==0?-.15f:.05f;break;
+            default:      // one-handed swing: weight back, then a lunging step through the cut
+                A.fL=v(stage==0?.14f:.3f,-hw*1.15f,0);A.fR=v(stage==0?-.16f:-.22f,hw*1.1f,0);A.pR=stage==0?0:-.45f;A.pL=stage==1?.1f:0;
+                A.twist=stage==0?.55f:stage==1?-.35f:-.7f;A.headYaw=-A.twist*.75f;A.lean=stage==0?-.05f:stage==1?.18f:.22f;A.bob=stage==0?-.03f:stage==1?-.07f:-.06f;
+        }
+    }
     private static float[] rotY(float[] p,float[] pv,float a){float dx=p[0]-pv[0],dz=p[2]-pv[2],c=(float)Math.cos(a),s=(float)Math.sin(a);return v(pv[0]+dx*c+dz*s,p[1],pv[2]-dx*s+dz*c);}
-    private static float[] legDir(float a){return v((float)Math.sin(a),0,-(float)Math.cos(a));}
+    /** Turns a point about the vertical axis through the body (positive = the right shoulder goes back). */
+    private static float[] tz(float[] p,float a){float c=(float)Math.cos(a),s=(float)Math.sin(a);return v(p[0]*c-p[1]*s,p[0]*s+p[1]*c,p[2]);}
     private static MeshModels.Frame frame(int f){
         buf=new float[9*3*560];nv=0;
         Spec sp=S;float k=sp.bulk;
-        SpriteModels.Pose ps=SpriteModels.pose(f);SpriteModels.Body b=new SpriteModels.Body();
-        b.chestW*=sp.chestW;b.shoulderW*=sp.shoulderW;
-        boolean pain=f==Sprites.F_PAIN;
-        if(sp.crouch&&!ps.dead&&!pain){ps.lean+=.25f;ps.lThigh+=.15f;ps.rThigh+=.15f;ps.lKnee+=.3f;ps.rKnee+=.3f;}
-        if(sp.weapon==W_NONE){ps.attack=false;}
-        float bob=ps.bob,lean=ps.lean;
-        float[] pelvis=v(0,0,b.hipZ+bob);
-        // ---- legs: 5-sided cylinders (hidden under a robe, but the feet still show), loop-cut feet
-        for(int s=-1;s<=1;s+=2){float th=s<0?ps.lThigh:ps.rThigh,kn=s<0?ps.lKnee:ps.rKnee;
-            float[] hip=v(0,s*b.hipW,b.hipZ+bob),knee=add(hip,legDir(th),b.thigh),ankle=add(knee,legDir(th-kn),b.shin);
-            if(ankle[2]<.07f)ankle[2]=.07f;
+        SpriteModels.Body b=new SpriteModels.Body();b.chestW*=sp.chestW;b.shoulderW*=sp.shoulderW;
+        Anim A=anim(f,sp,b);
+        float bob=A.bob,lean=A.lean,tw=A.twist;
+        final float[] piv=v(0,0,b.hipZ);final float[] off=v(0,A.sway,bob);
+        // body point: twisted by `frac` of the upper-body twist, leaned about the hips, then moved with the hips
+        java.util.function.BiFunction<float[],Float,float[]> B=(pt,frac)->add(rotY(tz(pt,tw*frac),piv,lean),off,1);
+        float[] pelvis=add(piv,off,1);
+        // ---- legs: 5-sided cylinders placed by two-bone IK so the feet land where the pose puts them
+        for(int s=-1;s<=1;s+=2){float[] ft=s<0?A.fL:A.fR;float pitch=s<0?A.pL:A.pR;
+            float[] hip=add(v(0,s*b.hipW,b.hipZ),off,1),target=v(ft[0],ft[1],ft[2]+.07f);
+            float[] knee=SpriteModels.ik(hip,target,b.thigh,b.shin,v(1,s*.15f,.1f));
+            float[] ankle=add(knee,norm(sub(target,knee)),b.shin);
             if(!sp.robe){
                 if(sp.bones){cyl5(hip,knee,.026f,.02f,.012f,.016f,LEGS);cyl5(knee,ankle,.02f,.016f,.016f,.01f,LEGS);}
                 else{cyl5(hip,knee,.072f*k,.052f*k,.018f*k,.016f*k,LEGS);cyl5(knee,ankle,.052f*k,.036f*k,.014f*k,.012f*k,LEGS);}}
-            foot(ankle,sp.bones?.6f:Math.max(.85f,k),BOOTS);}
-        // ---- body (leans about the pelvis)
-        float[] waist=rotY(v(0,0,b.waistZ+bob),pelvis,lean),chest=rotY(v(0,0,b.chestZ+bob),pelvis,lean),shTop=rotY(v(0,0,b.shoulderZ+.035f+bob),pelvis,lean);
+            foot(ankle,sp.bones?.6f:Math.max(.85f,k),BOOTS,pitch);}
+        // ---- body (leans about the hips, twists through the chest)
+        float[] waist=B.apply(v(0,0,b.waistZ),0f),chest=B.apply(v(0,0,b.chestZ),.5f),shTop=B.apply(v(0,0,b.shoulderZ+.035f),1f);
         float[] up=norm(sub(shTop,waist));
         if(sp.bones){
-            seg(v(0,0,b.hipZ-.04f+bob),v(0,0,b.hipZ+.05f+bob),b.hipW*1.4f,.05f,b.hipW*1.1f,.04f,.01f,.01f,PELVIS,v(1,0,0));   // hip bone
-            seg(v(0,0,b.hipZ+.03f+bob),add(waist,up,.06f),.022f,.022f,.02f,.02f,0,0,TORSO,v(1,0,0));                             // spine
-            torso(add(waist,up,.05f),chest,shTop,b,up,.8f,TORSO);                                                                  // ribcage
+            seg(add(v(0,0,b.hipZ-.04f),off,1),add(v(0,0,b.hipZ+.05f),off,1),b.hipW*1.4f,.05f,b.hipW*1.1f,.04f,.01f,.01f,PELVIS,v(1,0,0));   // hip bone
+            seg(add(v(0,0,b.hipZ+.03f),off,1),add(waist,up,.06f),.022f,.022f,.02f,.02f,0,0,TORSO,v(1,0,0));                             // spine
+            torso(add(waist,up,.05f),chest,shTop,b,up,.8f,TORSO,tw);                                                                     // ribcage
         }else{
-            pelvisBox(v(0,0,b.hipZ-.03f+bob),waist,b,up,k);
-            torso(waist,chest,shTop,b,up,k,TORSO);
+            pelvisBox(add(v(0,0,b.hipZ-.03f),off,1),waist,b,up,k);
+            torso(waist,chest,shTop,b,up,k,TORSO,tw);
         }
-        if(sp.tail){   // tiefling / dragonborn tail: three tapering boxes swaying with the walk, pyramid tip
-            float sw=f==Sprites.F_WALK1?.08f:f==Sprites.F_WALK2?-.08f:ps.attack?.04f:0;float t=sp.snout?1.3f:.75f;
-            float[] t0=rotY(v(-.07f,0,b.hipZ+.02f+bob),pelvis,lean),t1=add(t0,v(-.18f,sw*.5f,-.2f)),t2=add(t1,v(-.2f,sw,-.16f)),t3=add(t2,v(-.16f,sw*1.4f,.03f));
-            if(t2[2]<.08f)t2[2]=.08f;if(t3[2]<.06f)t3[2]=.06f;
-            chain(new float[][]{t0,add(t1,v(-.06f,0,-.04f)),t3},new float[]{.03f*t,.02f*t,sp.snout?.004f:.012f},sp.snout?.02f:.035f,SKIN,v(0,0,1));}
+        if(sp.tail){   // tiefling / dragonborn tail: one bent tube swaying with the stride
+            float sw=A.tailSway;float t=sp.snout?1.3f:.75f;
+            float[] t0=B.apply(v(-.07f,0,b.hipZ+.02f),0f),t1=add(t0,v(-.24f,sw*.5f,-.24f)),t3=add(t1,v(-.36f,sw*1.6f,-.13f));
+            if(t1[2]<.1f)t1[2]=.1f;if(t3[2]<.06f)t3[2]=.06f;
+            chain(new float[][]{t0,t1,t3},new float[]{.03f*t,.02f*t,sp.snout?.004f:.012f},sp.snout?.02f:.035f,SKIN,v(0,0,1));}
         float[] neckB=add(shTop,up,-.005f),neckT=add(shTop,up,.07f*Math.min(1.1f,sp.headS));
         if(sp.bones)seg(neckB,neckT,.018f,.018f,.016f,.016f,0,0,TORSO,v(1,0,0));
         else box(neckB,neckT,.04f*k,.042f*k,SKIN);
-        float hp=ps.headPitch+lean*.4f;
         float[] hc=add(neckT,up,.085f*sp.headS);
-        head(hc,lean+hp,sp);
+        HYAW=tw*.3f+A.headYaw;head(hc,lean*1.4f+A.headPitch,sp);HYAW=0;
         // ---- arms (two-bone IK to the hands, elbows bend back and out)
-        float[] rS=rotY(v(0,b.shoulderW,b.shoulderZ+bob),pelvis,lean),lS=rotY(v(0,-b.shoulderW,b.shoulderZ+bob),pelvis,lean);
-        float[][] h=hands(sp,ps,f,b,bob);float[] rh=h[0],lh=h[1];
-        if(rh==null)rh=limp(rS,ps.rArmSwing,1,sp);else if(!ps.dead)rh=rotY(rh,pelvis,lean);
-        if(lh==null)lh=limp(lS,ps.lArmSwing,-1,sp);else if(!ps.dead)lh=rotY(lh,pelvis,lean);
+        float[] rS=B.apply(v(0,b.shoulderW,b.shoulderZ),1f),lS=B.apply(v(0,-b.shoulderW,b.shoulderZ),1f);
+        float[][] h=hands(sp,A,b);float[] rh=h[0],lh=h[1];
+        if(rh==null)rh=limp(rS,A.swR,A.elR,A.spread,1,sp,b);else if(!A.dead)rh=add(rotY(add(rh,v(A.swR*A.handSwing,0,A.handLift+Math.abs(A.swR)*A.handLift)),piv,lean),off,1);
+        if(lh==null)lh=limp(lS,A.swL,A.elL,A.spread,-1,sp,b);else if(!A.dead)lh=add(rotY(add(lh,v(A.swL*A.handSwing,0,A.handLift+Math.abs(A.swL)*A.handLift)),piv,lean),off,1);
         float[] rE=SpriteModels.ik(rS,rh,b.upper,b.fore,v(-1,.5f,-.4f)),lE=SpriteModels.ik(lS,lh,b.upper,b.fore,v(-1,-.5f,-.4f));
         arm(rS,rE,rh,sp);arm(lS,lE,lh,sp);
-        weapon(sp,ps,f,rh,lh,h[2]);
-        if(sp.pauldrons)for(int s=-1;s<=1;s+=2){float[] sh=s>0?rS:lS;float[] side=v(0,s,0);
+        float[] wd=h[2];if(wd!=null&&!A.dead)wd=norm(rotY(add(wd,v(0,0,0)),v(0,0,0),lean));
+        weapon(sp,A,rh,lh,wd);
+        if(sp.pauldrons)for(int s=-1;s<=1;s+=2){float[] sh=s>0?rS:lS;float[] side=norm(tz(v(0,s,0),tw));
             seg(add(add(sh,up,-.04f),side,.01f),add(add(sh,up,.04f),side,.02f),.085f*k,.075f*k,.07f*k,.065f*k,0,.045f*k,TRIM,v(1,0,0));}
         // ---- clothing: flat sheets
-        float sway=f==Sprites.F_WALK1?.04f:f==Sprites.F_WALK2?-.04f:0;
-        if(sp.robe)skirt(waist,b.chestW*.95f,.1f,v(sway,0,.03f),.25f,.2f,CLOAK,true);
-        if(sp.tunic)skirt(waist,b.chestW*.88f,.095f,v(sway*.5f,0,.52f+bob),.18f,0,PELVIS,false);
+        if(sp.robe)skirt(waist,b.chestW*.95f,.1f,v(A.robeSway,A.sway,.03f+Math.max(0,bob+.02f)),.25f,.2f,CLOAK,true);
+        if(sp.tunic)skirt(waist,b.chestW*.88f,.095f,v(A.robeSway*.5f,A.sway,.52f+bob),.18f,0,PELVIS,false);
         if(sp.tabard)tabard(waist,b,up,bob,k);
-        if(sp.quiver){float[] q0=rotY(v(-.13f,.06f,b.waistZ+.02f+bob),pelvis,lean),q1=rotY(v(-.16f,-.06f,b.shoulderZ+.12f+bob),pelvis,lean);
+        if(sp.quiver){float[] q0=B.apply(v(-.13f,.06f,b.waistZ+.02f),.3f),q1=B.apply(v(-.16f,-.06f,b.shoulderZ+.12f),1f);
             seg(q0,q1,.04f,.035f,.045f,.04f,0,0,X1,v(-1,0,0));
             octa(add(q1,v(-.005f,0,.045f)),.028f,X2);}
-        if(sp.cape){float trail=(f==Sprites.F_WALK1||f==Sprites.F_WALK2)?.12f:ps.attack?.06f:.03f;
-            float[] back=norm(v((float)-Math.cos(lean),0,(float)Math.sin(lean)));
-            cape(add(rotY(v(0,0,b.shoulderZ+bob),pelvis,lean),back,sp.quiver?.15f:.11f),b,trail);}
+        if(sp.cape){float[] back=norm(v((float)-Math.cos(lean),0,(float)Math.sin(lean)));
+            cape(add(B.apply(v(0,0,b.shoulderZ),1f),back,sp.quiver?.15f:.11f),b,A.trail);}
         MeshModels.Frame fr=new MeshModels.Frame();fr.v=java.util.Arrays.copyOf(buf,nv*9);fr.count=nv;
-        if(ps.dead)layDown(fr);
+        if(A.dead)layDown(fr);
         if(sp.scale!=1)for(int i=0;i<fr.count;i++){int o=i*9;fr.v[o]*=sp.scale;fr.v[o+1]*=sp.scale;fr.v[o+2]*=sp.scale;}
         return fr;
     }
-    /** Hand targets {right, left, weapon direction} in the body's unleaned space; null = the arm hangs. */
-    private static float[][] hands(Spec sp,SpriteModels.Pose ps,int f,SpriteModels.Body b,float bob){
-        if(ps.dead)return new float[][]{v(.1f,.42f,b.shoulderZ-.2f),v(.05f,-.42f,b.shoulderZ-.25f),norm(v(.12f,.3f,1))};   // weapon along the body: flat on the floor once it tips over
-        boolean at=ps.attack,pain=f==Sprites.F_PAIN;
+    /** Hand targets {right, left, weapon direction} in the body's rest space (before lean); null = a free arm. */
+    private static float[][] hands(Spec sp,Anim A,SpriteModels.Body b){
+        if(A.dead)return new float[][]{v(.1f,.42f,b.shoulderZ-.2f),v(.05f,-.42f,b.shoulderZ-.25f),norm(v(.12f,.3f,1))};   // weapon along the body: flat on the floor once it tips over
+        int st=A.atk;boolean pain=A.pain;
         switch(sp.weapon){
-            case W_SWORD_SHIELD:case W_MACE_SHIELD:
-                if(pain)return new float[][]{v(.05f,.32f,.95f),v(.22f,-.2f,.98f+bob),norm(v(.2f,.4f,.9f))};
-                return new float[][]{at?v(.4f,.08f,1.05f):v(.2f,.2f,.88f+bob),v(.22f,-.2f,.98f+bob),at?norm(v(.7f,-.5f,-.25f)):norm(v(.45f,.05f,.9f))};
-            case W_BOW:return new float[][]{at?v(.12f,.04f,1.2f):v(.1f,.22f,.85f+bob),at?v(.48f,-.05f,1.18f):v(.2f,-.22f,.9f+bob),null};
-            case W_DAGGERS:return new float[][]{at?v(.45f,.06f,1.0f):v(.22f,.2f,.85f+bob),at?v(.25f,-.2f,.95f):v(.22f,-.2f,.85f+bob),null};
-            case W_STAFF:return new float[][]{at?v(.38f,.12f,1.12f):v(.18f,.22f,.9f+bob),at?v(.32f,-.12f,1.12f):null,at?norm(v(.35f,0,1)):norm(v(.05f,0,1))};
-            case W_RUSTY:return new float[][]{at?v(.35f,.1f,1.13f):v(.18f,.2f,.88f+bob),v(.12f,-.24f,.8f+ps.lArmSwing*.1f),at?norm(v(.8f,-.4f,-.3f)):norm(v(.6f,.1f,.8f))};
-            case W_CAST:return new float[][]{at?v(.36f,.08f,1.08f):v(.16f,.07f,.86f+bob),at?v(.36f,-.08f,1.08f):v(.16f,-.07f,.86f+bob),null};
-            case W_CRUDE:return new float[][]{at?v(.42f,.05f,1.0f):v(.2f,.2f,.82f),null,at?norm(v(.8f,-.3f,-.4f)):norm(v(.55f,.1f,.82f))};
-            case W_AXE:{if(at)return new float[][]{v(.38f,.1f,1.15f),v(.3f,-.05f,1.02f),norm(v(.8f,-.1f,-.4f))};
-                float[] r=v(.18f,.22f,.85f+bob),l=v(.22f,-.02f,1.05f+bob);return new float[][]{r,l,norm(sub(l,r))};}
-            default:return new float[][]{f==Sprites.F_ATTACK?v(.25f,.25f,1.3f):null,null,null};   // villager waves
+            case W_SWORD_SHIELD:case W_MACE_SHIELD:case W_RUSTY:case W_CRUDE:{
+                boolean shield=sp.weapon==W_SWORD_SHIELD||sp.weapon==W_MACE_SHIELD;
+                float[] rh,dir;float[] lh=null;
+                if(pain){rh=v(.05f,.32f,.95f);dir=norm(v(.2f,.4f,.9f));lh=shield?v(.2f,-.24f,1.02f):null;}
+                else if(st==0){rh=v(-.1f,.33f,1.32f);dir=norm(v(-.45f,.2f,.87f));lh=shield?v(.26f,-.16f,1.0f):null;}
+                else if(st==1){rh=v(.44f,.06f,1.02f);dir=norm(v(.75f,-.55f,-.2f));lh=shield?v(.16f,-.26f,.95f):null;}
+                else if(st==2){rh=v(.22f,-.26f,.78f);dir=norm(v(.25f,-.75f,-.6f));lh=shield?v(.1f,-.3f,.92f):null;}
+                else{rh=sp.weapon==W_CRUDE?v(.2f,.2f,.84f):v(.2f,.2f,.88f);dir=norm(v(.45f,.05f,.9f));lh=shield?v(.22f,-.2f,.98f):null;}
+                if(!shield&&lh==null&&sp.weapon==W_RUSTY&&st<0&&!pain)lh=null;
+                return new float[][]{rh,lh,dir};}
+            case W_BOW:
+                if(st==0)return new float[][]{v(.1f,.06f,1.2f),v(.48f,-.05f,1.18f),null};       // drawn: string at the chin
+                if(st==1)return new float[][]{v(-.06f,.16f,1.24f),v(.48f,-.05f,1.18f),null};    // released: hand flies back
+                if(st==2)return new float[][]{v(0,.22f,1.02f),v(.42f,-.06f,1.08f),null};
+                return new float[][]{v(.1f,.22f,.85f),v(.2f,-.22f,.9f),null};
+            case W_DAGGERS:
+                if(st==0)return new float[][]{v(.04f,.27f,1.06f),v(.16f,-.2f,.98f),null};
+                if(st==1)return new float[][]{v(.52f,.06f,1.04f),v(.12f,-.22f,.92f),null};
+                if(st==2)return new float[][]{v(.1f,.24f,.96f),v(.47f,-.07f,1.0f),null};
+                return new float[][]{v(.22f,.2f,.85f),v(.22f,-.2f,.85f),null};
+            case W_STAFF:
+                if(st==0)return new float[][]{v(0,.24f,1.3f),v(0,-.26f,1.0f),norm(v(-.15f,0,1))};
+                if(st==1)return new float[][]{v(.4f,.12f,1.12f),v(.42f,-.12f,1.15f),norm(v(.4f,0,1))};
+                if(st==2)return new float[][]{v(.34f,.13f,1.05f),v(.34f,-.15f,1.0f),norm(v(.3f,0,1))};
+                return new float[][]{v(.18f,.22f,.9f),null,norm(v(.05f,0,1))};
+            case W_CAST:
+                if(st==0)return new float[][]{v(-.03f,.19f,.95f),v(-.03f,-.19f,.95f),null};
+                if(st==1)return new float[][]{v(.4f,.08f,1.1f),v(.4f,-.08f,1.1f),null};
+                if(st==2)return new float[][]{v(.35f,.1f,1.02f),v(.35f,-.1f,1.02f),null};
+                return new float[][]{v(.16f,.07f,.86f),v(.16f,-.07f,.86f),null};
+            case W_AXE:{float[] r,d;
+                if(st==0){r=v(-.03f,.1f,1.42f);d=norm(v(-.5f,-.05f,.86f));}
+                else if(st==1){r=v(.44f,.04f,1.0f);d=norm(v(.86f,-.05f,-.5f));}
+                else if(st==2){r=v(.36f,0,.62f);d=norm(v(.35f,0,-.94f));}
+                else{r=v(.18f,.22f,.85f);float[] l=v(.22f,-.02f,1.05f);return new float[][]{r,l,norm(sub(l,r))};}
+                return new float[][]{r,add(r,d,-.22f),d};}
+            default:   // villager: waves instead of attacking
+                if(st==0)return new float[][]{v(.1f,.4f,1.38f),null,null};
+                if(st==1)return new float[][]{v(.14f,.52f,1.42f),null,null};
+                if(st==2)return new float[][]{v(.12f,.34f,1.44f),null,null};
+                return new float[][]{null,null,null};
         }
     }
-    private static float[] limp(float[] sh,float swing,int side,Spec sp){
-        float sw=swing*(sp.weapon==W_NONE?.5f:1)+(sp.crouch?.35f:.05f);
-        return add(sh,norm(v((float)Math.sin(sw),side*.14f,-(float)Math.cos(sw))),.47f);
+    /** A free arm: swung forward by `swing`, lifted sideways by `spread`, the elbow bent by `elbow`. */
+    private static float[] limp(float[] sh,float swing,float elbow,float spread,int side,Spec sp,SpriteModels.Body b){
+        float sw=swing*(sp.weapon==W_NONE?.8f:1)+(sp.crouch?.3f:.04f);
+        float reach=(b.upper+b.fore)*(1-.3f*Math.min(1.6f,elbow))-.02f;
+        return add(sh,norm(v((float)Math.sin(sw),side*(.14f+spread),-(float)Math.cos(sw))),reach);
     }
     /** Death: tip the whole body over backwards onto the floor. */
     private static void layDown(MeshModels.Frame fr){
@@ -369,8 +479,15 @@ final class BoxMesh {
         seg(wrist,add(wrist,dir,.085f*Math.max(.9f,k)),.032f*k,.04f*k,.03f*k,.038f*k,.018f*k,0,HANDS,fw);
     }
     /** Foot: box loop-cut halfway, stretched forward from the heel; the toe end narrowed for a mild point. */
+    /** pitch: + lifts the toes (heel strike), - lifts the heel (toe-off, pointed toes in the air). */
+    private static void foot(float[] ankle,float k,int tile,float pitch){
+        int from=nv;foot(ankle,k,tile);
+        if(pitch!=0){float c=(float)Math.cos(-pitch),sn=(float)Math.sin(-pitch);
+            for(int i=from;i<nv;i++){int o=i*9;float dx=buf[o]-ankle[0],dz=buf[o+2]-ankle[2];buf[o]=ankle[0]+dx*c+dz*sn;buf[o+2]=ankle[2]-dx*sn+dz*c;
+                float nx=buf[o+3],nz=buf[o+5];buf[o+3]=nx*c+nz*sn;buf[o+5]=-nx*sn+nz*c;}}
+    }
     private static void foot(float[] ankle,float k,int tile){
-        float sole=Math.max(0,ankle[2]-.07f);float[] heel=v(ankle[0]-.045f*k,ankle[1],sole),mid=v(ankle[0]+.05f*k,ankle[1],sole),toe=v(ankle[0]+.15f*k,ankle[1],sole);
+        float sole=ankle[2]-.07f;float[] heel=v(ankle[0]-.045f*k,ankle[1],sole),mid=v(ankle[0]+.05f*k,ankle[1],sole),toe=v(ankle[0]+.15f*k,ankle[1],sole);
         float[][] R0=ring(heel,.042f*k,.075f*Math.min(1,k)),R1=ring(mid,.048f*k,.065f*Math.min(1,k)),R2=ring(toe,.032f*k,.035f*Math.min(1,k));
         float[][] N={v(0,1,0),v(0,0,1),v(0,-1,0),v(0,0,-1)};
         for(int i=0;i<4;i++){int j=(i+1)%4;quad(R0[i],R0[j],R1[j],R1[i],N[i],N[j],N[j],N[i],tile,i/4f,0,(i+1)/4f,.5f);quad(R1[i],R1[j],R2[j],R2[i],N[i],N[j],N[j],N[i],tile,i/4f,.5f,(i+1)/4f,1);}
@@ -380,20 +497,26 @@ final class BoxMesh {
     private static void pelvisBox(float[] bottom,float[] top,SpriteModels.Body b,float[] up,float k){
         float hip=S.female?1.14f:1;seg(bottom,top,b.hipW*1.75f*Math.max(1,k*.9f)*hip,.085f*k,b.chestW*.82f*(S.female?.86f:1),.09f*k,.012f,0,PELVIS,v(1,0,0));
     }
+    /** Side and front axes turned about `up` (positive = the right side goes back, like tz). */
+    private static float[][] turn(float[] s,float[] f,float[] up,float a){float c=(float)Math.cos(a),sn=(float)Math.sin(a);return new float[][]{add(mul(s,c),f,-sn),add(mul(f,c),s,sn)};}
     /** Torso: waist → chest → shoulders, a box with one loop cut at the chest, shaped wider across the chest. */
-    private static void torso(float[] waist,float[] chest,float[] top,SpriteModels.Body b,float[] up,float k,int tile){
+    /** twist: the chest ring turns half as far as the shoulders (the loop cut takes the twist, like a real spine). */
+    private static void torso(float[] waist,float[] chest,float[] top,SpriteModels.Body b,float[] up,float k,int tile,float twist){
         float[][] sf=across(up,v(1,0,0));float[] s=sf[0],f=sf[1];float dk=Math.max(.8f,k);
+        float[][] s1=turn(s,f,up,twist*.5f),s2=turn(s,f,up,twist);
         float[][] R0=new float[4][],R1=new float[4][],R2=new float[4][],N=new float[4][];int[][] cc={{1,1},{-1,1},{-1,-1},{1,-1}};
         for(int i=0;i<4;i++){float cs=cc[i][0],cf=cc[i][1];
             float waistW=S.female?.7f:.82f,bust=S.female&&!S.bones?.135f:.115f;
-            R0[i]=add(add(waist,s,cs*b.chestW*waistW),f,cf*.09f*dk);R1[i]=add(add(chest,s,cs*b.chestW*1.05f),f,cf*(cf>0?bust:.095f)*dk);R2[i]=add(add(top,s,cs*b.shoulderW*1.1f),f,cf*.085f*dk);N[i]=add(mul(s,cs),f,cf);}
+            R0[i]=add(add(waist,s,cs*b.chestW*waistW),f,cf*.09f*dk);R1[i]=add(add(chest,s1[0],cs*b.chestW*1.05f),s1[1],cf*(cf>0?bust:.095f)*dk);R2[i]=add(add(top,s2[0],cs*b.shoulderW*1.1f),s2[1],cf*.085f*dk);N[i]=add(mul(s1[0],cs),s1[1],cf);}
         for(int i=0;i<4;i++){int j=(i+1)%4;quad(R0[i],R0[j],R1[j],R1[i],N[i],N[j],N[j],N[i],tile,i/4f,0,(i+1)/4f,.5f);quad(R1[i],R1[j],R2[j],R2[i],N[i],N[j],N[j],N[i],tile,i/4f,.5f,(i+1)/4f,1);}
         cap(R0,waist,mul(up,-1),0,tile,true);cap(R2,top,up,.025f,tile,false);
     }
 
     // ------------------------------------------------------------------ heads
     private static float[][][][] HP;   // the last head's lattice, for attaching ears, noses, tusks and eyes
-    private static float[] place(float[] c,float pitch,float[] p){float cp=(float)Math.cos(pitch),sp=(float)Math.sin(pitch);return v(c[0]+p[0]*cp+p[2]*sp,c[1]+p[1],c[2]-p[0]*sp+p[2]*cp);}
+    /** Head turn about the vertical (set while a head is built). */
+    private static float HYAW;
+    private static float[] place(float[] c,float pitch,float[] p){if(HYAW!=0){float yc=(float)Math.cos(HYAW),ys=(float)Math.sin(HYAW);p=v(p[0]*yc-p[1]*ys,p[0]*ys+p[1]*yc,p[2]);}float cp=(float)Math.cos(pitch),sp=(float)Math.sin(pitch);return v(c[0]+p[0]*cp+p[2]*sp,c[1]+p[1],c[2]-p[0]*sp+p[2]*cp);}
     /** A point on the head lattice by fractional index (0..2 each way), so parts follow the head's shape. */
     private static float[] hp(float i,float j,float k){
         int i0=Math.min(1,(int)i),j0=Math.min(1,(int)j),k0=Math.min(1,(int)k);float fi=i-i0,fj=j-j0,fk=k-k0;float[] r=v(0,0,0);
@@ -505,26 +628,28 @@ final class BoxMesh {
     }
 
     // ------------------------------------------------------------------ gear
-    private static void weapon(Spec sp,SpriteModels.Pose ps,int f,float[] rh,float[] lh,float[] wd){
+    private static void weapon(Spec sp,Anim A,float[] rh,float[] lh,float[] wd){
+        int st=A.atk;
         switch(sp.weapon){
             case W_SWORD_SHIELD:sword(rh,wd,.6f,true);shield(add(lh,v(.05f,-.03f,.02f)),norm(v(1,-.25f,0)),TRIM,WOOD);break;
             case W_MACE_SHIELD:mace(rh,wd);shield(add(lh,v(.05f,-.03f,.02f)),norm(v(1,-.25f,0)),TRIM,X1);break;
             case W_RUSTY:sword(rh,wd,.55f,false);break;
             case W_CRUDE:sword(rh,wd,.42f,false);break;
-            case W_DAGGERS:if(ps.dead){sword(rh,wd,.22f,true);sword(lh,norm(v(.1f,-.3f,1)),.22f,true);break;}
-                sword(rh,ps.attack?norm(v(.9f,-.2f,-.1f)):norm(v(.6f,.1f,.75f)),.22f,true);sword(lh,ps.attack?norm(v(.4f,-.2f,.9f)):norm(v(.6f,-.1f,-.75f)),.22f,true);break;
-            case W_BOW:{if(ps.dead)bow(rh,v(0,0,1),v(-1,0,0));
-                else if(ps.attack)bow(lh,v(0,0,1),v(1,0,0));else bow(lh,norm(v(.25f,0,1)),norm(v(1,0,-.25f)));
+            case W_DAGGERS:{if(A.dead){sword(rh,wd,.22f,true);sword(lh,norm(v(.1f,-.3f,1)),.22f,true);break;}
+                float[] dr=st==1?norm(v(.95f,-.1f,.1f)):norm(v(.55f,.15f,.8f)),dl=st==2?norm(v(.95f,.1f,.05f)):norm(v(.6f,-.1f,-.75f));
+                sword(rh,dr,.22f,true);sword(lh,dl,.22f,true);break;}
+            case W_BOW:{if(A.dead)bow(rh,v(0,0,1),v(-1,0,0));
+                else if(st>=0)bow(lh,v(0,0,1),v(1,0,0));else bow(lh,norm(v(.25f,0,1)),norm(v(1,0,-.25f)));
                 int at=nv;{float[] a0=add(lh,v(1,0,0),.08f),a1=rh;float w=.006f;   // the drawn arrow: two crossed flat strips
                     quad(add(a0,v(0,0,w)),add(a1,v(0,0,w)),add(a1,v(0,0,-w)),add(a0,v(0,0,-w)),v(0,1,0),v(0,1,0),v(0,1,0),v(0,1,0),WOOD,0,0,1,1);
                     quad(add(a0,v(0,w,0)),add(a1,v(0,w,0)),add(a1,v(0,-w,0)),add(a0,v(0,-w,0)),v(0,0,1),v(0,0,1),v(0,0,1),v(0,0,1),WOOD,0,0,1,1);}
-                if(!ps.attack)collapse(at,rh);break;}
+                if(st!=0)collapse(at,rh);break;}
             case W_STAFF:{float[] a=add(rh,wd,-.85f),t=add(rh,wd,.5f);seg(a,t,.017f,.017f,.014f,.014f,.008f,0,WOOD,v(1,0,0));
                 seg(t,add(t,wd,.05f),.03f,.03f,.024f,.024f,0,0,WOOD,v(1,0,0));   // claw that holds the orb
-                octa(add(t,wd,.1f),ps.attack?.075f:.05f,GLOW);break;}
+                octa(add(t,wd,.1f),st==1?.085f:st>=0?.065f:.05f,GLOW);break;}
             case W_AXE:axe(rh,wd);break;
-            case W_CAST:{float[] fc=add(SpriteModels.lerp(rh,lh,.5f),v(.09f,0,.02f));int at=nv;octa(fc,.085f,GLOW);octa(add(fc,v(.03f,0,0)),.05f,X2);
-                if(!ps.attack)collapse(at,fc);break;}
+            case W_CAST:{float[] fc=add(SpriteModels.lerp(rh,lh,.5f),v(.09f,0,.02f));int at=nv;float sz=st==1?1:.75f;octa(fc,.085f*sz,GLOW);octa(add(fc,v(.03f,0,0)),.05f*sz,X2);
+                if(st<1)collapse(at,fc);break;}
             default:break;
         }
     }

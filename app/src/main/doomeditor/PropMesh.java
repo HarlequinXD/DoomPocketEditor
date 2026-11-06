@@ -32,7 +32,7 @@ final class PropMesh {
         SpriteModels.Model m=new SpriteModels.Model();mats(id,m);
         MeshModels.Mesh out=new MeshModels.Mesh();out.atlas=4;
         for(int f=0;f<Sprites.FRAMES;f++){BoxMesh.begin(m);shape(id,f);out.frames[f]=BoxMesh.end();}
-        MeshModels.paint(out,m,4);paint(id,out);
+        MeshModels.paint(out,m,4);paint(id,out);MeshModels.pack(out);
         return out;
     }
 

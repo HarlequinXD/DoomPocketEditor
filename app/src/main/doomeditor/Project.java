@@ -127,12 +127,50 @@ final class Project {
     boolean builtinLook(EntityDef d,int sprite){return d==null||sprite!=d.sprite||sprite(d.customSprite)==null;}
     /** Sets the 3D model animation on a draw: walking blends stride and pass poses by distance walked, death falls smoothly. */
     void modelPose(Renderer.SpriteDraw sd,Actor a,int autoFrame){
+        if(BoxMesh.has(a.sprite)){animate(sd,a,autoFrame);return;}
         float walkT=a.walkPhase/WALK_PACE;int fa=autoFrame,fb=autoFrame;float t=0;
         boolean moving=Math.hypot(a.vx,a.vy)>.25f;
         if(a.animClip!=null&&!(isWalkClip(a.animClip)&&moving)){fa=fb=builtinFrame(a.animClip,a.animTime);}
         else if(autoFrame==Sprites.F_WALK1||autoFrame==Sprites.F_WALK2||(a.animClip!=null&&moving)){float c=(walkT*6)%4;int i=(int)c;fa=WALK_CYCLE[i&3];fb=WALK_CYCLE[(i+1)&3];t=c-i;}
         else if(autoFrame==Sprites.F_DEAD){if(a.deadTime<.18f){fa=Sprites.F_PAIN;fb=Sprites.F_DEAD;t=a.deadTime/.18f;}}
         sd.model(a.sprite,fa,fb,t,a.angle);
+    }
+    /**
+     * Box-modelled characters: picks and blends two of their animation poses from what the actor is doing:
+     * death, a hit, the wind-up / strike / follow-through of an attack, jumping, falling and landing, a walk or run
+     * cycle that follows the distance covered (so feet don't slide), or a breathing idle.
+     */
+    private void animate(Renderer.SpriteDraw sd,Actor a,int autoFrame){
+        float speed=(float)Math.hypot(a.vx,a.vy);boolean moving=speed>.25f;
+        int fa,fb;float t=0;int[] ab=new int[2];
+        if(!a.alive){if(a.deadTime<.22f){fa=Sprites.F_PAIN;fb=Sprites.F_DEAD;t=a.deadTime/.22f;}else fa=fb=Sprites.F_DEAD;}
+        else if(a.animClip!=null&&!(isWalkClip(a.animClip)&&moving)){fa=fb=builtinFrame(a.animClip,a.animTime);
+            if(fa==Sprites.F_ATTACK){float p=Math.min(1,a.animTime/.45f);t=attackBlend(p,ab,base(a,speed,ab));fa=ab[0];fb=ab[1];}}
+        else if(a.painTimer>0){fa=Sprites.F_PAIN;fb=base(a,speed,ab);t=Math.max(0,1-a.painTimer/.2f);fb=ab[0];}
+        else if(a.attackTimer>0&&a.attackLen>0){float p=1-a.attackTimer/a.attackLen;int b0=base(a,speed,ab);t=attackBlend(p,ab,b0);fa=ab[0];fb=ab[1];}
+        else if(!a.onGround&&a.airTime>.12f&&!a.noGravity){
+            float vz=a.vz;if(vz>2f){fa=fb=BoxMesh.A_JUMP;}
+            else if(vz>-.5f){fa=BoxMesh.A_JUMP;fb=BoxMesh.A_AIR;t=(2f-vz)/2.5f;}
+            else if(vz>-4f){fa=BoxMesh.A_AIR;fb=BoxMesh.A_FALL;t=(-.5f-vz)/3.5f;}
+            else fa=fb=BoxMesh.A_FALL;}
+        else if(a.landTimer>0&&a.landLen>0){float p=1-a.landTimer/a.landLen;base(a,speed,ab);fa=BoxMesh.A_LAND;fb=ab[0];t=p*p;}
+        else{base(a,speed,ab);fa=ab[0];fb=ab[1];t=ab.length>1?baseT:0;}
+        sd.model(a.sprite,fa,fb,Math.max(0,Math.min(1,t)),a.angle);
+    }
+    private float baseT;
+    /** The pose under everything else: walk or run cycle (two neighbouring poses + blend in baseT) or breathing idle. */
+    private int base(Actor a,float speed,int[] ab){
+        if(speed>.25f&&a.onGround){boolean run=speed>BoxMesh.RUN_SPEED;float len=run?BoxMesh.RUN_STRIDE:BoxMesh.WALK_STRIDE;
+            float c=(a.walkPhase/len)%1f*BoxMesh.CYCLE;int i=(int)c;int first=run?BoxMesh.A_RUN:BoxMesh.A_WALK;
+            ab[0]=first+i%BoxMesh.CYCLE;ab[1]=first+(i+1)%BoxMesh.CYCLE;baseT=c-i;return ab[0];}
+        ab[0]=Sprites.F_IDLE;ab[1]=BoxMesh.A_IDLE2;baseT=.5f-.5f*(float)Math.cos(a.clock*1.7f);return ab[0];
+    }
+    /** Attack progress 0..1: quick wind-up, the strike, follow-through, then ease back to the base pose. */
+    private static float attackBlend(float p,int[] ab,int base){
+        if(p<.18f){ab[0]=base;ab[1]=BoxMesh.A_WINDUP;return p/.18f;}
+        if(p<.42f){ab[0]=BoxMesh.A_WINDUP;ab[1]=BoxMesh.A_STRIKE;float q=(p-.18f)/.24f;return q*q*(3-2*q);}
+        if(p<.7f){ab[0]=BoxMesh.A_STRIKE;ab[1]=BoxMesh.A_FOLLOW;return (p-.42f)/.28f;}
+        ab[0]=BoxMesh.A_FOLLOW;ab[1]=base;float q=(p-.7f)/.3f;return q*q*(3-2*q);
     }
     /** Distance (units) that plays one second's worth of walk frames: at 3 units/s a 6 fps walk runs about twice as fast. */
     static final float WALK_PACE=1.5f;
