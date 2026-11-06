@@ -115,7 +115,7 @@ final class GpuRenderer {
     // B = down (texture v grows downward), N = facing the camera; floors T = +x, B = +y, N = up or down.
     private static final String FS_SCENE=FS_HEAD+
         "uniform sampler2D uTex;uniform sampler2D uNorm;uniform sampler2D uMat;uniform float uRelief;uniform float uPbr;uniform vec3 uCamPos;\n"+
-        "uniform float uFade;uniform int uCount;uniform vec4 uL[16];uniform vec3 uLC[16];\n"+
+        "uniform float uFade;uniform int uCount;uniform vec4 uL[8];uniform vec3 uLC[8];uniform int uShadowN;\n"+
         "uniform vec4 uFog;uniform vec3 uFogC;uniform vec4 uTint;uniform vec4 uHi;uniform float uAlphaCut;\n"+
         "uniform sampler2D uShadow;uniform float uShadowOn;\n"+
         "varying vec2 vUv;varying vec2 vLight;varying vec3 vWorld;varying float vZ;varying vec4 vId;varying vec3 vTan;varying float vKind;varying vec3 vGi;varying vec3 vEdge;\n"+
@@ -163,8 +163,8 @@ final class GpuRenderer {
         "  vec3 F0=mix(vec3(0.04),alb,metal);vec3 Fa=F0+(max(vec3(1.0-rough),F0)-F0)*pow(1.0-NdV,5.0);\n"+
         "  c=alb*(1.0-metal)*(1.0-Fa*0.5)*amb+Fa*amb*(0.3+0.7*smo);\n"+
         "  float kk=(rough+1.0)*(rough+1.0)/8.0;int budget=2;\n"+
-        "  for(int i=0;i<16;i++){if(i>=uCount)break;vec3 dd=uL[i].xyz-vWorld;float d2=dot(dd,dd);if(d2<uL[i].w){float f=1.0-d2/uL[i].w;\n"+
-        "   float sh=uShadowOn>0.5?shadowAt(float(i),uL[i].xyz,surf?1.0:0.0):1.0;if(sh<=0.0)continue;\n"+
+        "  for(int i=0;i<8;i++){if(i>=uCount)break;vec3 dd=uL[i].xyz-vWorld;float d2=dot(dd,dd);if(d2<uL[i].w){float f=1.0-d2/uL[i].w;\n"+
+        "   float sh=uShadowOn>0.5&&i<uShadowN?shadowAt(float(i),uL[i].xyz,surf?1.0:0.0):1.0;if(sh<=0.0)continue;\n"+
         "   vec3 Ld=dd*inversesqrt(max(d2,1e-4));\n"+
         "   if(surf&&amt>0.002&&budget>0&&f*f*sh>0.08){budget--;sh*=pomShadow(uv,vec3(dot(Ld,T),dot(Ld,B),dot(Ld,N)),amt,h0);}\n"+
         "   vec3 rad=uLC[i]*(f*f*1.35*sh);float NdL=max(dot(Nw,Ld),0.0);\n"+
@@ -174,8 +174,8 @@ final class GpuRenderer {
         "   vec3 spec=min(D*G*F/(4.0*NdV*NdL+0.001),vec3(6.0));vec3 kd=(1.0-F)*(1.0-metal);\n"+
         "   c+=(kd*alb*(0.15+0.85*NdL)+spec*NdL*0.6)*rad;}}\n"+
         " }else{vec3 lc=vec3(0.0);int budget=2;\n"+
-        "  for(int i=0;i<16;i++){if(i>=uCount)break;vec3 dd=uL[i].xyz-vWorld;float d2=dot(dd,dd);if(d2<uL[i].w){float f=1.0-d2/uL[i].w;\n"+
-        "   float sh=uShadowOn>0.5?shadowAt(float(i),uL[i].xyz,surf?1.0:0.0):1.0;\n"+
+        "  for(int i=0;i<8;i++){if(i>=uCount)break;vec3 dd=uL[i].xyz-vWorld;float d2=dot(dd,dd);if(d2<uL[i].w){float f=1.0-d2/uL[i].w;\n"+
+        "   float sh=uShadowOn>0.5&&i<uShadowN?shadowAt(float(i),uL[i].xyz,surf?1.0:0.0):1.0;\n"+
         "   if(surf&&amt>0.002&&budget>0&&f*f*sh>0.08){budget--;vec3 Ld2=dd*inversesqrt(max(d2,1e-4));sh*=pomShadow(uv,vec3(dot(Ld2,T),dot(Ld2,B),dot(Ld2,N)),amt,h0);}\n"+
         "   float diff=surf?(0.25+0.95*max(0.0,dot(Nw,dd*inversesqrt(max(d2,1e-4))))):1.0;lc+=uLC[i]*(f*f*diff*sh);}}\n"+
         "  c=alb*min(vec3(1.7),amb+lc*1.35);}\n"+
@@ -273,8 +273,8 @@ final class GpuRenderer {
         // ---- surfaces, grouped by texture
         int nm=Textures.COUNT;
         int vs=level.vertices.size();
-        computeGi(level);
-        if(shadows&&r.lightCount>0)buildShadows(level,sprites);
+        computeGi(level);pickLights();
+        if(shadows&&nl>0)buildShadows(level,sprites);
         // pass 1: floors, ceilings, walls into per-material buckets (stored as start indexes after sorting)
         ArrayList<float[]>[] lists=new ArrayList[nm];
         for(int si=0;si<level.sectors.size()&&si<r.tris.length;si++){
@@ -446,12 +446,12 @@ final class GpuRenderer {
      * monsters cast shadows that end at their head. The shader then needs one lookup per light: very cheap.
      */
     private void buildShadows(Level level,List<Renderer.SpriteDraw> sprites){
-        int n=Math.min(16,r.lightCount),nvx=level.vertices.size(),ns=level.sectors.size();
+        int n=Math.min(SHADOW_LIGHTS,nl),nvx=level.vertices.size(),ns=level.sectors.size();
         shadowBuf.position(0);
         for(int li=0;li<16;li++){
             java.util.Arrays.fill(wallD,32f);java.util.Arrays.fill(actD,24f);java.util.Arrays.fill(actTop,0f);
             if(li<n){
-                float lx=r.lx[li],ly=r.ly[li],lz=r.lz[li],rad=(float)Math.sqrt(r.lr2[li]);
+                int L=order[li];float lx=r.lx[L],ly=r.ly[L],lz=r.lz[L],rad=(float)Math.sqrt(r.lr2[L]);
                 for(Level.LineDef l:r.lines){
                     if(l.from>=nvx||l.to>=nvx||l.front<0||l.front>=ns)continue;
                     boolean block;
@@ -529,14 +529,24 @@ final class GpuRenderer {
         float ta=r.tintAmt;GLES20.glUniform4f(GLES20.glGetUniformLocation(p,"uTint"),1-ta+ta*r.tintR/255f,1-ta+ta*r.tintG/255f,1-ta+ta*r.tintB/255f,1);
     }
     private final float[] lp=new float[16*4],lc=new float[16*3];
+    /** Lights shaded per pixel (the ones nearest the camera for their size), and how many of them cast shadows. */
+    static final int MAX_SHADED=8,SHADOW_LIGHTS=4;
+    private final int[] order=new int[16];private int nl;
+    private void pickLights(){
+        int n=Math.min(16,r.lightCount);float[] score=new float[n];
+        for(int i=0;i<n;i++){float dx=r.lx[i]-cx,dy=r.ly[i]-cy;score[i]=(dx*dx+dy*dy)/Math.max(.5f,r.lr2[i]);order[i]=i;}
+        for(int i=1;i<n;i++){int k=order[i];float sk=score[k];int j=i-1;while(j>=0&&score[order[j]]>sk){order[j+1]=order[j];j--;}order[j+1]=k;}
+        nl=Math.min(MAX_SHADED,n);
+    }
     private void sceneUniforms(int p){
         camUniforms(p);atmosUniforms(p);
         GLES20.glUniform1i(GLES20.glGetUniformLocation(p,"uTex"),0);GLES20.glUniform1i(GLES20.glGetUniformLocation(p,"uNorm"),1);GLES20.glUniform1i(GLES20.glGetUniformLocation(p,"uMat"),2);GLES20.glUniform1i(GLES20.glGetUniformLocation(p,"uShadow"),3);
-        GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uShadowOn"),shadows&&r.lightCount>0?1:0);GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uPbr"),pbr?1:0);GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
+        GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uShadowOn"),shadows&&nl>0?1:0);GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uPbr"),pbr?1:0);GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
         GLES20.glUniform3f(GLES20.glGetUniformLocation(p,"uCamPos"),cx,cy,eye);
         GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uFade"),r.fadeK);GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uAlphaCut"),-1f);
-        int n=Math.min(16,r.lightCount);
-        for(int i=0;i<n;i++){lp[i*4]=r.lx[i];lp[i*4+1]=r.ly[i];lp[i*4+2]=r.lz[i];lp[i*4+3]=r.lr2[i];lc[i*3]=r.lcr[i];lc[i*3+1]=r.lcg[i];lc[i*3+2]=r.lcb[i];}
+        int n=nl;
+        for(int j=0;j<n;j++){int i=order[j];lp[j*4]=r.lx[i];lp[j*4+1]=r.ly[i];lp[j*4+2]=r.lz[i];lp[j*4+3]=r.lr2[i];lc[j*3]=r.lcr[i];lc[j*3+1]=r.lcg[i];lc[j*3+2]=r.lcb[i];}
+        GLES20.glUniform1i(GLES20.glGetUniformLocation(p,"uShadowN"),Math.min(SHADOW_LIGHTS,n));
         GLES20.glUniform1i(GLES20.glGetUniformLocation(p,"uCount"),n);
         if(n>0){GLES20.glUniform4fv(GLES20.glGetUniformLocation(p,"uL"),n,lp,0);GLES20.glUniform3fv(GLES20.glGetUniformLocation(p,"uLC"),n,lc,0);}
         float[] hi=r.highlight>=0?idVec(r.highlight):new float[]{-1,-1,-1,-1};

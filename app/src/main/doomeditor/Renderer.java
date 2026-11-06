@@ -51,6 +51,17 @@ final class Renderer {
     static void loadPrefs(android.content.Context c){try{android.content.SharedPreferences p=c.getSharedPreferences("app",0);useGpu=p.getBoolean("gpu",true);gpuLines=p.getInt("gpuLines",270);GpuRenderer.relief=p.getBoolean("relief",true);GpuRenderer.pbr=p.getBoolean("pbr",true);GpuRenderer.gi=p.getBoolean("gi",true);GpuRenderer.shadows=p.getBoolean("shadows",true);}catch(Throwable ignored){}}
     static void savePrefs(android.content.Context c){try{c.getSharedPreferences("app",0).edit().putBoolean("gpu",useGpu).putInt("gpuLines",gpuLines).putBoolean("relief",GpuRenderer.relief).putBoolean("pbr",GpuRenderer.pbr).putBoolean("gi",GpuRenderer.gi).putBoolean("shadows",GpuRenderer.shadows).apply();}catch(Throwable ignored){}}
     boolean onGpu(){return gpu!=null;}
+    // dynamic resolution: if frames get slow (big fights, lots of lights) the 3D picture drops a size until it's
+    // smooth again, then climbs back; a very slow frame drops straight to the smallest size so the phone never stalls
+    private static final float[] DYN={1f,.85f,.72f,.6f,.5f};
+    private int dynLevel;private long gpuStart;private float frameAvg;private int calm;
+    private void adapt(float ms){
+        if(ms>220){dynLevel=DYN.length-1;frameAvg=0;calm=0;return;}
+        frameAvg=frameAvg==0?ms:frameAvg*.9f+ms*.1f;
+        if(frameAvg>28&&dynLevel<DYN.length-1){dynLevel++;frameAvg=0;calm=0;}
+        else if(frameAvg<14&&dynLevel>0){if(++calm>90){dynLevel--;frameAvg=0;calm=0;}}
+        else calm=0;
+    }
 
     Renderer(){blit.setFilterBitmap(false);blit.setAntiAlias(false);Textures.init();Sprites.init();}
     /** Switches to the GPU when it's turned on and works on this phone; otherwise stays in software. */
@@ -123,7 +134,8 @@ final class Renderer {
     void renderScene(Level level,float x,float y,float eyeZ,float angle,float pitch,float vw,float vh,List<SpriteDraw> sprites){
         if(gpuReady()){
             try{
-                int h=Math.max(120,Math.min(720,gpuLines)),w=Math.max(160,Math.min(1600,Math.round(h*vw/Math.max(1,vh))));
+                gpuStart=System.nanoTime();
+                int h=Math.max(120,Math.min(720,Math.round(gpuLines*DYN[dynLevel]))),w=Math.max(160,Math.min(1600,Math.round(h*vw/Math.max(1,vh))));
                 gpu.setup(w,h);W=w;H=h;geometry(level);
                 camX=x;camY=y;eye=eyeZ;cs=(float)Math.cos(angle);sn=(float)Math.sin(angle);
                 focal=W*.5f;kx=(W*.5f)/focal*1.04f;horizon=H*.5f+(float)Math.tan(Math.max(-.6f,Math.min(.6f,pitch)))*focal;
@@ -185,7 +197,7 @@ final class Renderer {
     }
     private static int light(int sectorLight){return Math.max(0,Math.min(31,Math.round(sectorLight/255f*31f)));}
     void present(Canvas out,RectF dst){
-        if(gpu!=null){try{out.drawBitmap(gpu.finish(),null,dst,blit);return;}catch(Throwable e){gpu=null;useGpu=false;return;}}
+        if(gpu!=null){try{out.drawBitmap(gpu.finish(),null,dst,blit);if(gpuStart!=0){adapt((System.nanoTime()-gpuStart)/1e6f);gpuStart=0;}return;}catch(Throwable e){gpu=null;useGpu=false;return;}}
         if(pix==null)return;bmp.setPixels(pix,0,W,0,0,W,H);out.drawBitmap(bmp,null,dst,blit);}
 
     private void drawSky(float angle){
