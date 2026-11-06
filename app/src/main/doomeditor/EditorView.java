@@ -336,14 +336,16 @@ public class EditorView extends View {
     private String rendererLabel(){if(!Renderer.useGpu)return "Software";if(!renderer.onGpu()&&GpuRenderer.available()==false)return "Software (GPU not available)";return "GPU, "+Renderer.gpuLines+" lines";}
     private void chooseRenderer(){
         int cur=4;if(Renderer.useGpu)for(int i=0;i<RENDER_LINES.length;i++)if(RENDER_LINES[i]==Renderer.gpuLines)cur=i;
-        String[] items=java.util.Arrays.copyOf(RENDERERS,RENDERERS.length+4);
+        String[] items=java.util.Arrays.copyOf(RENDERERS,RENDERERS.length+5);
         items[RENDERERS.length]="Normal + parallax mapping: "+(GpuRenderer.relief?"ON (tap to turn off)":"off (tap to turn on)");
-        items[RENDERERS.length+1]="Physically based shading (shine, metal): "+(GpuRenderer.pbr?"ON":"off");
+        items[RENDERERS.length+1]="PS1 look (wobble, warped textures, dithering): "+(GpuRenderer.ps1?"ON":"off");
         items[RENDERERS.length+2]="Sky light + bounce lighting: "+(GpuRenderer.gi?"ON":"off");
         items[RENDERERS.length+3]="Dynamic shadows from lights: "+(GpuRenderer.shadows?"ON":"off");
+        items[RENDERERS.length+4]="3D models for characters and items: "+(GpuRenderer.models3d?"ON":"off (sprites)");
         host.choose("3D renderer",items,cur,k->{
             if(k==RENDERERS.length+3){GpuRenderer.shadows=!GpuRenderer.shadows;Renderer.savePrefs(getContext());hint(GpuRenderer.shadows?"Shadows on · walls, doors and monsters block torchlight":"Shadows off");invalidate();return;}
-            if(k==RENDERERS.length+1){GpuRenderer.pbr=!GpuRenderer.pbr;Renderer.savePrefs(getContext());hint(GpuRenderer.pbr?"Physically based shading on · smooth and metal surfaces shine under lights":"Physically based shading off");invalidate();return;}
+            if(k==RENDERERS.length+1){GpuRenderer.ps1=!GpuRenderer.ps1;Renderer.savePrefs(getContext());hint(GpuRenderer.ps1?"PS1 look on · wobbling vertices, warped textures, 15-bit dithered colour":"PS1 look off · steady, smooth picture");invalidate();return;}
+            if(k==RENDERERS.length+4){GpuRenderer.models3d=!GpuRenderer.models3d;Renderer.savePrefs(getContext());hint(GpuRenderer.models3d?"3D models on · built-in characters and items are low-poly models":"3D models off · sprites");invalidate();return;}
             if(k==RENDERERS.length+2){GpuRenderer.gi=!GpuRenderer.gi;Renderer.savePrefs(getContext());hint(GpuRenderer.gi?"Sky light on · open-sky sectors light up and light spills through doorways":"Sky light off");invalidate();return;}
             if(k==RENDERERS.length){GpuRenderer.relief=!GpuRenderer.relief;Renderer.savePrefs(getContext());hint(GpuRenderer.relief?"Relief on · textures get depth and react to lights (GPU only)":"Relief off · flat textures");invalidate();return;}
             if(k==4)Renderer.useGpu=false;else{Renderer.useGpu=true;Renderer.gpuLines=RENDER_LINES[k];}
@@ -500,7 +502,8 @@ public class EditorView extends View {
         Level.Sector sec=level.sectors.get(si);
         homeSprites.clear();int pool=0;
         for(int i=0;i<level.things.size();i++){Level.Thing th=level.things.get(i);EntityDef d=project.def(th.def);if(d==null||d.kind==EntityDef.PLAYER)continue;
-            homeSprites.add(sd(pool++).set(th.x,th.y,floorAtLevel(th.x,th.y),project.spriteFor(d,d.sprite,Sprites.F_IDLE,t,0,World.angleDiff((float)Math.atan2(level.playerY-th.y,level.playerX-th.x),th.angle)),-1,false));}
+            Renderer.SpriteDraw d3=sd(pool++).set(th.x,th.y,floorAtLevel(th.x,th.y),project.spriteFor(d,d.sprite,Sprites.F_IDLE,t,0,World.angleDiff((float)Math.atan2(level.playerY-th.y,level.playerX-th.x),th.angle)),-1,false);
+            if(project.builtinLook(d,d.sprite))d3.model(d.sprite,Sprites.F_IDLE,Sprites.F_IDLE,0,th.angle);homeSprites.add(d3);}
         renderer.highlight=-1;
         Atmosphere.prepareStatic(renderer,project,project.current(),level,t);
         renderer.fx=null;renderer.render(c,level,level.playerX,level.playerY,Math.min(sec.ceiling-.1f,sec.floor+World.EYE),ang,0,rr,homeSprites);
@@ -1112,7 +1115,8 @@ public class EditorView extends View {
         renderer.highlight=sel3d;
         spriteList.clear();int pool=0;
         for(int i=0;i<level.things.size();i++){Level.Thing t=level.things.get(i);EntityDef d=project.def(t.def);if(d==null)continue;
-            spriteList.add(sd(pool++).set(t.x,t.y,floorAtLevel(t.x,t.y),project.spriteFor(d,d.sprite,Sprites.F_IDLE,walker.time,0,World.angleDiff((float)Math.atan2(cam.y-t.y,cam.x-t.x),t.angle)),Renderer.id(Renderer.ID_SPRITE,i),false));}
+            Renderer.SpriteDraw d3=sd(pool++).set(t.x,t.y,floorAtLevel(t.x,t.y),project.spriteFor(d,d.sprite,Sprites.F_IDLE,walker.time,0,World.angleDiff((float)Math.atan2(cam.y-t.y,cam.x-t.x),t.angle)),Renderer.id(Renderer.ID_SPRITE,i),false);
+            if(project.builtinLook(d,d.sprite))d3.model(d.sprite,Sprites.F_IDLE,Sprites.F_IDLE,0,t.angle);spriteList.add(d3);}
         Atmosphere.prepareStatic(renderer,project,project.current(),level,walker.time);
         renderer.fx=null;renderer.render(c,level,cam.x,cam.y,walker.viewZ,cam.angle,cam.pitch,view3d,spriteList);
         // crosshair
@@ -1298,7 +1302,8 @@ public class EditorView extends View {
             else{int f=a.def!=null&&a.def.animated()?a.frame():a.sprite==Sprites.TORCH?((int)(world.time*8)&1):a.alive?Sprites.F_IDLE:Sprites.F_DEAD;
                 // which side of the actor the camera sees (sprite angles / rear views)
                 float view=World.angleDiff((float)Math.atan2(cy-a.y,cx-a.x),a.angle);
-                s=project.actorSprite(a,f,world.time,view);}
+                s=project.actorSprite(a,f,world.time,view);
+                Renderer.SpriteDraw d3=sd(pool++).set(a.x,a.y,a.z+a.bob,s,-1,bright);if(project.builtinLook(a.def,a.sprite))project.modelPose(d3,a,f);spriteList.add(d3);continue;}
             spriteList.add(sd(pool++).set(a.x,a.y,a.z+a.bob-(a.projectileType>=0?.2f:0),s,-1,bright));}
         for(World.Effect e:world.effects){int f=Math.min(2,(int)(e.t/e.life*3));spriteList.add(sd(pool++).set(e.x,e.y,e.z-.2f,Sprites.effect(e.type,f,true),-1,e.type!=Sprites.FX_BLOOD));}
         view3d.set(0,0,w,h);

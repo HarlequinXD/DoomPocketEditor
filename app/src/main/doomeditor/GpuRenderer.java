@@ -33,6 +33,8 @@ final class GpuRenderer {
     private static final float[][] avg=new float[Textures.COUNT][];private static float[] skyAvg={.5f,.6f,.75f};
     /** Physically based shading, and sky light + bounce lighting between sectors (settings). */
     static boolean pbr=true,gi=true;
+    /** PS1 look: vertex wobble, warped (affine) textures, 15-bit dithered colour. 3D models for built-in entities. */
+    static boolean ps1=true,models3d=true;
     /** Dynamic shadows from coloured lights (setting). */
     static boolean shadows=true;
     private static int shadowTex;private static final int SB=256;   // angle bins per light
@@ -103,28 +105,31 @@ final class GpuRenderer {
     // ------------------------------------------------------------------ shaders
     // scene vertex: world position, texture coords, (sector light, bright flag), pick id bytes
     private static final String VS_SCENE=
-        "uniform vec3 uCam;uniform vec2 uCS;uniform vec3 uProj;\n"+
+        "uniform vec3 uCam;uniform vec2 uCS;uniform vec3 uProj;uniform vec2 uSnap;\n"+
         "attribute vec3 aPos;attribute vec2 aUv;attribute vec2 aLight;attribute vec4 aId;attribute vec3 aTan;attribute float aKind;attribute vec3 aGi;attribute vec3 aEdge;\n"+
-        "varying vec3 vEdge;varying vec2 vUv;varying vec2 vLight;varying vec3 vWorld;varying float vZ;varying vec4 vId;varying vec3 vTan;varying float vKind;varying vec3 vGi;\n"+
+        "varying vec3 vUvA;varying vec3 vEdge;varying vec2 vUv;varying vec2 vLight;varying vec3 vWorld;varying float vZ;varying vec4 vId;varying vec3 vTan;varying float vKind;varying vec3 vGi;\n"+
         "void main(){vec2 d=aPos.xy-uCam.xy;float x=-d.x*uCS.y+d.y*uCS.x;float z=d.x*uCS.x+d.y*uCS.y;float y=aPos.z-uCam.z;\n"+
         " vUv=aUv;vLight=aLight;vWorld=aPos;vZ=z;vId=aId;vTan=aTan;vKind=aKind;vGi=aGi;vEdge=aEdge;\n"+
-        " gl_Position=vec4(x,uProj.y*z-y*uProj.x,(z*uProj.z-2.0*0.06*120.0/(120.0-0.06)),z);}\n";
+        " vec4 cp=vec4(x,uProj.y*z-y*uProj.x,(z*uProj.z-2.0*0.06*120.0/(120.0-0.06)),z);\n"+
+        // PS1: vertices snap to a coarse screen grid (the wobble), and texture coordinates are kept for affine mapping
+        " if(uSnap.x>0.0&&cp.w>0.01){cp.xy=floor(cp.xy/cp.w*uSnap+0.5)/uSnap*cp.w;}\n"+
+        " vUvA=vec3(aUv*cp.w,cp.w);gl_Position=cp;}\n";
     private static final String FS_HEAD=
         "#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\nprecision mediump float;\n#endif\n";
     // vKind: 0 floor/ceiling, 1 wall, 2 sprite/decal (no relief). Tangent frame: walls T = along the wall,
     // B = down (texture v grows downward), N = facing the camera; floors T = +x, B = +y, N = up or down.
+    // vKind: 0 floor/ceiling, 1 wall, 2 sprite/decal, 3 3D model (vTan = its normal). Shading is PS1-style
+    // (not physically based): Lambert diffuse plus a Blinn-Phong highlight from the smoothness map, then 15-bit colour
+    // with ordered dithering. Normal maps, parallax, shadows, sky light and fog all still apply.
     private static final String FS_SCENE=FS_HEAD+
-        "uniform sampler2D uTex;uniform sampler2D uNorm;uniform sampler2D uMat;uniform float uRelief;uniform float uPbr;uniform vec3 uCamPos;\n"+
+        "uniform sampler2D uTex;uniform sampler2D uNorm;uniform sampler2D uMat;uniform float uRelief;uniform float uPom;uniform vec3 uCamPos;\n"+
         "uniform float uFade;uniform int uCount;uniform vec4 uL[8];uniform vec3 uLC[8];uniform int uShadowN;\n"+
-        "uniform vec4 uFog;uniform vec3 uFogC;uniform vec4 uTint;uniform vec4 uHi;uniform float uAlphaCut;\n"+
+        "uniform vec4 uFog;uniform vec3 uFogC;uniform vec4 uTint;uniform vec4 uHi;uniform float uAlphaCut;uniform float uAffine;uniform float uDither;\n"+
         "uniform sampler2D uShadow;uniform float uShadowOn;\n"+
-        "varying vec2 vUv;varying vec2 vLight;varying vec3 vWorld;varying float vZ;varying vec4 vId;varying vec3 vTan;varying float vKind;varying vec3 vGi;varying vec3 vEdge;\n"+
-        // self-shadow inside the relief: 4 taps up the height map toward the light (soft, cheap)
+        "varying vec3 vUvA;varying vec2 vUv;varying vec2 vLight;varying vec3 vWorld;varying float vZ;varying vec4 vId;varying vec3 vTan;varying float vKind;varying vec3 vGi;varying vec3 vEdge;\n"+
         "float pomShadow(vec2 uv,vec3 Lt,float amt,float h0){if(Lt.z<=0.02)return 0.35;vec2 dir=Lt.xy/max(Lt.z,0.2)*amt*(1.0-h0);float occ=0.0;\n"+
         " for(int j=1;j<=4;j++){float s=float(j)*0.25;float hh=texture2D(uNorm,uv+dir*s).a;occ=max(occ,(hh-(h0+(1.0-h0)*s))*(1.0-s*0.5));}\n"+
         " return 1.0-clamp(occ*5.0,0.0,0.75);}\n"+
-        // polar shadow map: one row per light, 256 angles; RG = distance to the nearest blocking wall (16 bit, 0..32),
-        // B = distance to the nearest actor (0..24), A = that actor's top height (0..16). 3 taps give soft edges.
         "float shadowAt(float row,vec3 lp,float actors){vec2 d=vWorld.xy-lp.xy;float dist=length(d);if(dist<0.05)return 1.0;\n"+
         " float u=atan(d.y,d.x)/6.2831853+0.5;float v=(row+0.5)/16.0;float s=0.0;\n"+
         " for(int k=-1;k<=1;k++){vec4 t=texture2D(uShadow,vec2(u+float(k)/256.0,v));float wd=(t.r*65280.0+t.g*255.0)/65535.0*32.0;\n"+
@@ -132,23 +137,23 @@ final class GpuRenderer {
         "  float ad=t.b*24.0;if(actors>0.5&&lit>0.0&&t.b<0.995&&dist>ad+0.15){float hz=lp.z+(vWorld.z-lp.z)*ad/dist;if(hz<t.a*16.0)lit=0.0;}\n"+
         "  s+=lit;}\n"+
         " return s/3.0;}\n"+
-        "void main(){vec2 uv=vUv;vec3 V=uCamPos-vWorld;vec3 Vw=normalize(V);vec3 Nw;float shadeK=1.0;bool surf=vKind<1.5;\n"+
+        "float bayer2(vec2 a){a=floor(a);return fract(dot(a,vec2(0.5,a.y*0.75)));}\n"+
+        "float bayer4(vec2 a){return bayer2(0.5*a)*0.25+bayer2(a);}\n"+
+        "void main(){vec2 uv=mix(vUv,vUvA.xy/vUvA.z,uAffine);vec3 V=uCamPos-vWorld;vec3 Vw=normalize(V);vec3 Nw;float shadeK=1.0;\n"+
+        " bool model=vKind>2.5;bool surf=vKind<1.5||model;\n"+
         " vec3 T=vec3(1.0,0.0,0.0);vec3 B=vec3(0.0,1.0,0.0);vec3 N=vec3(0.0,0.0,1.0);\n"+
-        " if(surf){if(vKind>0.5){T=normalize(vec3(vTan.xy,0.0));N=vec3(T.y,-T.x,0.0);if(dot(N,V)<0.0)N=-N;B=vec3(0.0,0.0,-1.0);}\n"+
+        " if(model){N=normalize(vTan);T=normalize(cross(abs(N.z)<0.9?vec3(0.0,0.0,1.0):vec3(1.0,0.0,0.0),N));B=cross(N,T);}\n"+
+        " else if(surf){if(vKind>0.5){T=normalize(vec3(vTan.xy,0.0));N=vec3(T.y,-T.x,0.0);if(dot(N,V)<0.0)N=-N;B=vec3(0.0,0.0,-1.0);}\n"+
         "  else{N=vec3(0.0,0.0,V.z>0.0?1.0:-1.0);}}\n"+
         " else{N=normalize(vec3(V.xy,0.0001));}\n"+
-        " Nw=N;\n"+
-        " float amt=0.0;float h0=1.0;\n"+
+        " Nw=N;float amt=0.0;float h0=1.0;\n"+
         " if(surf&&uRelief>0.0){vec3 Vt=normalize(vec3(dot(V,T),dot(V,B),dot(V,N)));\n"+
-        // parallax occlusion: depth fades out with distance; fewer steps head-on and far away, more at grazing angles
-        "  float lod=clamp(1.0-vZ/12.0,0.0,1.0);amt=uRelief*0.07*lod;\n"+
+        "  float lod=clamp(1.0-vZ/12.0,0.0,1.0);amt=uRelief*0.07*lod*uPom;\n"+
         "  if(amt>0.002){float steps=floor(mix(10.0,3.0,Vt.z)*(0.4+0.6*lod)+1.0);vec2 delta=Vt.xy/max(Vt.z,0.22)*amt/steps;float ls=1.0/steps;\n"+
         "   float layer=0.0;vec2 cur=uv;float depth=1.0-texture2D(uNorm,cur).a;vec2 pUv=cur;float pD=depth;float pL=0.0;\n"+
         "   for(int i=0;i<10;i++){if(float(i)>=steps||layer>=depth)break;pUv=cur;pD=depth;pL=layer;cur-=delta;layer+=ls;depth=1.0-texture2D(uNorm,cur).a;}\n"+
-        // contact refinement: one interpolation between the last two steps instead of a binary search
         "   float a1=depth-layer;float b1=pD-pL;uv=mix(cur,pUv,clamp(a1/(a1-b1+1e-5),0.0,1.0));\n"+
-        // silhouettes: on step tops and door lintels the relief can run off the edge, so those pixels are cut away
-        "   if(vKind>0.5){if(vEdge.z>0.5&&vEdge.z<1.5&&uv.y<vEdge.x)discard;if(vEdge.z>1.5&&uv.y>vEdge.y)discard;}}\n"+
+        "   if(vKind>0.5&&vKind<1.5){if(vEdge.z>0.5&&vEdge.z<1.5&&uv.y<vEdge.x)discard;if(vEdge.z>1.5&&uv.y>vEdge.y)discard;}}\n"+
         "  h0=texture2D(uNorm,uv).a;\n"+
         "  vec3 nm=texture2D(uNorm,uv).rgb*2.0-1.0;Nw=normalize(T*nm.x+B*nm.y+N*nm.z);\n"+
         "  shadeK=(0.8+0.32*dot(nm,vec3(-0.36,-0.46,0.81)))/1.06;}\n"+
@@ -156,34 +161,24 @@ final class GpuRenderer {
         " vec3 m=surf?texture2D(uMat,uv).rgb:vec3(0.1,0.0,1.0);float smo=m.r;float metal=m.g;float ao=m.b;\n"+
         " float L=vLight.x;float li;if(vLight.y>0.5)li=31.0;else{li=floor(L+3.0-vZ*uFade);li=clamp(li,max(1.0,floor(L/4.0)),31.0);}\n"+
         " float k=pow(li/31.0,1.25)*1.06;\n"+
-        // ambient = sector light + sky/bounce light (more from above), darkened in cavities
         " float hemi=0.55+0.45*Nw.z;vec3 amb=(vec3(k*shadeK)+vGi*hemi)*ao;\n"+
-        " vec3 c;\n"+
-        " if(uPbr>0.5){float rough=max(0.08,1.0-smo);float a2=rough*rough*rough*rough;float NdV=max(dot(Nw,Vw),0.001);\n"+
-        "  vec3 F0=mix(vec3(0.04),alb,metal);vec3 Fa=F0+(max(vec3(1.0-rough),F0)-F0)*pow(1.0-NdV,5.0);\n"+
-        "  c=alb*(1.0-metal)*(1.0-Fa*0.5)*amb+Fa*amb*(0.3+0.7*smo);\n"+
-        "  float kk=(rough+1.0)*(rough+1.0)/8.0;int budget=2;\n"+
-        "  for(int i=0;i<8;i++){if(i>=uCount)break;vec3 dd=uL[i].xyz-vWorld;float d2=dot(dd,dd);if(d2<uL[i].w){float f=1.0-d2/uL[i].w;\n"+
-        "   float sh=uShadowOn>0.5&&i<uShadowN?shadowAt(float(i),uL[i].xyz,surf?1.0:0.0):1.0;if(sh<=0.0)continue;\n"+
-        "   vec3 Ld=dd*inversesqrt(max(d2,1e-4));\n"+
-        "   if(surf&&amt>0.002&&budget>0&&f*f*sh>0.08){budget--;sh*=pomShadow(uv,vec3(dot(Ld,T),dot(Ld,B),dot(Ld,N)),amt,h0);}\n"+
-        "   vec3 rad=uLC[i]*(f*f*1.35*sh);float NdL=max(dot(Nw,Ld),0.0);\n"+
-        "   if(!surf){c+=alb*rad;continue;}\n"+
-        "   vec3 H=normalize(Ld+Vw);float NdH=max(dot(Nw,H),0.0);float dn=NdH*NdH*(a2-1.0)+1.0;float D=a2/(3.14159*dn*dn);\n"+
-        "   float G=(NdV/(NdV*(1.0-kk)+kk))*(NdL/(NdL*(1.0-kk)+kk));vec3 F=F0+(1.0-F0)*pow(1.0-max(dot(H,Vw),0.0),5.0);\n"+
-        "   vec3 spec=min(D*G*F/(4.0*NdV*NdL+0.001),vec3(6.0));vec3 kd=(1.0-F)*(1.0-metal);\n"+
-        "   c+=(kd*alb*(0.15+0.85*NdL)+spec*NdL*0.6)*rad;}}\n"+
-        " }else{vec3 lc=vec3(0.0);int budget=2;\n"+
-        "  for(int i=0;i<8;i++){if(i>=uCount)break;vec3 dd=uL[i].xyz-vWorld;float d2=dot(dd,dd);if(d2<uL[i].w){float f=1.0-d2/uL[i].w;\n"+
-        "   float sh=uShadowOn>0.5&&i<uShadowN?shadowAt(float(i),uL[i].xyz,surf?1.0:0.0):1.0;\n"+
-        "   if(surf&&amt>0.002&&budget>0&&f*f*sh>0.08){budget--;vec3 Ld2=dd*inversesqrt(max(d2,1e-4));sh*=pomShadow(uv,vec3(dot(Ld2,T),dot(Ld2,B),dot(Ld2,N)),amt,h0);}\n"+
-        "   float diff=surf?(0.25+0.95*max(0.0,dot(Nw,dd*inversesqrt(max(d2,1e-4))))):1.0;lc+=uLC[i]*(f*f*diff*sh);}}\n"+
-        "  c=alb*min(vec3(1.7),amb+lc*1.35);}\n"+
+        " if(model)amb*=0.75+0.25*max(0.0,dot(Nw,normalize(vec3(-0.4,-0.3,0.85))))+0.1;\n"+
+        " vec3 c=alb*amb;vec3 specC=mix(vec3(1.0),alb*1.4,metal);float shin=6.0+smo*58.0;float sAmt=0.12+smo*0.9;int budget=2;\n"+
+        " for(int i=0;i<8;i++){if(i>=uCount)break;vec3 dd=uL[i].xyz-vWorld;float d2=dot(dd,dd);if(d2<uL[i].w){float f=1.0-d2/uL[i].w;\n"+
+        "  float sh=uShadowOn>0.5&&i<uShadowN?shadowAt(float(i),uL[i].xyz,(surf&&!model)?1.0:0.0):1.0;if(sh<=0.0)continue;\n"+
+        "  vec3 Ld=dd*inversesqrt(max(d2,1e-4));\n"+
+        "  if(surf&&amt>0.002&&budget>0&&f*f*sh>0.08){budget--;sh*=pomShadow(uv,vec3(dot(Ld,T),dot(Ld,B),dot(Ld,N)),amt,h0);}\n"+
+        "  vec3 rad=uLC[i]*(f*f*1.35*sh);\n"+
+        "  if(!surf){c+=alb*rad;continue;}\n"+
+        "  float NdL=max(dot(Nw,Ld),0.0);vec3 H=normalize(Ld+Vw);float sp=pow(max(dot(Nw,H),0.0),shin)*sAmt;\n"+
+        "  c+=(alb*(1.0-metal*0.6)*(0.15+0.85*NdL)+specC*sp*NdL)*rad;}}\n"+
         " c=min(c,vec3(1.7));\n"+
         " if(uFog.z>0.0&&vZ>uFog.x){float f=min(1.0,(vZ-uFog.x)*uFog.y)*uFog.z;c=mix(c,uFogC,f);}\n"+
         " c*=uTint.rgb;\n"+
         " if(uHi.a>=0.0&&all(lessThan(abs(vId-uHi),vec4(0.002))))c=c*0.625+vec3(30.0,96.0,60.0)/255.0;\n"+
-        " gl_FragColor=vec4(min(c,vec3(1.0)),t.a);}\n";
+        // PS1 colour: 15-bit (31 levels per channel) with a 4x4 ordered dither
+        " c=clamp(c,0.0,1.0);if(uDither>0.5)c=floor(c*31.0+bayer4(gl_FragCoord.xy))/31.0;\n"+
+        " gl_FragColor=vec4(c,t.a);}\n";
     /**
      * Blood splats drawn by a shader instead of a texture each: the shape (a wobbly blob, a few droplets around it,
      * a darker rim and a wet highlight) is worked out from the splat's seed, in 8 x 8 steps per radius so it stays
@@ -224,11 +219,13 @@ final class GpuRenderer {
         "uniform vec2 uSize;attribute vec3 aPos;attribute vec2 aUv;varying vec2 vUv;varying vec2 vPix;\n"+
         "void main(){vUv=aUv;vPix=aPos.xy;gl_Position=vec4(aPos.x/uSize.x*2.0-1.0,aPos.y/uSize.y*2.0-1.0,0.0,1.0);}\n";
     private static final String FS_SKY=FS_HEAD+
-        "uniform sampler2D uTex;uniform vec4 uSky;uniform vec4 uFog;uniform vec3 uFogC;uniform vec4 uTint;varying vec2 vUv;varying vec2 vPix;\n"+
+        "uniform sampler2D uTex;uniform vec4 uSky;uniform vec4 uFog;uniform vec3 uFogC;uniform vec4 uTint;uniform float uDither;varying vec2 vUv;varying vec2 vPix;\n"+
         // uSky: angle, focal, horizon, W
         "void main(){float a=uSky.x+atan((vPix.x-uSky.w*0.5)/uSky.y);float u=a/6.2831853*2.0;\n"+
         " float v=(128.0*0.78+(vPix.y-uSky.z)*(128.0/(uFog.w*1.15)))/128.0;v=clamp(v,0.5/128.0,1.0-0.5/128.0);\n"+
-        " vec3 c=texture2D(uTex,vec2(u,v)).rgb;if(uFog.z>0.0)c=mix(c,uFogC,uFog.z*0.6);gl_FragColor=vec4(c*uTint.rgb,1.0);}\n";
+        " vec3 c=texture2D(uTex,vec2(u,v)).rgb;if(uFog.z>0.0)c=mix(c,uFogC,uFog.z*0.6);c*=uTint.rgb;\n"+
+        " if(uDither>0.5){vec2 a=floor(gl_FragCoord.xy);float b=fract(dot(floor(a*0.5),vec2(0.5,floor(a.y*0.5)*0.75)))*0.25+fract(dot(a,vec2(0.5,a.y*0.75)));c=floor(clamp(c,0.0,1.0)*31.0+b)/31.0;}\n"+
+        " gl_FragColor=vec4(c,1.0);}\n";
     private static final String FS_SCREEN=FS_HEAD+
         "uniform sampler2D uTex;uniform vec4 uMul;uniform float uUseTex;varying vec2 vUv;varying vec2 vPix;\n"+
         "void main(){vec4 t=uUseTex>0.5?texture2D(uTex,vUv):vec4(1.0);if(t.a<0.02)discard;gl_FragColor=vec4(min(t.rgb*uMul.rgb,vec3(1.0)),t.a*uMul.a);}\n";
@@ -353,7 +350,7 @@ final class GpuRenderer {
         if(sky)drawSky();
         vb=upload();
         GLES20.glEnable(GLES20.GL_DEPTH_TEST);GLES20.glDepthFunc(GLES20.GL_LEQUAL);
-        GLES20.glUseProgram(progScene);sceneUniforms(progScene);int uRel=GLES20.glGetUniformLocation(progScene,"uRelief");
+        GLES20.glUseProgram(progScene);sceneUniforms(progScene);int uRel=GLES20.glGetUniformLocation(progScene,"uRelief"),uPom=GLES20.glGetUniformLocation(progScene,"uPom");
         bindScene(progScene,vb);
         for(int[] b:batches){
             if(b[3]==4){GLES20.glUseProgram(progSplat);camUniforms(progSplat);atmosUniforms(progSplat);
@@ -367,9 +364,14 @@ final class GpuRenderer {
             else if(b[3]==1){GLES20.glEnable(GLES20.GL_BLEND);GLES20.glBlendFuncSeparate(GLES20.GL_SRC_ALPHA,GLES20.GL_ONE_MINUS_SRC_ALPHA,GLES20.GL_ZERO,GLES20.GL_ONE);
                 GLES20.glDepthMask(true);GLES20.glDisable(GLES20.GL_POLYGON_OFFSET_FILL);GLES20.glUniform1f(GLES20.glGetUniformLocation(progScene,"uAlphaCut"),.5f);}
             else{GLES20.glDisable(GLES20.GL_BLEND);GLES20.glDepthMask(true);GLES20.glDisable(GLES20.GL_POLYGON_OFFSET_FILL);GLES20.glUniform1f(GLES20.glGetUniformLocation(progScene,"uAlphaCut"),-1f);}
+            if(b[3]==5){   // 3D model: its own colour, relief (normal map) and material atlases; normal-mapped, no parallax
+                GLES20.glActiveTexture(GLES20.GL_TEXTURE1);GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,b[4]);GLES20.glUniform1f(uRel,relief?.8f:0f);GLES20.glUniform1f(uPom,0f);
+                GLES20.glActiveTexture(GLES20.GL_TEXTURE2);GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,b[5]);
+            }else{
+            GLES20.glUniform1f(uPom,1f);
             GLES20.glActiveTexture(GLES20.GL_TEXTURE1);GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,b[3]==0&&b.length>4?reliefTex[b[4]]:flatRelief);
             GLES20.glUniform1f(uRel,b[3]==0&&b.length>4&&relief?Textures.RELIEF[b[4]]:0f);
-            GLES20.glActiveTexture(GLES20.GL_TEXTURE2);GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,b[3]==0&&b.length>4?matTex[b[4]]:flatMat);
+            GLES20.glActiveTexture(GLES20.GL_TEXTURE2);GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,b[3]==0&&b.length>4?matTex[b[4]]:flatMat);}
             GLES20.glActiveTexture(GLES20.GL_TEXTURE0);GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,b[0]);GLES20.glDrawArrays(GLES20.GL_TRIANGLES,b[1],b[2]);
         }
         GLES20.glDisable(GLES20.GL_POLYGON_OFFSET_FILL);GLES20.glDepthMask(true);
@@ -400,7 +402,32 @@ final class GpuRenderer {
         put(m,a.x,a.y,hi,0,vt,L,B,pid,tx,ty,1,ar,ag,ab,vt,vb2,edge);put(m,b.x,b.y,lo,u1,vb2,L,B,pid,tx,ty,1,br2,bg,bb,vt,vb2,edge);put(m,a.x,a.y,lo,0,vb2,L,B,pid,tx,ty,1,ar,ag,ab,vt,vb2,edge);
     }
 
+    // ------------------------------------------------------------------ 3D models (PS1-style vertex-animated meshes)
+    private static final int[][] modelTex=new int[Sprites.COUNT][];
+    private static int[] modelTextures(int id,MeshModels.Mesh m){
+        if(modelTex[id]==null){int S=m.atlas*MeshModels.TILE;modelTex[id]=new int[]{texture(m.color,S,S,false,true),texture(m.relief,S,S,false,false),texture(m.mat,S,S,false,true)};}
+        return modelTex[id];
+    }
+    private boolean model(Level level,Renderer.SpriteDraw d){
+        MeshModels.Mesh mm=MeshModels.get(d.model);if(mm==null)return false;
+        MeshModels.Frame A=mm.frames[Math.max(0,Math.min(Sprites.FRAMES-1,d.fa))],B=mm.frames[Math.max(0,Math.min(Sprites.FRAMES-1,d.fb))];
+        if(A==null)return false;boolean blend=B!=null&&B.count==A.count&&d.lerp>.001f;float t=blend?d.lerp:0;
+        float dx=d.x-cx,dy=d.y-cy;if(dx*cs+dy*sn<-2f)return true;   // behind the camera
+        int[] tex=modelTextures(d.model,mm);
+        int si=level.sectorAt(d.x,d.y);int L=si<0?24:Renderer.lightLevel(level.sectors.get(si).light);setGi(si);
+        float ca=(float)Math.cos(d.angle),sa=(float)Math.sin(d.angle);
+        int n=A.count,first=nv;ensure(n);float[] a=A.v,b=blend?B.v:A.v;boolean bright=d.bright;
+        for(int i=0;i<n;i++){int k=i*9;
+            float mx=a[k]+(b[k]-a[k])*t,my=a[k+1]+(b[k+1]-a[k+1])*t,mz=a[k+2]+(b[k+2]-a[k+2])*t;
+            float nx=a[k+3]+(b[k+3]-a[k+3])*t,ny=a[k+4]+(b[k+4]-a[k+4])*t,nz=a[k+5]+(b[k+5]-a[k+5])*t;
+            int o=nv*ST;
+            vtx(d.x+ca*mx-sa*my,d.y+sa*mx+ca*my,d.z+mz,a[k+6],a[k+7],L,(bright||a[k+8]>.5f)?1:0,d.pickId);
+            verts[o+11]=ca*nx-sa*ny;verts[o+12]=sa*nx+ca*ny;verts[o+13]=nz;verts[o+14]=3;}
+        batches.add(new int[]{tex[0],first,n,5,tex[1],tex[2]});
+        return true;
+    }
     private void sprite(Level level,Renderer.SpriteDraw d){
+        if(d.model>=0&&models3d&&model(level,d))return;
         Sprites.Sprite s=d.spr;if(s==null)return;
         float dx=d.x-cx,dy=d.y-cy,cz=dx*cs+dy*sn;if(cz<.12f)return;
         float ww=s.w/s.ppu,hh=s.h/s.ppu,rx=-sn*ww*.5f,ry=cs*ww*.5f;
@@ -573,6 +600,7 @@ final class GpuRenderer {
         // clip y = (2*horizon/H-1)*z - y*2*focal/H  (image top at row 0 after read-back)
         float n=.06f,f=120f;
         GLES20.glUniform3f(GLES20.glGetUniformLocation(p,"uProj"),2*focal/H,2*horizon/H-1,(f+n)/(f-n));
+        int us=GLES20.glGetUniformLocation(p,"uSnap");if(us>=0)GLES20.glUniform2f(us,ps1?W*.5f:0,ps1?H*.5f:0);
     }
     private void atmosUniforms(int p){
         float fa=r.fogAmt;GLES20.glUniform4f(GLES20.glGetUniformLocation(p,"uFog"),r.fogStart,1f/Math.max(.01f,r.fogEnd-r.fogStart),fa,H);
@@ -591,6 +619,7 @@ final class GpuRenderer {
     }
     private void sceneUniforms(int p){
         camUniforms(p);atmosUniforms(p);
+        GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uAffine"),ps1?.65f:0f);GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uDither"),ps1?1:0);GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uPom"),1f);
         GLES20.glUniform1i(GLES20.glGetUniformLocation(p,"uTex"),0);GLES20.glUniform1i(GLES20.glGetUniformLocation(p,"uNorm"),1);GLES20.glUniform1i(GLES20.glGetUniformLocation(p,"uMat"),2);GLES20.glUniform1i(GLES20.glGetUniformLocation(p,"uShadow"),3);
         GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uShadowOn"),shadows&&nl>0?1:0);GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uPbr"),pbr?1:0);GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
         GLES20.glUniform3f(GLES20.glGetUniformLocation(p,"uCamPos"),cx,cy,eye);
@@ -606,7 +635,7 @@ final class GpuRenderer {
     private void drawSky(){
         GLES20.glUseProgram(progSky);atmosUniforms(progSky);
         GLES20.glUniform2f(GLES20.glGetUniformLocation(progSky,"uSize"),W,H);
-        GLES20.glUniform4f(GLES20.glGetUniformLocation(progSky,"uSky"),angle,focal,horizon,W);
+        GLES20.glUniform4f(GLES20.glGetUniformLocation(progSky,"uSky"),angle,focal,horizon,W);GLES20.glUniform1f(GLES20.glGetUniformLocation(progSky,"uDither"),ps1?1:0);
         GLES20.glUniform1i(GLES20.glGetUniformLocation(progSky,"uTex"),0);GLES20.glActiveTexture(GLES20.GL_TEXTURE0);GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,skyTex);
         quad(0,0,W,H,0,0,1,1);
     }

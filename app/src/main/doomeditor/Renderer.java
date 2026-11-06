@@ -21,7 +21,10 @@ final class Renderer {
     static int id(int kind,int value){return (kind<<24)|(value&0xffffff);}
 
     static final class SpriteDraw {float x,y,z;Sprites.Sprite spr;int pickId=-1;boolean bright;
-        SpriteDraw set(float x,float y,float z,Sprites.Sprite s,int pickId,boolean bright){this.x=x;this.y=y;this.z=z;this.spr=s;this.pickId=pickId;this.bright=bright;return this;}}
+        /** 3D model to draw instead of the sprite (built-in sprite id, -1 = sprite): frames fa → fb blended by lerp, facing angle. */
+        int model=-1,fa,fb;float lerp,angle;
+        SpriteDraw set(float x,float y,float z,Sprites.Sprite s,int pickId,boolean bright){this.x=x;this.y=y;this.z=z;this.spr=s;this.pickId=pickId;this.bright=bright;model=-1;return this;}
+        SpriteDraw model(int id,int fa,int fb,float lerp,float angle){model=id;this.fa=fa;this.fb=fb;this.lerp=lerp;this.angle=angle;return this;}}
 
     private static final float NEAR=.06f;
     int W,H;
@@ -48,8 +51,8 @@ final class Renderer {
     private GpuRenderer gpu;
     /** Settings: draw the 3D scene on the GPU, and how many lines tall its picture is. */
     static boolean useGpu=true;static int gpuLines=270;
-    static void loadPrefs(android.content.Context c){try{android.content.SharedPreferences p=c.getSharedPreferences("app",0);useGpu=p.getBoolean("gpu",true);gpuLines=p.getInt("gpuLines",270);GpuRenderer.relief=p.getBoolean("relief",true);GpuRenderer.pbr=p.getBoolean("pbr",true);GpuRenderer.gi=p.getBoolean("gi",true);GpuRenderer.shadows=p.getBoolean("shadows",true);}catch(Throwable ignored){}}
-    static void savePrefs(android.content.Context c){try{c.getSharedPreferences("app",0).edit().putBoolean("gpu",useGpu).putInt("gpuLines",gpuLines).putBoolean("relief",GpuRenderer.relief).putBoolean("pbr",GpuRenderer.pbr).putBoolean("gi",GpuRenderer.gi).putBoolean("shadows",GpuRenderer.shadows).apply();}catch(Throwable ignored){}}
+    static void loadPrefs(android.content.Context c){try{android.content.SharedPreferences p=c.getSharedPreferences("app",0);useGpu=p.getBoolean("gpu",true);gpuLines=p.getInt("gpuLines",270);GpuRenderer.relief=p.getBoolean("relief",true);GpuRenderer.pbr=p.getBoolean("pbr",true);GpuRenderer.gi=p.getBoolean("gi",true);GpuRenderer.shadows=p.getBoolean("shadows",true);GpuRenderer.ps1=p.getBoolean("ps1",true);GpuRenderer.models3d=p.getBoolean("models3d",true);}catch(Throwable ignored){}}
+    static void savePrefs(android.content.Context c){try{c.getSharedPreferences("app",0).edit().putBoolean("gpu",useGpu).putInt("gpuLines",gpuLines).putBoolean("relief",GpuRenderer.relief).putBoolean("pbr",GpuRenderer.pbr).putBoolean("gi",GpuRenderer.gi).putBoolean("shadows",GpuRenderer.shadows).putBoolean("ps1",GpuRenderer.ps1).putBoolean("models3d",GpuRenderer.models3d).apply();}catch(Throwable ignored){}}
     boolean onGpu(){return gpu!=null;}
     /** One-line state for crash diagnostics. */
     String stats(){Runtime rt=Runtime.getRuntime();return (gpu!=null?"GPU "+W+"x"+H+" (size step "+dynLevel+"), last frame "+Math.round(lastMs)+" ms":"software "+W+"x"+H)+", lights "+lastLights

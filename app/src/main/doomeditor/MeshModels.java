@@ -1,0 +1,203 @@
+package com.retro.doomeditor;
+
+import java.util.ArrayList;
+
+/**
+ * Turns the built-in characters and items (SpriteModels: rounded shapes per material) into PS1-style low-poly
+ * meshes, about 300 triangles per character, with a texture atlas painted from each material: skin with pores and
+ * blotches, woven cloth, scaly hide, brushed and scratched metal, wood grain. Every animation frame becomes one
+ * mesh with the same vertex order, so the renderer can blend frames like Quake/PS1 vertex animation.
+ *
+ * Model space: x = forward, y = right, z = up, 1 unit = 1 grid square (the same as the game world).
+ */
+final class MeshModels {
+    private MeshModels(){}
+    static final int TILE=64;
+
+    /** One animation frame: per vertex x,y,z, normal x,y,z, u,v, glow (0/1). */
+    static final class Frame {float[] v;int count;}
+    /** All frames of one built-in sprite plus its texture atlases (colour, relief = normal+height, material). */
+    static final class Mesh {Frame[] frames=new Frame[Sprites.FRAMES];int atlas;int[] color,relief,mat;}
+
+    private static final Mesh[] cache=new Mesh[Sprites.COUNT];private static final boolean[] failed=new boolean[Sprites.COUNT];
+    /** The mesh for a built-in sprite id (built on first use, then kept); null if it has none. */
+    static Mesh get(int id){
+        if(id<0||id>=Sprites.COUNT||failed[id])return null;
+        synchronized(cache){if(cache[id]!=null)return cache[id];}
+        Mesh m=null;try{m=build(id);}catch(Throwable t){m=null;}
+        synchronized(cache){if(m==null){failed[id]=true;return null;}if(cache[id]==null)cache[id]=m;return cache[id];}
+    }
+    /** Builds the character meshes ahead of time (loading screen), so the first fight doesn't hitch. */
+    static void warm(){for(int id:new int[]{Sprites.HERO,Sprites.SKELETON,Sprites.GOBLIN,Sprites.ORC,Sprites.CULTIST,Sprites.VILLAGER})get(id);}
+    // ------------------------------------------------------------------ build
+    static Mesh build(int id){
+        Mesh out=new Mesh();
+        SpriteModels.Model first=model(id,0);if(first==null)return null;
+        // pick a level of detail so a character lands near 300 triangles
+        int lod=2;while(lod>0&&count(first,lod)>340)lod--;
+        int n=Math.max(1,first.mats.size());int g=1;while(g*g<n)g++;out.atlas=g;
+        for(int f=0;f<Sprites.FRAMES;f++){SpriteModels.Model m=f==0?first:model(id,f);if(m==null)m=first;out.frames[f]=mesh(m,lod,g);}
+        paint(out,first,g);
+        return out;
+    }
+    private static SpriteModels.Model model(int id,int frame){
+        try{
+            switch(id){
+                case Sprites.HERO:return SpriteModels.hero(frame);
+                case Sprites.SKELETON:return SpriteModels.skeleton(frame);
+                case Sprites.CULTIST:return SpriteModels.cultist(frame);
+                case Sprites.GOBLIN:return SpriteModels.goblin(frame);
+                case Sprites.ORC:return SpriteModels.orc(frame);
+                case Sprites.VILLAGER:return SpriteModels.villager(frame);
+                case Sprites.HERO_RANGER:case Sprites.HERO_ROGUE:case Sprites.HERO_WIZARD:case Sprites.HERO_CLERIC:return SpriteModels.hero(frame,id-Sprites.HERO_RANGER+1);
+                default:return SpriteModels.item(id,frame);
+            }
+        }catch(Throwable t){return null;}
+    }
+    private static int count(SpriteModels.Model m,int lod){int c=0;for(SpriteModels.Prim p:m.prims)c+=tris(p,lod);return c;}
+    private static boolean tiny(SpriteModels.Prim p){
+        switch(p.type){case SpriteModels.ELL:return Math.max(p.h[0],Math.max(p.h[1],p.h[2]))<.022f;
+            case SpriteModels.RCONE:case SpriteModels.CYL:return Math.max(p.r,p.r2)<.012f&&dist(p.a,p.b)<.05f;
+            case SpriteModels.BOX:return Math.max(p.h[0],Math.max(p.h[1],p.h[2]))<.015f;default:return false;}
+    }
+    private static int[] seg(SpriteModels.Prim p,int lod){
+        float size;switch(p.type){case SpriteModels.ELL:size=Math.max(p.h[0],Math.max(p.h[1],p.h[2]));break;case SpriteModels.TORUS:size=p.r;break;default:size=Math.max(p.r,p.r2);}
+        int around=lod==2?(size>.08f?8:6):lod==1?(size>.08f?6:5):4;int rings=lod==2?(size>.08f?5:4):lod==1?4:3;
+        return new int[]{around,rings};
+    }
+    private static int tris(SpriteModels.Prim p,int lod){
+        if(tiny(p))return 8;int[] s=seg(p,lod);
+        switch(p.type){case SpriteModels.ELL:return s[0]*(s[1]-1)*2;case SpriteModels.RCONE:case SpriteModels.CYL:return s[0]*4;case SpriteModels.BOX:return 12;
+            case SpriteModels.TORUS:return Math.max(5,s[0])*3*2;default:return 0;}
+    }
+
+    // ------------------------------------------------------------------ tessellation
+    private static float[] buf;private static int nv;
+    private static Frame mesh(SpriteModels.Model m,int lod,int g){
+        buf=new float[9*3*400];nv=0;
+        for(SpriteModels.Prim p:m.prims){
+            int mi=Math.max(0,Math.min(m.mats.size()-1,p.mat));SpriteModels.Mat mat=m.mats.isEmpty()?null:m.mats.get(mi);
+            float glow=mat!=null&&mat.glow?1:0;int tx=mi%g,ty=mi/g;
+            if(tiny(p)){octa(p,glow,tx,ty,g);continue;}
+            int[] s=seg(p,lod);
+            switch(p.type){
+                case SpriteModels.ELL:ellipsoid(p,s[0],s[1],glow,tx,ty,g);break;
+                case SpriteModels.RCONE:tube(p,s[0],p.r,p.r2,true,glow,tx,ty,g);break;
+                case SpriteModels.CYL:tube(p,s[0],p.r,p.r,false,glow,tx,ty,g);break;
+                case SpriteModels.BOX:box(p,glow,tx,ty,g);break;
+                case SpriteModels.TORUS:torus(p,Math.max(5,s[0]),3,glow,tx,ty,g);break;
+            }
+        }
+        Frame f=new Frame();f.v=java.util.Arrays.copyOf(buf,nv*9);f.count=nv;return f;
+    }
+    private static void put(float x,float y,float z,float nx,float ny,float nz,float u,float v,float glow,int tx,int ty,int g){
+        if((nv+1)*9>buf.length)buf=java.util.Arrays.copyOf(buf,buf.length*2);
+        float l=(float)Math.sqrt(nx*nx+ny*ny+nz*nz);if(l<1e-6f){nx=0;ny=0;nz=1;l=1;}
+        // atlas: keep a 2-texel border inside each tile so nearest sampling never bleeds into the next material
+        float in=2f/TILE;u=in+(u-(float)Math.floor(u))*(1-2*in);v=in+Math.max(0,Math.min(1,v))*(1-2*in);
+        int o=nv*9;buf[o]=x;buf[o+1]=y;buf[o+2]=z;buf[o+3]=nx/l;buf[o+4]=ny/l;buf[o+5]=nz/l;buf[o+6]=(tx+u)/g;buf[o+7]=(ty+v)/g;buf[o+8]=glow;nv++;
+    }
+    private static void tri(float[] a,float[] b,float[] c,float glow,int tx,int ty,int g){
+        put(a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],glow,tx,ty,g);put(b[0],b[1],b[2],b[3],b[4],b[5],b[6],b[7],glow,tx,ty,g);put(c[0],c[1],c[2],c[3],c[4],c[5],c[6],c[7],glow,tx,ty,g);
+    }
+    private static float[] P(float x,float y,float z,float nx,float ny,float nz,float u,float v){return new float[]{x,y,z,nx,ny,nz,u,v};}
+    private static void ellipsoid(SpriteModels.Prim p,int A,int Rn,float glow,int tx,int ty,int g){
+        float[][] grid=new float[(A+1)*(Rn+1)][];
+        for(int r=0;r<=Rn;r++)for(int a=0;a<=A;a++){
+            double th=Math.PI*r/Rn,ph=2*Math.PI*a/A;float sx=(float)(Math.sin(th)*Math.cos(ph)),sy=(float)(Math.sin(th)*Math.sin(ph)),sz=(float)Math.cos(th);
+            float[] u=p.ax[0],v=p.ax[1],w=p.ax[2];float hx=p.h[0],hy=p.h[1],hz=p.h[2];
+            float x=p.c[0]+u[0]*sx*hx+v[0]*sy*hy+w[0]*sz*hz,y=p.c[1]+u[1]*sx*hx+v[1]*sy*hy+w[1]*sz*hz,z=p.c[2]+u[2]*sx*hx+v[2]*sy*hy+w[2]*sz*hz;
+            float nx=u[0]*sx/hx+v[0]*sy/hy+w[0]*sz/hz,ny=u[1]*sx/hx+v[1]*sy/hy+w[1]*sz/hz,nz=u[2]*sx/hx+v[2]*sy/hy+w[2]*sz/hz;
+            grid[r*(A+1)+a]=P(x,y,z,nx,ny,nz,(float)a/A,(float)r/Rn);}
+        for(int r=0;r<Rn;r++)for(int a=0;a<A;a++){float[] p00=grid[r*(A+1)+a],p01=grid[r*(A+1)+a+1],p10=grid[(r+1)*(A+1)+a],p11=grid[(r+1)*(A+1)+a+1];
+            if(r>0)tri(p00,p10,p01,glow,tx,ty,g);if(r<Rn-1)tri(p01,p10,p11,glow,tx,ty,g);}
+    }
+    private static void tube(SpriteModels.Prim p,int A,float r1,float r2,boolean round,float glow,int tx,int ty,int g){
+        float[] d=sub(p.b,p.a);float L=len(d);if(L<1e-5f){d=new float[]{0,0,1};L=1e-5f;}
+        float[][] f=SpriteModels.frame(d);float[] ax=f[0],e1=f[1],e2=f[2];
+        float[][] ra=new float[A+1][],rb=new float[A+1][];
+        float slope=(r1-r2)/L;
+        for(int a=0;a<=A;a++){double ph=2*Math.PI*a/A;float c=(float)Math.cos(ph),s=(float)Math.sin(ph);
+            float nx=e1[0]*c+e2[0]*s,ny=e1[1]*c+e2[1]*s,nz=e1[2]*c+e2[2]*s;float nnx=nx+ax[0]*slope,nny=ny+ax[1]*slope,nnz=nz+ax[2]*slope;
+            ra[a]=P(p.a[0]+nx*r1,p.a[1]+ny*r1,p.a[2]+nz*r1,nnx,nny,nnz,(float)a/A,.15f);
+            rb[a]=P(p.b[0]+nx*r2,p.b[1]+ny*r2,p.b[2]+nz*r2,nnx,nny,nnz,(float)a/A,.85f);}
+        for(int a=0;a<A;a++){tri(ra[a],rb[a],ra[a+1],glow,tx,ty,g);tri(ra[a+1],rb[a],rb[a+1],glow,tx,ty,g);}
+        float ka=round?r1*.85f:0,kb=round?r2*.85f:0;
+        float[] capA=P(p.a[0]-ax[0]*ka,p.a[1]-ax[1]*ka,p.a[2]-ax[2]*ka,-ax[0],-ax[1],-ax[2],.5f,0),capB=P(p.b[0]+ax[0]*kb,p.b[1]+ax[1]*kb,p.b[2]+ax[2]*kb,ax[0],ax[1],ax[2],.5f,1);
+        for(int a=0;a<A;a++){float[] x0=ra[a].clone(),x1=ra[a+1].clone(),y0=rb[a].clone(),y1=rb[a+1].clone();
+            if(!round){for(float[] q:new float[][]{x0,x1}){q[3]=-ax[0];q[4]=-ax[1];q[5]=-ax[2];}for(float[] q:new float[][]{y0,y1}){q[3]=ax[0];q[4]=ax[1];q[5]=ax[2];}}
+            tri(capA,x1,x0,glow,tx,ty,g);tri(capB,y0,y1,glow,tx,ty,g);}
+    }
+    private static void box(SpriteModels.Prim p,float glow,int tx,int ty,int g){
+        float[] u=p.ax[0],v=p.ax[1],w=p.ax[2];float hx=p.h[0],hy=p.h[1],hz=p.h[2];
+        int[][] faces={{0,1},{0,-1},{1,1},{1,-1},{2,1},{2,-1}};
+        float[][] axes={u,v,w};float[] hs={hx,hy,hz};
+        for(int[] fc:faces){int i=fc[0];int s=fc[1];float[] n=axes[i];float[] a1=axes[(i+1)%3],a2=axes[(i+2)%3];float h1=hs[(i+1)%3],h2=hs[(i+2)%3];
+            float[][] q=new float[4][];int k=0;
+            for(int[] cc:new int[][]{{-1,-1},{1,-1},{1,1},{-1,1}}){float x=p.c[0]+n[0]*hs[i]*s+a1[0]*h1*cc[0]+a2[0]*h2*cc[1],y=p.c[1]+n[1]*hs[i]*s+a1[1]*h1*cc[0]+a2[1]*h2*cc[1],z=p.c[2]+n[2]*hs[i]*s+a1[2]*h1*cc[0]+a2[2]*h2*cc[1];
+                q[k++]=P(x,y,z,n[0]*s,n[1]*s,n[2]*s,(cc[0]+1)*.5f,(cc[1]+1)*.5f);}
+            tri(q[0],q[1],q[2],glow,tx,ty,g);tri(q[0],q[2],q[3],glow,tx,ty,g);}
+    }
+    private static void torus(SpriteModels.Prim p,int M,int m,float glow,int tx,int ty,int g){
+        float[] u=p.ax[0],v=p.ax[1],w=p.ax[2];float[][] grid=new float[(M+1)*(m+1)][];
+        for(int i=0;i<=M;i++)for(int j=0;j<=m;j++){double a=2*Math.PI*i/M,b=2*Math.PI*j/m;float ca=(float)Math.cos(a),sa=(float)Math.sin(a),cb=(float)Math.cos(b),sb=(float)Math.sin(b);
+            float rx=ca*(p.r+p.r2*cb),ry=sa*(p.r+p.r2*cb),rz=p.r2*sb;float nx=ca*cb,ny=sa*cb,nz=sb;
+            grid[i*(m+1)+j]=P(p.c[0]+u[0]*rx+v[0]*ry+w[0]*rz,p.c[1]+u[1]*rx+v[1]*ry+w[1]*rz,p.c[2]+u[2]*rx+v[2]*ry+w[2]*rz,u[0]*nx+v[0]*ny+w[0]*nz,u[1]*nx+v[1]*ny+w[1]*nz,u[2]*nx+v[2]*ny+w[2]*nz,(float)i/M,(float)j/m);}
+        for(int i=0;i<M;i++)for(int j=0;j<m;j++){float[] a=grid[i*(m+1)+j],b=grid[(i+1)*(m+1)+j],c=grid[i*(m+1)+j+1],d=grid[(i+1)*(m+1)+j+1];tri(a,b,c,glow,tx,ty,g);tri(c,b,d,glow,tx,ty,g);}
+    }
+    private static void octa(SpriteModels.Prim p,float glow,int tx,int ty,int g){
+        float r;float[] c=p.c;switch(p.type){case SpriteModels.ELL:r=Math.max(p.h[0],Math.max(p.h[1],p.h[2]));break;case SpriteModels.BOX:r=Math.max(p.h[0],Math.max(p.h[1],p.h[2]));break;default:r=Math.max(p.r,Math.max(p.r2,dist(p.a,p.b)*.5f));}
+        float[][] d={{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}};int[][] f={{0,2,4},{2,1,4},{1,3,4},{3,0,4},{2,0,5},{1,2,5},{3,1,5},{0,3,5}};
+        for(int[] t:f){float[][] q=new float[3][];for(int k=0;k<3;k++){float[] e=d[t[k]];q[k]=P(c[0]+e[0]*r,c[1]+e[1]*r,c[2]+e[2]*r,e[0],e[1],e[2],.5f+e[0]*.4f,.5f+e[2]*.4f);}tri(q[0],q[1],q[2],glow,tx,ty,g);}
+    }
+    private static float[] sub(float[] a,float[] b){return new float[]{a[0]-b[0],a[1]-b[1],a[2]-b[2]};}
+    private static float len(float[] a){return (float)Math.sqrt(a[0]*a[0]+a[1]*a[1]+a[2]*a[2]);}
+    private static float dist(float[] a,float[] b){return len(sub(a,b));}
+
+    // ------------------------------------------------------------------ textures: "photographic" detail painted per material
+    private static float hash(int x,int y,int s){int h=x*374761393+y*668265263+s*1274126177;h=(h^(h>>>13))*1274126177;return ((h^(h>>>16))&0xffffff)/(float)0xffffff;}
+    private static float vn(float x,float y,int s){int xi=(int)Math.floor(x),yi=(int)Math.floor(y);float xf=x-xi,yf=y-yi,u=xf*xf*(3-2*xf),v=yf*yf*(3-2*yf);
+        int P=TILE;   // tiles wrap so seams around a limb don't show
+        float a=hash(Math.floorMod(xi,P),Math.floorMod(yi,P),s),b=hash(Math.floorMod(xi+1,P),Math.floorMod(yi,P),s),c=hash(Math.floorMod(xi,P),Math.floorMod(yi+1,P),s),d=hash(Math.floorMod(xi+1,P),Math.floorMod(yi+1,P),s);
+        return a+(b-a)*u+(c-a)*v+(a-b-c+d)*u*v;}
+    private static float fbm(float x,float y,int s,int oct,int period){float t=0,a=.5f,f=1;for(int i=0;i<oct;i++){t+=a*vnw(x*f,y*f,s+i*31,(int)(period*f));f*=2;a*=.5f;}return t;}
+    private static float vnw(float x,float y,int s,int P){int xi=(int)Math.floor(x),yi=(int)Math.floor(y);float xf=x-xi,yf=y-yi,u=xf*xf*(3-2*xf),v=yf*yf*(3-2*yf);P=Math.max(1,P);
+        float a=hash(Math.floorMod(xi,P),Math.floorMod(yi,P),s),b=hash(Math.floorMod(xi+1,P),Math.floorMod(yi,P),s),c=hash(Math.floorMod(xi,P),Math.floorMod(yi+1,P),s),d=hash(Math.floorMod(xi+1,P),Math.floorMod(yi+1,P),s);
+        return a+(b-a)*u+(c-a)*v+(a-b-c+d)*u*v;}
+    /** Cellular pattern (distance to the nearest of a few feature points), wrapping per tile: scales, cracks, pebbles. */
+    private static float cell(int x,int y,int cells,int s){float cs=TILE/(float)cells;int cx=(int)(x/cs),cy=(int)(y/cs);float best=9,second=9;
+        for(int j=-1;j<=1;j++)for(int i=-1;i<=1;i++){int gx=cx+i,gy=cy+j;float fx=(gx+hash(Math.floorMod(gx,cells),Math.floorMod(gy,cells),s))*cs,fy=(gy+hash(Math.floorMod(gx,cells),Math.floorMod(gy,cells),s+7))*cs;
+            float d=(float)Math.hypot(x-fx,y-fy)/cs;if(d<best){second=best;best=d;}else if(d<second)second=d;}
+        return second-best;}
+    private static void paint(Mesh out,SpriteModels.Model m,int g){
+        int S=g*TILE;int[] col=new int[S*S],mat=new int[S*S];float[] H=new float[S*S];
+        for(int mi=0;mi<Math.max(1,m.mats.size());mi++){SpriteModels.Mat mt=m.mats.isEmpty()?null:m.mats.get(mi);int ox=(mi%g)*TILE,oy=(mi/g)*TILE;
+            float br=mt==null?.6f:(float)Math.pow(mt.alb[0],1/2.2),bg=mt==null?.6f:(float)Math.pow(mt.alb[1],1/2.2),bb=mt==null?.6f:(float)Math.pow(mt.alb[2],1/2.2);
+            int kind=mt==null?0:mt.kind;boolean metal=mt!=null&&(mt.metal>.3f||kind==SpriteModels.K_METAL),glow=mt!=null&&mt.glow;int s=mi*101+7;
+            for(int y=0;y<TILE;y++)for(int x=0;x<TILE;x++){
+                float shade,h,smooth;
+                if(glow){shade=1.05f+fbm(x/8f,y/8f,s,3,8)*.25f;h=.5f;smooth=.3f;}
+                else switch(kind){
+                    case SpriteModels.K_SKIN:{float blot=fbm(x/10f,y/10f,s,4,6),pore=hash(x,y,s)>.86f?-.07f:0;shade=.88f+blot*.22f+pore;h=.55f+blot*.3f+pore*2;smooth=.35f+blot*.1f;
+                        if(fbm(x/6f,y/6f,s+3,2,10)>.62f){shade*=1.0f;}break;}
+                    case SpriteModels.K_CLOTH:{boolean warp=((x>>1)+(y>>1))%2==0;float fib=hash(x,y,s)*.12f,wr=fbm(x/14f,y/5f,s,3,4)*.35f;shade=.78f+(warp?.1f:-.02f)+fib+wr*.4f-(x%2==0&&y%4==0?.08f:0);h=(warp?.6f:.35f)+wr*.4f;smooth=.12f;break;}
+                    case SpriteModels.K_HIDE:{float c=cell(x,y,6,s),n=fbm(x/5f,y/5f,s,3,12);shade=.7f+Math.min(1,c*2.2f)*.35f+n*.15f;h=Math.min(1,c*2.5f)*.8f+n*.2f;smooth=.25f;break;}
+                    case SpriteModels.K_METAL:{float br2=fbm(x/40f,y/2f,s,3,1)*.3f,scr=(hash(x/2,y,s)>.985f)?.25f:0,dirt=Math.max(0,fbm(x/9f,y/9f,s+5,4,6)-.55f)*1.4f;shade=.82f+br2+scr-dirt;h=.6f-dirt*.6f+scr*.4f;smooth=Math.max(.15f,.75f-dirt);break;}
+                    case SpriteModels.K_WOOD:{float ring=(float)Math.sin(x*.55f+fbm(x/16f,y/32f,s,3,2)*7)*.5f+.5f,kn=Math.max(0,.18f-cell(x,y,3,s))*3;shade=.72f+ring*.32f-kn*.4f+hash(x,y,s)*.06f;h=.4f+ring*.4f-kn;smooth=.35f;break;}
+                    default:{float n=fbm(x/8f,y/8f,s,4,8),grime=Math.max(0,fbm(x/12f,y/12f,s+9,3,5)-.5f);shade=.82f+n*.3f-grime*.5f+hash(x,y,s)*.06f;h=.4f+n*.5f-grime;smooth=metal?.6f:.3f;}
+                }
+                int o=(oy+y)*S+ox+x;
+                col[o]=0xff000000|(c255(br*shade)<<16)|(c255(bg*shade)<<8)|c255(bb*shade);
+                H[o]=Math.max(0,Math.min(1,h));
+                mat[o]=0xff000000|(c255(smooth)<<16)|(c255(metal?.85f:0)<<8)|c255(1f-Math.max(0,.55f-h)*.6f);
+            }
+        }
+        int[] rel=new int[S*S];
+        for(int y=0;y<S;y++)for(int x=0;x<S;x++){int tx=x/TILE*TILE,ty=y/TILE*TILE,lx=x-tx,ly=y-ty;
+            float hx=H[(y)*S+tx+((lx+1)&(TILE-1))]-H[y*S+tx+((lx-1)&(TILE-1))],hy=H[(ty+((ly+1)&(TILE-1)))*S+x]-H[(ty+((ly-1)&(TILE-1)))*S+x];
+            float k=3.5f,nx=-hx*k,ny=-hy*k,nz=1,l=(float)Math.sqrt(nx*nx+ny*ny+nz*nz);
+            rel[y*S+x]=(c255(H[y*S+x])<<24)|(c255(nx/l*.5f+.5f)<<16)|(c255(ny/l*.5f+.5f)<<8)|c255(nz/l*.5f+.5f);}
+        out.color=col;out.relief=rel;out.mat=mat;
+    }
+    private static int c255(float v){return Math.max(0,Math.min(255,Math.round(v*255)));}
+}

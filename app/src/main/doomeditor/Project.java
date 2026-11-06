@@ -123,6 +123,17 @@ final class Project {
         if(cs!=null){Sprites.Sprite s=cs.frameFor(autoFrame,walking?walkT:worldTime,a.deadTime,view);if(s!=null)return s;}
         return Sprites.get(a.sprite,builtinCycle(a.sprite,autoFrame,walking?walkT:worldTime,a.deadTime),view);
     }
+    /** True when this entity shows a built-in look (not a hand-drawn custom sprite), so it can be drawn as a 3D model. */
+    boolean builtinLook(EntityDef d,int sprite){return d==null||sprite!=d.sprite||sprite(d.customSprite)==null;}
+    /** Sets the 3D model animation on a draw: walking blends stride and pass poses by distance walked, death falls smoothly. */
+    void modelPose(Renderer.SpriteDraw sd,Actor a,int autoFrame){
+        float walkT=a.walkPhase/WALK_PACE;int fa=autoFrame,fb=autoFrame;float t=0;
+        boolean moving=Math.hypot(a.vx,a.vy)>.25f;
+        if(a.animClip!=null&&!(isWalkClip(a.animClip)&&moving)){fa=fb=builtinFrame(a.animClip,a.animTime);}
+        else if(autoFrame==Sprites.F_WALK1||autoFrame==Sprites.F_WALK2||(a.animClip!=null&&moving)){float c=(walkT*6)%4;int i=(int)c;fa=WALK_CYCLE[i&3];fb=WALK_CYCLE[(i+1)&3];t=c-i;}
+        else if(autoFrame==Sprites.F_DEAD){if(a.deadTime<.18f){fa=Sprites.F_PAIN;fb=Sprites.F_DEAD;t=a.deadTime/.18f;}}
+        sd.model(a.sprite,fa,fb,t,a.angle);
+    }
     /** Distance (units) that plays one second's worth of walk frames: at 3 units/s a 6 fps walk runs about twice as fast. */
     static final float WALK_PACE=1.5f;
     static boolean isWalkClip(String n){n=n.toLowerCase(java.util.Locale.US);return n.contains("walk")||n.contains("run")||n.contains("move");}

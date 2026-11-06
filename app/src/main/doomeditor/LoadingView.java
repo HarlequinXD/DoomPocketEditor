@@ -13,7 +13,7 @@ final class LoadingView extends View {
     private volatile int step;private volatile String label="Starting up";
     private float shown;private long last,start;
     private final Runnable done;private boolean finished;
-    private static final String[] STEPS={"Reading settings","Painting wall and floor textures","Drawing sprites","Synthesising sound effects","Loading FSM actions","Finding your projects","Opening the editor"};
+    private static final String[] STEPS={"Reading settings","Painting wall and floor textures","Drawing sprites","Synthesising sound effects","Loading FSM actions","Finding your projects","Building 3D models","Opening the editor"};
 
     LoadingView(Context c,Runnable done){
         super(c);ui=new Ui(c);this.done=done;start=last=System.nanoTime();
@@ -26,6 +26,7 @@ final class LoadingView extends View {
                 run(3,()->{for(int i=0;i<SoundFx.COUNT;i++)SoundFx.builtin(i);});
                 run(4,()->Actions.visibleCount());
                 run(5,()->ProjectStore.list(app));
+                run(6,MeshModels::warm);
             }catch(Throwable ignored){}   // anything skipped here simply loads on first use
             label=STEPS[STEPS.length-1];step=STEPS.length;
         },"loader");
