@@ -146,7 +146,8 @@ final class GpuRenderer {
         "   float a1=depth-layer;float b1=pD-pL;uv=mix(cur,pUv,clamp(a1/(a1-b1+1e-5),0.0,1.0));\n"+
         // silhouettes: on step tops and door lintels the relief can run off the edge, so those pixels are cut away
         "   if(vKind>0.5){if(vEdge.z>0.5&&vEdge.z<1.5&&uv.y<vEdge.x)discard;if(vEdge.z>1.5&&uv.y>vEdge.y)discard;}}\n"+
-        "  h0=texture2D(uNorm,uv).a;\n"+  vec3 nm=texture2D(uNorm,uv).rgb*2.0-1.0;Nw=normalize(T*nm.x+B*nm.y+N*nm.z);\n"+
+        "  h0=texture2D(uNorm,uv).a;\n"+
+        "  vec3 nm=texture2D(uNorm,uv).rgb*2.0-1.0;Nw=normalize(T*nm.x+B*nm.y+N*nm.z);\n"+
         "  shadeK=(0.8+0.32*dot(nm,vec3(-0.36,-0.46,0.81)))/1.06;}\n"+
         " vec4 t=texture2D(uTex,uv);if(t.a<uAlphaCut)discard;vec3 alb=t.rgb;\n"+
         " vec3 m=surf?texture2D(uMat,uv).rgb:vec3(0.1,0.0,1.0);float smo=m.r;float metal=m.g;float ao=m.b;\n"+
