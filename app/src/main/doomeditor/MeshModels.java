@@ -30,9 +30,11 @@ final class MeshModels {
     /** Builds the character meshes ahead of time (loading screen), so the first fight doesn't hitch. */
     static void warm(){for(int id:new int[]{Sprites.HERO,Sprites.SKELETON,Sprites.GOBLIN,Sprites.ORC,Sprites.CULTIST,Sprites.VILLAGER})get(id);}
     // ------------------------------------------------------------------ build
-    static final int BUDGET=320;   // triangles per model
+    static final int BUDGET=500;   // triangles per character (items get 320)
+    private static int budget=BUDGET;
     static Mesh build(int id){
-        Mesh out=new Mesh();
+        if(id==Sprites.HERO)return FighterMesh.build();   // hand box-modelled
+        Mesh out=new Mesh();budget=id==Sprites.HERO||id==Sprites.SKELETON||id==Sprites.GOBLIN||id==Sprites.ORC||id==Sprites.CULTIST||id==Sprites.VILLAGER||(id>=Sprites.HERO_RANGER&&id<=Sprites.HERO_CLERIC)?500:320;
         SpriteModels.Model first=model(id,0);if(first==null)return null;
         int[] lv=plan(first);
         int n=Math.max(1,first.mats.size());int g=1;while(g*g<n)g++;out.atlas=g;
@@ -73,9 +75,9 @@ final class MeshModels {
         int n=m.prims.size();int[] lv=new int[n];Integer[] ord=new Integer[n];for(int i=0;i<n;i++)ord[i]=i;
         java.util.Arrays.sort(ord,(a,b)->Float.compare(size(m.prims.get(a)),size(m.prims.get(b))));
         int total=0;for(int i=0;i<n;i++)total+=cost(m.prims.get(i),0);
-        for(int k=0;k<n&&total>BUDGET*.85f;k++){int i=ord[k];SpriteModels.Prim p=m.prims.get(i);if(size(p)>=.05f)break;total-=cost(p,0);lv[i]=-1;}
+        for(int k=0;k<n&&total>budget*.85f;k++){int i=ord[k];SpriteModels.Prim p=m.prims.get(i);if(size(p)>=.05f)break;total-=cost(p,0);lv[i]=-1;}
         for(int level=1;level<=3;level++)for(int k=n-1;k>=0;k--){int i=ord[k];if(lv[i]!=level-1)continue;SpriteModels.Prim p=m.prims.get(i);
-            int d=cost(p,level)-cost(p,level-1);if(total+d<=BUDGET){total+=d;lv[i]=level;}}
+            int d=cost(p,level)-cost(p,level-1);if(total+d<=budget){total+=d;lv[i]=level;}}
         return lv;
     }
 
@@ -180,7 +182,7 @@ final class MeshModels {
         for(int j=-1;j<=1;j++)for(int i=-1;i<=1;i++){int gx=cx+i,gy=cy+j;float fx=(gx+hash(Math.floorMod(gx,cells),Math.floorMod(gy,cells),s))*cs,fy=(gy+hash(Math.floorMod(gx,cells),Math.floorMod(gy,cells),s+7))*cs;
             float d=(float)Math.hypot(x-fx,y-fy)/cs;if(d<best){second=best;best=d;}else if(d<second)second=d;}
         return second-best;}
-    private static void paint(Mesh out,SpriteModels.Model m,int g){
+    static void paint(Mesh out,SpriteModels.Model m,int g){
         int S=g*TILE;int[] col=new int[S*S],mat=new int[S*S];float[] H=new float[S*S];
         for(int mi=0;mi<Math.max(1,m.mats.size());mi++){SpriteModels.Mat mt=m.mats.isEmpty()?null:m.mats.get(mi);int ox=(mi%g)*TILE,oy=(mi/g)*TILE;
             float br=mt==null?.6f:(float)Math.pow(mt.alb[0],1/2.2),bg=mt==null?.6f:(float)Math.pow(mt.alb[1],1/2.2),bb=mt==null?.6f:(float)Math.pow(mt.alb[2],1/2.2);

@@ -142,7 +142,7 @@ final class GpuRenderer {
         "void main(){vec2 uv=mix(vUv,vUvA.xy/vUvA.z,uAffine);vec3 V=uCamPos-vWorld;vec3 Vw=normalize(V);vec3 Nw;float shadeK=1.0;\n"+
         " bool model=vKind>2.5;bool surf=vKind<1.5||model;\n"+
         " vec3 T=vec3(1.0,0.0,0.0);vec3 B=vec3(0.0,1.0,0.0);vec3 N=vec3(0.0,0.0,1.0);\n"+
-        " if(model){N=normalize(vTan);T=normalize(cross(abs(N.z)<0.9?vec3(0.0,0.0,1.0):vec3(1.0,0.0,0.0),N));B=cross(N,T);}\n"+
+        " if(model){N=normalize(vTan);if(dot(N,V)<0.0)N=-N;T=normalize(cross(abs(N.z)<0.9?vec3(0.0,0.0,1.0):vec3(1.0,0.0,0.0),N));B=cross(N,T);}\n"+
         " else if(surf){if(vKind>0.5){T=normalize(vec3(vTan.xy,0.0));N=vec3(T.y,-T.x,0.0);if(dot(N,V)<0.0)N=-N;B=vec3(0.0,0.0,-1.0);}\n"+
         "  else{N=vec3(0.0,0.0,V.z>0.0?1.0:-1.0);}}\n"+
         " else{N=normalize(vec3(V.xy,0.0001));}\n"+
