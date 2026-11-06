@@ -51,13 +51,18 @@ final class BoxMesh {
         return id==Sprites.HERO||id==Sprites.SKELETON||id==Sprites.GOBLIN||id==Sprites.ORC||id==Sprites.CULTIST||id==Sprites.VILLAGER||(id>=Sprites.HERO_RANGER&&id<=Sprites.HERO_CLERIC);
     }
 
-    private static int G;
-    private static float[] buf;private static int nv;
+    static int G;
+    static float[] buf;static int nv;
+    /** Tiles whose material glows (fire, magic): drawn full-bright. */
+    static boolean[] glowTile=new boolean[16];
+    /** Starts a frame for a model whose materials are {@code m} (atlas 4 x 4). */
+    static void begin(SpriteModels.Model m){G=4;buf=new float[9*3*600];nv=0;glowTile=new boolean[16];for(int i=0;i<Math.min(16,m.mats.size());i++)glowTile[i]=m.mats.get(i).glow;}
+    static MeshModels.Frame end(){MeshModels.Frame fr=new MeshModels.Frame();fr.v=java.util.Arrays.copyOf(buf,nv*9);fr.count=nv;return fr;}
     private static Spec S;
 
     static MeshModels.Mesh build(int id){
         Spec sp=spec(id);if(sp==null)return null;
-        S=sp;G=4;
+        S=sp;G=4;for(int i=0;i<16;i++)glowTile[i]=i<sp.m.mats.size()&&sp.m.mats.get(i).glow;
         MeshModels.Mesh out=new MeshModels.Mesh();out.atlas=G;
         for(int f=0;f<Sprites.FRAMES;f++)out.frames[f]=frame(f);
         MeshModels.paint(out,sp.m,G);
@@ -222,24 +227,24 @@ final class BoxMesh {
     }
 
     // ------------------------------------------------------------------ vertex output
-    private static void put(float[] p,float[] n,int tile,float u,float vv){
+    static void put(float[] p,float[] n,int tile,float u,float vv){
         if((nv+1)*9>buf.length)buf=java.util.Arrays.copyOf(buf,buf.length*2);
         float in=2f/MeshModels.TILE;u=in+Math.max(0,Math.min(1,u))*(1-2*in);vv=in+Math.max(0,Math.min(1,vv))*(1-2*in);
         float[] nn=norm(n);int o=nv*9;buf[o]=p[0];buf[o+1]=p[1];buf[o+2]=p[2];buf[o+3]=nn[0];buf[o+4]=nn[1];buf[o+5]=nn[2];
-        buf[o+6]=((tile%G)+u)/G;buf[o+7]=((tile/G)+vv)/G;buf[o+8]=tile==GLOW||(tile==X2&&S.weapon==W_CAST)?1:0;nv++;
+        buf[o+6]=((tile%G)+u)/G;buf[o+7]=((tile/G)+vv)/G;buf[o+8]=glowTile[tile]?1:0;nv++;
     }
-    private static void tri(float[] a,float[] b,float[] c,float[] na,float[] nb,float[] nc,int tile,float[] uv){put(a,na,tile,uv[0],uv[1]);put(b,nb,tile,uv[2],uv[3]);put(c,nc,tile,uv[4],uv[5]);}
-    private static void quad(float[] a,float[] b,float[] c,float[] d,float[] na,float[] nb,float[] nc,float[] nd,int tile,float u0,float v0,float u1,float v1){
+    static void tri(float[] a,float[] b,float[] c,float[] na,float[] nb,float[] nc,int tile,float[] uv){put(a,na,tile,uv[0],uv[1]);put(b,nb,tile,uv[2],uv[3]);put(c,nc,tile,uv[4],uv[5]);}
+    static void quad(float[] a,float[] b,float[] c,float[] d,float[] na,float[] nb,float[] nc,float[] nd,int tile,float u0,float v0,float u1,float v1){
         tri(a,b,c,na,nb,nc,tile,new float[]{u0,v0,u1,v0,u1,v1});tri(a,c,d,na,nc,nd,tile,new float[]{u0,v0,u1,v1,u0,v1});}
     /** Two axes across a segment: s (sideways) and f (front), preferring the hint for f. */
-    private static float[][] across(float[] ax,float[] fwdHint){float[] f=sub(fwdHint,mul(ax,SpriteModels.dot(fwdHint,ax)));if(len(f)<1e-3f)f=sub(v(0,0,1),mul(ax,ax[2]));if(len(f)<1e-3f)f=v(1,0,0);f=norm(f);float[] s=norm(cross(ax,f));return new float[][]{s,f};}
+    static float[][] across(float[] ax,float[] fwdHint){float[] f=sub(fwdHint,mul(ax,SpriteModels.dot(fwdHint,ax)));if(len(f)<1e-3f)f=sub(v(0,0,1),mul(ax,ax[2]));if(len(f)<1e-3f)f=v(1,0,0);f=norm(f);float[] s=norm(cross(ax,f));return new float[][]{s,f};}
 
     // ------------------------------------------------------------------ parts
     /**
      * Box from a to b with a w x d cross-section at each end (tapered), and pyramid ends: each end face is cut into 4
      * triangles meeting at a centre vertex pushed out by domeA / domeB (0 = flat end, two triangles).
      */
-    private static void seg(float[] a,float[] b,float wa,float da,float wb,float db,float domeA,float domeB,int tile,float[] fwd){
+    static void seg(float[] a,float[] b,float wa,float da,float wb,float db,float domeA,float domeB,int tile,float[] fwd){
         float[] ax=norm(sub(b,a));float[][] sf=across(ax,fwd);float[] s=sf[0],f=sf[1];
         float[][] A=new float[4][],B=new float[4][],N=new float[4][];
         int[][] cc={{1,1},{-1,1},{-1,-1},{1,-1}};
@@ -247,7 +252,7 @@ final class BoxMesh {
         for(int i=0;i<4;i++){int j=(i+1)%4;quad(A[i],A[j],B[j],B[i],N[i],N[j],N[j],N[i],tile,i/4f,0,(i+1)/4f,1);}
         cap(A,a,mul(ax,-1),domeA,tile,true);cap(B,b,ax,domeB,tile,false);
     }
-    private static void cap(float[][] ring,float[] c,float[] out,float dome,int tile,boolean flip){
+    static void cap(float[][] ring,float[] c,float[] out,float dome,int tile,boolean flip){
         int n=ring.length;
         if(dome<=0&&n==4){float[] nn=out;if(flip){tri(ring[0],ring[2],ring[1],nn,nn,nn,tile,new float[]{0,0,1,1,1,0});tri(ring[0],ring[3],ring[2],nn,nn,nn,tile,new float[]{0,0,0,1,1,1});}
             else{tri(ring[0],ring[1],ring[2],nn,nn,nn,tile,new float[]{0,0,1,0,1,1});tri(ring[0],ring[2],ring[3],nn,nn,nn,tile,new float[]{0,0,1,1,0,1});}return;}
@@ -258,16 +263,24 @@ final class BoxMesh {
             if(flip)tri(ring[j],ring[i],tip,n2,n1,out,tile,new float[]{uv[2],uv[3],uv[0],uv[1],.5f,.5f});else tri(ring[i],ring[j],tip,n1,n2,out,tile,uv);}
     }
     /** 5-sided cylinder a→b with radii ra/rb; caps are fans to a centre vertex pushed out by domeA / domeB. */
-    private static void cyl5(float[] a,float[] b,float ra,float rb,float domeA,float domeB,int tile){
+    static void cyl5(float[] a,float[] b,float ra,float rb,float domeA,float domeB,int tile){
         float[] ax=norm(sub(b,a));float[][] sf=across(ax,v(1,0,0));float[] s=sf[0],f=sf[1];
         float[][] A=new float[5][],B=new float[5][],N=new float[5][];
         for(int i=0;i<5;i++){double t=i*2*Math.PI/5+Math.PI/2;float[] d=add(mul(f,(float)Math.sin(t)),s,(float)Math.cos(t));N[i]=d;A[i]=add(a,d,ra);B[i]=add(b,d,rb);}
         for(int i=0;i<5;i++){int j=(i+1)%5;quad(A[i],A[j],B[j],B[i],N[i],N[j],N[j],N[i],tile,i/5f,0,(i+1)/5f,1);}
         cap(A,a,mul(ax,-1),domeA,tile,true);cap(B,b,ax,domeB,tile,false);
     }
-    private static void box(float[] a,float[] b,float w,float d,int tile){seg(a,b,w,d,w,d,0,0,tile,v(1,0,0));}
+    /** n-sided cylinder (or cone) a→b, caps fanned to a centre vertex pushed out by domeA / domeB (negative = no cap: an open tube). */
+    static void cylN(float[] a,float[] b,float ra,float rb,int n,float domeA,float domeB,int tile){
+        float[] ax=norm(sub(b,a));float[][] sf=across(ax,v(1,0,0));float[] s=sf[0],f=sf[1];
+        float[][] A=new float[n][],B=new float[n][],N=new float[n][];
+        for(int i=0;i<n;i++){double t=i*2*Math.PI/n+Math.PI/n;float[] d=add(mul(f,(float)Math.sin(t)),s,(float)Math.cos(t));N[i]=d;A[i]=add(a,d,ra);B[i]=add(b,d,rb);}
+        for(int i=0;i<n;i++){int j=(i+1)%n;quad(A[i],A[j],B[j],B[i],N[i],N[j],N[j],N[i],tile,i/(float)n,0,(i+1)/(float)n,1);}
+        if(domeA>=0)cap(A,a,mul(ax,-1),Math.max(1e-4f,domeA),tile,true);if(domeB>=0)cap(B,b,ax,Math.max(1e-4f,domeB),tile,false);
+    }
+    static void box(float[] a,float[] b,float w,float d,int tile){seg(a,b,w,d,w,d,0,0,tile,v(1,0,0));}
     /** 8-triangle diamond for tiny details (eyes, gems, fletching, magic). */
-    private static void octa(float[] c,float r,int tile){
+    static void octa(float[] c,float r,int tile){
         float[][] P={add(c,v(r,0,0)),add(c,v(0,r,0)),add(c,v(-r,0,0)),add(c,v(0,-r,0))};float[] t=add(c,v(0,0,r)),bt=add(c,v(0,0,-r));
         for(int i=0;i<4;i++){int j=(i+1)%4;float[] n1=sub(P[i],c),n2=sub(P[j],c);
             tri(P[i],P[j],t,n1,n2,v(0,0,1),tile,new float[]{0,1,1,1,.5f,0});tri(P[j],P[i],bt,n2,n1,v(0,0,-1),tile,new float[]{1,0,0,0,.5f,1});}
@@ -376,7 +389,7 @@ final class BoxMesh {
         if(sp.head==H_HOOD||sp.head==H_DEEP_HOOD)hood(c,pitch,hx,hy,hz,sp.head==H_DEEP_HOOD);
         if(sp.head==H_HAT)hat(hp(1,1,2),upH,fwd,hs);
     }
-    private static void faceQuad(float[] a,float[] b,float[] c,float[] d,int tile,float u0,float v0,float u1,float v1){
+    static void faceQuad(float[] a,float[] b,float[] c,float[] d,int tile,float u0,float v0,float u1,float v1){
         float[] n=norm(cross(sub(b,a),sub(d,a)));quad(a,b,c,d,n,n,n,n,tile,u0,v0,u1,v1);
     }
     /** Hood: a second, larger subdivided cube around the head, open at the front, its bottom reaching the shoulders; a deep hood has a peak at the back. */
@@ -436,7 +449,7 @@ final class BoxMesh {
      * Parts that only show in some frames (a drawn arrow, conjured fire) are still built in every frame, shrunk to a
      * point when hidden, so all frames keep the same vertices and blend smoothly into each other.
      */
-    private static void collapse(int from,float[] p){for(int i=from;i<nv;i++){int o=i*9;buf[o]=p[0];buf[o+1]=p[1];buf[o+2]=p[2];}}
+    static void collapse(int from,float[] p){for(int i=from;i<nv;i++){int o=i*9;buf[o]=p[0];buf[o+1]=p[1];buf[o+2]=p[2];}}
     private static void sword(float[] hand,float[] dir,float blade,boolean guard){
         float[] base=add(hand,dir,-.07f),gTop=add(hand,dir,.06f);
         seg(base,gTop,.014f,.014f,.014f,.014f,.008f,0,WOOD,v(0,0,1));                                                  // grip

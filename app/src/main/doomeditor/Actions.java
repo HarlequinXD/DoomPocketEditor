@@ -356,7 +356,7 @@ final class Actions {
         def("set_visible","Set Visible","Entities",Icons.SUN,"Shows or hides this entity's sprite.",c->{c.self.visible=c.b("value");return DONE;},"value:b=true");
         def("set_solid","Set Solid","Entities",Icons.STOP,"Makes this entity block movement, or not.",c->{c.self.solid=c.b("value");return DONE;},"value:b=true");
         def("set_shootable","Set Shootable","Entities",Icons.CROSSHAIR,"Lets bullets hit this entity, or not.",c->{c.self.shootable=c.b("value");return DONE;},"value:b=true");
-        def("set_sprite","Set Sprite","Entities",Icons.ENTITIES,"Changes the sprite this entity shows.",c->{c.self.sprite=Actions.indexOf(Sprites.NAMES_JOINED,c.s("sprite"));return DONE;},"sprite:c("+Sprites.NAMES_JOINED+")=Trooper");
+        def("set_sprite","Set Model","Entities",Icons.ENTITIES,"Changes the model (or sprite) this entity shows.",c->{c.self.sprite=Actions.indexOf(Sprites.NAMES_JOINED,c.s("sprite"));return DONE;},"sprite:c("+Sprites.NAMES_JOINED+")=Trooper");
         def("count_entities","Count Entities","Entities",Icons.LIST,"Stores how many living entities of a type exist.",c->{c.setVar("store",c.w.count(c.s("entity")));return c.doneOrRun();},"entity:E=trooper","store:v=count","everyFrame:b=false");
         def("spawn_effect","Spawn Effect","Entities",Icons.SPARKLE,"Shows a visual effect at this entity.",c->{c.w.effect(c.choice("effect","Puff|Blood|Explosion|Teleport"),c.self.x,c.self.y,c.self.z+c.self.height*.5f);return DONE;},"effect:c(Puff|Blood|Explosion|Teleport)=Explosion");
 

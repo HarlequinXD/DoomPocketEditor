@@ -310,7 +310,7 @@ public class FSMGraphView extends View {
         caption(c,l,"Sprite & animation clips");
         CustomSprite cs=project.sprite(def.customSprite);
         ui.round(c,l,iy,rr,iy+dp(30),dp(6),Ui.SURFACE_2);ui.icon(c,Icons.PIXEL,l+dp(16),iy+dp(15),14,0xff8fbcff);
-        ui.textMid(c,ui.ellipsize(cs!=null?cs.name+" (custom)":Sprites.NAMES[Math.max(0,Math.min(Sprites.COUNT-1,def.sprite))]+" (built-in)",12,1,rr-l-dp(40)),l+dp(32),iy+dp(15),12,Ui.TEXT,1,-1);iy+=dp(38);
+        ui.textMid(c,ui.ellipsize(cs!=null?cs.name+" (custom sprite)":Sprites.NAMES[Math.max(0,Math.min(Sprites.COUNT-1,def.sprite))]+" (model)",12,1,rr-l-dp(40)),l+dp(32),iy+dp(15),12,Ui.TEXT,1,-1);iy+=dp(38);
         float cx2=l;for(String cn:project.clipNames(def)){boolean has=cs!=null&&cs.clip(cn)!=null;float cw2=ui.measure(cn,10.5f,1)+dp(18);if(cx2+cw2>rr){cx2=l;iy+=dp(26);}
             ui.round(c,cx2,iy,cx2+cw2,iy+dp(22),dp(11),has?0x333d8bfd:Ui.SURFACE_2);ui.textMid(c,cn,cx2+cw2*.5f,iy+dp(11),10.5f,has?0xff8fbcff:Ui.TEXT_3,1,0);cx2+=cw2+dp(5);}
         iy+=dp(30);

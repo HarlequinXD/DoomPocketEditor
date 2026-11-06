@@ -336,18 +336,16 @@ public class EditorView extends View {
     private String rendererLabel(){if(!Renderer.useGpu)return "Software";if(!renderer.onGpu()&&GpuRenderer.available()==false)return "Software (GPU not available)";return "GPU, "+Renderer.gpuLines+" lines";}
     private void chooseRenderer(){
         int cur=4;if(Renderer.useGpu)for(int i=0;i<RENDER_LINES.length;i++)if(RENDER_LINES[i]==Renderer.gpuLines)cur=i;
-        String[] items=java.util.Arrays.copyOf(RENDERERS,RENDERERS.length+5);
-        items[RENDERERS.length]="Normal + parallax mapping: "+(GpuRenderer.relief?"ON (tap to turn off)":"off (tap to turn on)");
-        items[RENDERERS.length+1]="PS1 look (wobble, warped textures, dithering): "+(GpuRenderer.ps1?"ON":"off");
-        items[RENDERERS.length+2]="Sky light + bounce lighting: "+(GpuRenderer.gi?"ON":"off");
-        items[RENDERERS.length+3]="Dynamic shadows from lights: "+(GpuRenderer.shadows?"ON":"off");
-        items[RENDERERS.length+4]="3D models for characters and items: "+(GpuRenderer.models3d?"ON":"off (sprites)");
+        String[] items=java.util.Arrays.copyOf(RENDERERS,RENDERERS.length+4);
+        items[RENDERERS.length]="PS1 look (wobble, warped textures, dithering): "+(GpuRenderer.ps1?"ON":"off");
+        items[RENDERERS.length+1]="Sky light + bounce lighting: "+(GpuRenderer.gi?"ON":"off");
+        items[RENDERERS.length+2]="Dynamic shadows from lights: "+(GpuRenderer.shadows?"ON":"off");
+        items[RENDERERS.length+3]="3D models for characters and objects: "+(GpuRenderer.models3d?"ON":"off (sprites)");
         host.choose("3D renderer",items,cur,k->{
-            if(k==RENDERERS.length+3){GpuRenderer.shadows=!GpuRenderer.shadows;Renderer.savePrefs(getContext());hint(GpuRenderer.shadows?"Shadows on · walls, doors and monsters block torchlight":"Shadows off");invalidate();return;}
-            if(k==RENDERERS.length+1){GpuRenderer.ps1=!GpuRenderer.ps1;Renderer.savePrefs(getContext());hint(GpuRenderer.ps1?"PS1 look on · wobbling vertices, warped textures, 15-bit dithered colour":"PS1 look off · steady, smooth picture");invalidate();return;}
-            if(k==RENDERERS.length+4){GpuRenderer.models3d=!GpuRenderer.models3d;Renderer.savePrefs(getContext());hint(GpuRenderer.models3d?"3D models on · built-in characters and items are low-poly models":"3D models off · sprites");invalidate();return;}
-            if(k==RENDERERS.length+2){GpuRenderer.gi=!GpuRenderer.gi;Renderer.savePrefs(getContext());hint(GpuRenderer.gi?"Sky light on · open-sky sectors light up and light spills through doorways":"Sky light off");invalidate();return;}
-            if(k==RENDERERS.length){GpuRenderer.relief=!GpuRenderer.relief;Renderer.savePrefs(getContext());hint(GpuRenderer.relief?"Relief on · textures get depth and react to lights (GPU only)":"Relief off · flat textures");invalidate();return;}
+            if(k==RENDERERS.length+2){GpuRenderer.shadows=!GpuRenderer.shadows;Renderer.savePrefs(getContext());hint(GpuRenderer.shadows?"Shadows on · walls, doors and monsters block torchlight":"Shadows off");invalidate();return;}
+            if(k==RENDERERS.length){GpuRenderer.ps1=!GpuRenderer.ps1;Renderer.savePrefs(getContext());hint(GpuRenderer.ps1?"PS1 look on · wobbling vertices, warped textures, 15-bit dithered colour":"PS1 look off · steady, smooth picture");invalidate();return;}
+            if(k==RENDERERS.length+3){GpuRenderer.models3d=!GpuRenderer.models3d;Renderer.savePrefs(getContext());hint(GpuRenderer.models3d?"3D models on · built-in characters and objects are low-poly models":"3D models off · sprites");invalidate();return;}
+            if(k==RENDERERS.length+1){GpuRenderer.gi=!GpuRenderer.gi;Renderer.savePrefs(getContext());hint(GpuRenderer.gi?"Sky light on · open-sky sectors light up and light spills through doorways":"Sky light off");invalidate();return;}
             if(k==4)Renderer.useGpu=false;else{Renderer.useGpu=true;Renderer.gpuLines=RENDER_LINES[k];}
             Renderer.savePrefs(getContext());renderer.invalidate();
             hint(k==4?"Software renderer · lights and fog are drawn by the CPU":GpuRenderer.available()?"GPU renderer · "+RENDER_LINES[k]+" lines":"This phone's GPU couldn't start · using software");invalidate();});
@@ -768,10 +766,10 @@ public class EditorView extends View {
         if(maxScroll>0){float bar=(bottom-top)*(bottom-top)/(bottom-top+maxScroll);float by=top+(bottom-top-bar)*defScroll/maxScroll;ui.round(c,pw-dp(5),by,pw-dp(2),by+bar,dp(2),0x33ffffff);}
     }
     private String[] propLabels(EntityDef d){
-        if(d.kind==EntityDef.PLAYER)return new String[]{"Name","Type","Sprite","Health","Speed","Radius","Height","Solid","Shootable","Animations","Class","Starting level","Starting gold","Light","Light radius","Particles"};
-        return new String[]{"Name","Type","Sprite","Health","Speed","Radius","Height","Solid","Shootable","Animations","Light","Light radius","Particles"};}
+        if(d.kind==EntityDef.PLAYER)return new String[]{"Name","Type","Model","Health","Speed","Radius","Height","Solid","Shootable","Animations","Class","Starting level","Starting gold","Light","Light radius","Particles"};
+        return new String[]{"Name","Type","Model","Health","Speed","Radius","Height","Solid","Shootable","Animations","Light","Light radius","Particles"};}
     private String propValue(EntityDef d,int i){if(d.kind!=EntityDef.PLAYER&&i>=10)i+=3;switch(i){
-        case 13:return Atmosphere.GLOWS[d.glow].replaceAll(" \\(.*\\)","");case 14:return d.glowRadius>0?fmt(d.glowRadius):"Preset";case 15:return Atmosphere.PARTICLES[d.particles];case 0:return d.name;case 1:return EntityDef.KIND_NAMES[d.kind];case 2:{CustomSprite cs=project.sprite(d.customSprite);return cs!=null?cs.name+" (custom)":Sprites.NAMES[Math.max(0,Math.min(Sprites.COUNT-1,d.sprite))];}
+        case 13:return Atmosphere.GLOWS[d.glow].replaceAll(" \\(.*\\)","");case 14:return d.glowRadius>0?fmt(d.glowRadius):"Preset";case 15:return Atmosphere.PARTICLES[d.particles];case 0:return d.name;case 1:return EntityDef.KIND_NAMES[d.kind];case 2:{CustomSprite cs=project.sprite(d.customSprite);return cs!=null?cs.name+" (custom sprite)":Sprites.NAMES[Math.max(0,Math.min(Sprites.COUNT-1,d.sprite))];}
         case 10:return Rpg.heroClass(d.heroClass).name;case 11:return String.valueOf(Math.max(1,Math.min(Rpg.MAX_LEVEL,d.level)));case 12:return d.startGold+" gp";
         case 3:return String.valueOf(d.health);case 4:return fmt(d.speed);case 5:return fmt(d.radius);case 6:return fmt(d.height);case 7:return d.solid?"Yes":"No";case 8:return d.shootable?"Yes":"No";default:{CustomSprite cs=project.sprite(d.customSprite);return cs==null?"Built-in poses":cs.clips.size()+" clips";}}}
     private void drawPropertyPanel(Canvas c,float x0,float l,float rr){
@@ -1061,11 +1059,11 @@ public class EditorView extends View {
             case 1:if(d.kind==EntityDef.PLAYER){hint("The player type can't be changed");return;}
                 String[] kinds={"Monster","Pickup","Decoration","Trigger","NPC"};host.choose("Type",kinds,Math.max(0,d.kind-1),k->{d.kind=k+1;if(d.kind==EntityDef.MONSTER){d.countKill=true;d.shootable=true;}if(d.kind==EntityDef.PICKUP){d.countItem=true;d.solid=false;}changed(null);});break;
             case 2:{String[] items=new String[Sprites.COUNT+project.sprites.size()+1];
-                for(int k=0;k<project.sprites.size();k++)items[k]="Custom: "+project.sprites.get(k).name;
-                for(int k=0;k<Sprites.COUNT;k++)items[project.sprites.size()+k]="Built-in: "+Sprites.NAMES[k];
+                for(int k=0;k<project.sprites.size();k++)items[k]="Custom sprite: "+project.sprites.get(k).name;
+                for(int k=0;k<Sprites.COUNT;k++)items[project.sprites.size()+k]="Model: "+Sprites.NAMES[k];
                 items[items.length-1]="Draw a new sprite…";
                 CustomSprite cur=project.sprite(d.customSprite);int checked=cur!=null?project.sprites.indexOf(cur):project.sprites.size()+d.sprite;
-                host.choose("Sprite for "+d.name,items,checked,k->{
+                host.choose("Model for "+d.name,items,checked,k->{
                     if(k<project.sprites.size())d.customSprite=project.sprites.get(k).id;
                     else if(k<items.length-1){d.customSprite="";d.sprite=k-project.sprites.size();}
                     else{openSprites(d.id);return;}
@@ -1299,7 +1297,7 @@ public class EditorView extends View {
         for(Actor a:world.actors){if((a==pl&&!tp)||!a.visible||a.removed)continue;
             Sprites.Sprite s;boolean bright=false;
             if(a.projectileType>=0){s=Sprites.effect(a.projectileType==1?Sprites.FX_ROCKET:a.projectileType==2?Sprites.FX_PLASMA:Sprites.FX_FIREBALL,0,true);bright=true;}
-            else{int f=a.def!=null&&a.def.animated()?a.frame():a.sprite==Sprites.TORCH?((int)(world.time*8)&1):a.alive?Sprites.F_IDLE:Sprites.F_DEAD;
+            else{int f=a.def!=null&&a.def.animated()?a.frame():PropMesh.fire(a.sprite)?((int)(world.time*8)&1):a.alive?Sprites.F_IDLE:Sprites.F_DEAD;
                 // which side of the actor the camera sees (sprite angles / rear views)
                 float view=World.angleDiff((float)Math.atan2(cy-a.y,cx-a.x),a.angle);
                 s=project.actorSprite(a,f,world.time,view);

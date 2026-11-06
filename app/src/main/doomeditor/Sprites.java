@@ -7,13 +7,17 @@ final class Sprites {
     static final int PLAYER=0,TROOPER=1,IMP=2,DEMON=3,MEDKIT=4,STIMPACK=5,CLIP=6,SHELLS=7,ROCKETBOX=8,ARMOR=9,SHOTGUN_PICKUP=10,
             CHAINGUN_PICKUP=11,LAUNCHER_PICKUP=12,KEY_BLUE=13,KEY_YELLOW=14,KEY_RED=15,BARREL=16,TORCH=17,COLUMN=18,SWITCH=19,SWITCH_ON=20,LAMP=21,SERGEANT=22,
             SHIELD_PICKUP=23,SCROLL=24,NPC=25,CHEST=26,CHEST_OPEN=27,GOLD=28,
-            HERO_RANGER=29,HERO_ROGUE=30,HERO_WIZARD=31,HERO_CLERIC=32;
+            HERO_RANGER=29,HERO_ROGUE=30,HERO_WIZARD=31,HERO_CLERIC=32,
+            // box-modelled decorations (PropMesh)
+            CAMPFIRE=33,FIREPLACE=34,BED=35,CABINET=36,WARDROBE=37,TABLE=38,CHAIR=39,STOOL=40,BENCH=41,BOOKSHELF=42,CRATE=43,CANDELABRA=44,CAULDRON=45,RUG=46,
+            BANNER=47,PLANT=48,WEAPON_RACK=49,SACK=50,CANDLE=51,DRESSER=52;
     // Fantasy names for the same ids
     static final int HERO=PLAYER,SKELETON=TROOPER,GOBLIN=IMP,ORC=DEMON,CULTIST=SERGEANT,VILLAGER=NPC,
             POTION_HEALING=MEDKIT,DRAUGHT=STIMPACK,DAGGER=CLIP,POTION_ARCANA=SHELLS,TREASURE=ROCKETBOX,ARMOUR=ARMOR,SWORD=SHOTGUN_PICKUP,BOW=CHAINGUN_PICKUP,STAFF=LAUNCHER_PICKUP,
             KEY_BRONZE=KEY_BLUE,KEY_SILVER=KEY_YELLOW,KEY_GOLD=KEY_RED,PILLAR=COLUMN,LEVER=SWITCH,LEVER_ON=SWITCH_ON,BRAZIER=LAMP;
     static final String[] NAMES={"Hero · Fighter","Skeleton","Goblin","Orc","Healing Potion","Healing Draught","Dagger","Arcana Potion","Treasure","Armour","Sword","Bow","Staff",
-            "Bronze Key","Silver Key","Gold Key","Barrel","Torch","Pillar","Lever","Lever (pulled)","Brazier","Cultist","Shield","Scroll","Villager","Chest","Chest (open)","Gold","Hero · Ranger","Hero · Rogue","Hero · Wizard","Hero · Cleric"};
+            "Bronze Key","Silver Key","Gold Key","Barrel","Torch","Pillar","Lever","Lever (pulled)","Brazier","Cultist","Shield","Scroll","Villager","Chest","Chest (open)","Gold","Hero · Ranger","Hero · Rogue","Hero · Wizard","Hero · Cleric",
+            "Campfire","Fireplace","Bed","Cabinet","Wardrobe","Table","Chair","Stool","Bench","Bookshelf","Crate","Candelabra","Cauldron","Rug","Banner","Potted Plant","Weapon Rack","Grain Sack","Candle","Chest of Drawers"};
     static final String NAMES_JOINED=join(NAMES);
     static String join(String[] a){StringBuilder b=new StringBuilder();for(int i=0;i<a.length;i++){if(i>0)b.append('|');b.append(a[i]);}return b.toString();}
     static final int COUNT=NAMES.length;
@@ -40,7 +44,7 @@ final class Sprites {
     private static final Object lock=new Object();
 
     /** Bump when the models or renderer change so stale disk-cached sprites are ignored. */
-    static final int MODEL_VERSION=6;
+    static final int MODEL_VERSION=7;
     private static java.io.File diskRoot,diskDir;
     /** Pixel-art style (default): built-in sprites are rendered in HD, then reduced 3x keeping each block's main colour,
      *  exactly like copying a built-in sprite into the sprite editor. Off = the smooth HD render. */
@@ -120,7 +124,7 @@ final class Sprites {
     static boolean isHero(int id){return id==HERO||(id>=HERO_RANGER&&id<=HERO_CLERIC);}
     static boolean hasAngles(int id){for(int c:CHARACTERS)if(c==id)return true;return false;}
     static Sprite get(int id,int frame){return get(id,frame,0);}
-    private static int frameSlot(int id,int frame){return hasAngles(id)?frame:id==TORCH?(frame&1):0;}
+    private static int frameSlot(int id,int frame){return hasAngles(id)?frame:PropMesh.fire(id)?(frame&1):0;}
     /**
      * Sprite {@code id} in animation {@code frame} seen from {@code view} (0 = front … 4 = back, see CustomSprite.viewIndex).
      * Never stalls the game: if that angle isn't rendered yet, the closest ready one is shown while it renders in the background.
@@ -173,7 +177,10 @@ final class Sprites {
     }
     private static Sprite build(int id,int frame,int view){Sprite s=buildHd(id,frame,view);return pixel?pixelate(s,PIXEL_K):s;}
     private static Sprite buildHd(int id,int frame,int view){
-        SpriteModels.Model m;float elev;boolean bright=id==TORCH||id==LAMP;
+        SpriteModels.Model m;float elev;boolean bright=PropMesh.fire(id);
+        if(PropMesh.has(id)){   // box-modelled objects: the sprite is a picture of the same low-poly model
+            MeshModels.Mesh mesh=MeshModels.get(id);
+            if(mesh!=null)return MeshModels.raster(mesh,frame,id==RUG?.6f:.55f,id==RUG?.7f:.3f,MODEL_PPU,bright);}
         switch(id){
             case HERO:m=SpriteModels.hero(frame);elev=.15f;break;
             case SKELETON:m=SpriteModels.skeleton(frame);elev=.15f;break;

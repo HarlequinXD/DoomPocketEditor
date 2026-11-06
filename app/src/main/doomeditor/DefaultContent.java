@@ -44,6 +44,33 @@ final class DefaultContent {
         l.add(decoration("pillar","Stone Pillar",Sprites.PILLAR,.35f,1.6f));
         l.add(decoration("brazier","Brazier",Sprites.BRAZIER,.3f,1.2f));
         l.add(exitLever());
+        l.addAll(decor());
+        return l;
+    }
+    /** Home and camp decorations (box-modelled): furniture, fires and clutter. Fires light up and burn by themselves. */
+    static ArrayList<EntityDef> decor(){
+        ArrayList<EntityDef> l=new ArrayList<>();
+        l.add(decoration("campfire","Campfire",Sprites.CAMPFIRE,.45f,.5f));
+        l.add(decoration("fireplace","Fireplace",Sprites.FIREPLACE,.6f,1.9f));
+        l.add(decoration("bed","Bed",Sprites.BED,.5f,.8f));
+        l.add(decoration("cabinet","Cabinet",Sprites.CABINET,.4f,.9f));
+        l.add(decoration("wardrobe","Wardrobe",Sprites.WARDROBE,.45f,1.85f));
+        l.add(decoration("chest_of_drawers","Chest of Drawers",Sprites.DRESSER,.4f,.95f));
+        l.add(decoration("table","Table",Sprites.TABLE,.5f,.66f));
+        l.add(decoration("chair","Chair",Sprites.CHAIR,.22f,.9f));
+        l.add(decoration("stool","Stool",Sprites.STOOL,.2f,.45f));
+        l.add(decoration("bench","Bench",Sprites.BENCH,.35f,.42f));
+        l.add(decoration("bookshelf","Bookshelf",Sprites.BOOKSHELF,.45f,1.72f));
+        l.add(decoration("crate","Crate",Sprites.CRATE,.32f,.6f));
+        l.add(decoration("candelabra","Candelabra",Sprites.CANDELABRA,.2f,1.4f));
+        l.add(decoration("candle","Candle",Sprites.CANDLE,.1f,.25f));
+        l.add(decoration("cauldron","Cauldron",Sprites.CAULDRON,.32f,.6f));
+        l.add(decoration("weapon_rack","Weapon Rack",Sprites.WEAPON_RACK,.4f,1.6f));
+        l.add(decoration("banner","Banner",Sprites.BANNER,.25f,2.05f));
+        l.add(decoration("potted_plant","Potted Plant",Sprites.PLANT,.22f,.9f));
+        l.add(decoration("grain_sack","Grain Sack",Sprites.SACK,.25f,.65f));
+        EntityDef rug=decoration("rug","Rug",Sprites.RUG,.6f,.02f);rug.solid=false;l.add(rug);
+        EntityDef candle=l.get(13);candle.solid=false;
         return l;
     }
 

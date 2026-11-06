@@ -223,7 +223,7 @@ final class Project {
         }
     }
     JSONObject toJson()throws Exception{
-        JSONObject o=new JSONObject();o.put("version",7);
+        JSONObject o=new JSONObject();o.put("version",7);o.put("decorLibrary",1);
         JSONObject m=new JSONObject();m.put("name",name);m.put("template",template);m.put("created",(double)created);o.put("meta",m);
         syncCurrent();
         o.put("level",level.toJson());
@@ -258,6 +258,7 @@ final class Project {
         JSONObject m=o.optJSONObject("meta");if(m!=null){p.name=m.optString("name","Untitled");p.template=m.optString("template","");p.created=(long)m.optDouble("created",0);}
         p.level=Level.fromJson(o.getJSONObject("level"));
         JSONArray a=o.optJSONArray("entities");if(a!=null)for(int i=0;i<a.length();i++)p.defs.add(EntityDef.fromJson(a.getJSONObject(i)));
+        if(o.optInt("decorLibrary",0)<1&&!p.defs.isEmpty())for(EntityDef d:DefaultContent.decor())if(p.def(d.id)==null)p.defs.add(d);   // older projects get the new decorations once
         JSONArray s=o.optJSONArray("sprites");if(s!=null)for(int i=0;i<s.length();i++){try{p.sprites.add(CustomSprite.fromJson(s.getJSONObject(i)));}catch(Exception ignored){}}
         JSONArray sn=o.optJSONArray("sounds");if(sn!=null)for(int i=0;i<sn.length();i++){JSONObject j=sn.optJSONObject(i);if(j!=null)p.sounds.add(SoundAsset.fromJson(j));}
         JSONArray mu=o.optJSONArray("songs");if(mu!=null)for(int i=0;i<mu.length();i++){JSONObject j=mu.optJSONObject(i);if(j!=null)p.songs.add(Song.fromJson(j));}

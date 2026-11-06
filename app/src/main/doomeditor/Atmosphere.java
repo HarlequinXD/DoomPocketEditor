@@ -13,7 +13,7 @@ final class Atmosphere {
     private Atmosphere(){}
 
     // ------------------------------------------------------------------ entity lights
-    static final String[] GLOWS={"Automatic (torches and braziers glow)","No light","Torch (warm, flickers)","Candle (small, flickers)","Brazier (large fire)","Magic blue (pulses)","Holy gold","Toxic green (pulses)","Blood red","Moonlight (pale blue)","Arcane violet (pulses)"};
+    static final String[] GLOWS={"Automatic (torches, braziers, fires and candles glow)","No light","Torch (warm, flickers)","Candle (small, flickers)","Brazier (large fire)","Magic blue (pulses)","Holy gold","Toxic green (pulses)","Blood red","Moonlight (pale blue)","Arcane violet (pulses)"};
     static final int G_AUTO=0,G_NONE=1;
     //                     colour      radius intensity flicker(0 steady,1 flicker,2 pulse)
     private static final float[][] GLOW_DATA={{0,0,0,0},{0,0,0,0},
@@ -24,7 +24,7 @@ final class Atmosphere {
     /** As above; {@code override} is a preset set by the Set Light action (-1 = none). */
     static float[] glowFor(EntityDef d,int sprite,int override){
         int g=override>=0?override:d==null?G_AUTO:d.glow;
-        if(g==G_AUTO){if(sprite==Sprites.TORCH)g=2;else if(sprite==Sprites.BRAZIER)g=4;else return null;}
+        if(g==G_AUTO){if(sprite==Sprites.TORCH)g=2;else if(sprite==Sprites.BRAZIER||sprite==Sprites.CAMPFIRE||sprite==Sprites.FIREPLACE)g=4;else if(sprite==Sprites.CANDELABRA||sprite==Sprites.CANDLE)g=3;else return null;}
         if(g<=G_NONE||g>=GLOW_DATA.length)return null;
         float[] gd=GLOW_DATA[g];
         if(d!=null&&d.glowRadius>0)return new float[]{gd[0],d.glowRadius,gd[2],gd[3]};
@@ -89,31 +89,42 @@ final class Atmosphere {
     }
 
     // ------------------------------------------------------------------ particles
-    static final String[] PARTICLES={"None","Smoke","Fire embers","Magic sparkles","Dust","Dripping water","Poison bubbles","Holy light"};
+    static final String[] PARTICLES={"None","Smoke","Fire embers","Magic sparkles","Dust","Dripping water","Poison bubbles","Holy light","Flames"};
+    static final int P_EMBERS=2,P_FLAMES=8;
     //                   colour      rise  spread life size gravity
     private static final float[][] PDATA={{0,0,0,0,0,0},
             {0xff6a6a70,.6f,.25f,2.6f,.11f,0},{0xffff9030,1.1f,.2f,1.1f,.035f,0},{0xff9ad8ff,.35f,.45f,1.3f,.035f,0},{0xffc8b898,.08f,.6f,3f,.03f,0},
-            {0xff8ab8ff,0,.15f,1.4f,.03f,-6},{0xff70e060,.45f,.3f,1.6f,.05f,0},{0xffffe8a0,.7f,.35f,1.5f,.04f,0}};
+            {0xff8ab8ff,0,.15f,1.4f,.03f,-6},{0xff70e060,.45f,.3f,1.6f,.05f,0},{0xffffe8a0,.7f,.35f,1.5f,.04f,0},
+            {0xffffd060,.85f,.07f,.7f,.1f,0}};
     static final class Particles {
         static final int MAX=600;
         final float[] x=new float[MAX],y=new float[MAX],z=new float[MAX],vx=new float[MAX],vy=new float[MAX],vz=new float[MAX],life=new float[MAX],max=new float[MAX],size=new float[MAX],grav=new float[MAX];
-        final int[] col=new int[MAX];int n;private final Random rng=new Random(3);
+        final int[] col=new int[MAX],kind=new int[MAX];int n;private final Random rng=new Random(3);
         void emit(int type,float px,float py,float pz,int count){
             if(type<=0||type>=PDATA.length)return;float[] d=PDATA[type];
             for(int k=0;k<count;k++){if(n>=MAX)return;int i=n++;float a=rng.nextFloat()*6.28f,r=rng.nextFloat()*d[2];
                 x[i]=px+(float)Math.cos(a)*r;y[i]=py+(float)Math.sin(a)*r;z[i]=pz+rng.nextFloat()*.1f;
                 vx[i]=(rng.nextFloat()-.5f)*d[2];vy[i]=(rng.nextFloat()-.5f)*d[2];vz[i]=d[1]*(.6f+rng.nextFloat()*.8f);
-                max[i]=life[i]=d[3]*(.6f+rng.nextFloat()*.8f);size[i]=d[4]*(.7f+rng.nextFloat()*.6f);col[i]=(int)d[0];grav[i]=d[5];}
+                max[i]=life[i]=d[3]*(.6f+rng.nextFloat()*.8f);size[i]=d[4]*(.7f+rng.nextFloat()*.6f);col[i]=(int)d[0];grav[i]=d[5];kind[i]=type;}
         }
         void update(float dt){
             for(int i=0;i<n;i++){life[i]-=dt;if(life[i]<=0){n--;copy(n,i);i--;continue;}
                 x[i]+=vx[i]*dt;y[i]+=vy[i]*dt;vz[i]+=grav[i]*dt;z[i]+=vz[i]*dt;}
         }
-        private void copy(int from,int to){x[to]=x[from];y[to]=y[from];z[to]=z[from];vx[to]=vx[from];vy[to]=vy[from];vz[to]=vz[from];life[to]=life[from];max[to]=max[from];size[to]=size[from];col[to]=col[from];grav[to]=grav[from];}
+        private void copy(int from,int to){x[to]=x[from];y[to]=y[from];z[to]=z[from];vx[to]=vx[from];vy[to]=vy[from];vz[to]=vz[from];life[to]=life[from];max[to]=max[from];size[to]=size[from];col[to]=col[from];grav[to]=grav[from];kind[to]=kind[from];}
         void clear(){n=0;}
+        /** Colour of particle i now: flames burn white-yellow, then orange, red and finally dark smoke as they rise. */
+        int color(int i){
+            if(kind[i]!=P_FLAMES)return col[i];
+            float t=1-life[i]/Math.max(.01f,max[i]);
+            float[][] k={{255,240,170},{255,170,50},{230,80,20},{120,30,14},{40,34,32}};float p=Math.min(3.999f,t*4);int a=(int)p;float f=p-a;
+            return 0xff000000|((int)(k[a][0]+(k[a+1][0]-k[a][0])*f)<<16)|((int)(k[a][1]+(k[a+1][1]-k[a][1])*f)<<8)|(int)(k[a][2]+(k[a+1][2]-k[a][2])*f);
+        }
+        /** Flames shrink as they burn out. */
+        float size(int i){return kind[i]==P_FLAMES?size[i]*(.35f+.65f*life[i]/Math.max(.01f,max[i])):size[i];}
     }
     /** Emitter rate (particles per second) for an entity type's particle setting. */
-    static float rate(int type){return type<=0?0:type==1?6:type==2?14:type==3?10:type==4?3:type==5?2.5f:type==6?4:8;}
+    static float rate(int type){return type<=0?0:type==1?6:type==2?14:type==3?10:type==4?3:type==5?2.5f:type==6?4:type==8?16:8;}
     /** Height on the entity where particles start (fire at the top of a torch, drips from a ceiling...). */
-    static float emitHeight(int type,Actor a){return type==2||type==1?a.height*.9f:type==5?a.height:a.height*.5f;}
+    static float emitHeight(int type,Actor a){if((type==2||type==8)&&PropMesh.flameZ(a.sprite)>=0)return PropMesh.flameZ(a.sprite);return type==2||type==1||type==8?a.height*.9f:type==5?a.height:a.height*.5f;}
 }

@@ -34,6 +34,7 @@ final class MeshModels {
     private static int budget=BUDGET;
     static Mesh build(int id){
         if(BoxMesh.has(id))return BoxMesh.build(id);   // characters: hand box-modelled
+        if(PropMesh.has(id))return PropMesh.build(id);   // objects and decorations: hand box-modelled
         Mesh out=new Mesh();budget=id==Sprites.HERO||id==Sprites.SKELETON||id==Sprites.GOBLIN||id==Sprites.ORC||id==Sprites.CULTIST||id==Sprites.VILLAGER||(id>=Sprites.HERO_RANGER&&id<=Sprites.HERO_CLERIC)?500:320;
         SpriteModels.Model first=model(id,0);if(first==null)return null;
         int[] lv=plan(first);
@@ -205,12 +206,44 @@ final class MeshModels {
                 mat[o]=0xff000000|(c255(smooth)<<16)|(c255(metal?.85f:0)<<8)|c255(1f-Math.max(0,.55f-h)*.6f);
             }
         }
-        int[] rel=new int[S*S];
-        for(int y=0;y<S;y++)for(int x=0;x<S;x++){int tx=x/TILE*TILE,ty=y/TILE*TILE,lx=x-tx,ly=y-ty;
-            float hx=H[(y)*S+tx+((lx+1)&(TILE-1))]-H[y*S+tx+((lx-1)&(TILE-1))],hy=H[(ty+((ly+1)&(TILE-1)))*S+x]-H[(ty+((ly-1)&(TILE-1)))*S+x];
-            float k=3.5f,nx=-hx*k,ny=-hy*k,nz=1,l=(float)Math.sqrt(nx*nx+ny*ny+nz*nz);
-            rel[y*S+x]=(c255(H[y*S+x])<<24)|(c255(nx/l*.5f+.5f)<<16)|(c255(ny/l*.5f+.5f)<<8)|c255(nz/l*.5f+.5f);}
-        out.color=col;out.relief=rel;out.mat=mat;
+        out.color=col;   // PS1: colour texture only
+    }
+    /**
+     * Draws one frame of a mesh into a sprite (for thumbnails, the sprite editor and the software renderer): seen from
+     * {@code yaw} and looking down by {@code elev}, lit from the upper left, nearest-texel colour like the GPU path.
+     * Centred horizontally, bottom row on the floor.
+     */
+    static Sprites.Sprite raster(Mesh m,int frame,float yaw,float elev,float ppu,boolean bright){
+        Frame fr=m.frames[Math.max(0,Math.min(m.frames.length-1,frame))];if(fr==null)fr=m.frames[0];
+        float cy=(float)Math.cos(yaw),sy=(float)Math.sin(yaw),ce=(float)Math.cos(elev),se=(float)Math.sin(elev);
+        float[] dH={-cy,-sy,0},u={sy,-cy,0},w={dH[0]*ce,dH[1]*ce,-se},up={dH[0]*se,dH[1]*se,ce};
+        float lx=-.55f*u[0]+.78f*up[0]-.42f*w[0],ly=-.55f*u[1]+.78f*up[1]-.42f*w[1],lz=-.55f*u[2]+.78f*up[2]-.42f*w[2];float ll=(float)Math.sqrt(lx*lx+ly*ly+lz*lz);lx/=ll;ly/=ll;lz/=ll;
+        int n=fr.count;float[] X=new float[n],Y=new float[n],Z=new float[n];float half=0,top=-1e9f,bot=1e9f;
+        for(int i=0;i<n;i++){int o=i*9;float px=fr.v[o],py=fr.v[o+1],pz=fr.v[o+2];
+            X[i]=px*u[0]+py*u[1]+pz*u[2];Y[i]=px*up[0]+py*up[1]+pz*up[2];Z[i]=px*w[0]+py*w[1]+pz*w[2];
+            half=Math.max(half,Math.abs(X[i]));top=Math.max(top,Y[i]);bot=Math.min(bot,Y[i]);}
+        int W=Math.max(2,(int)Math.ceil(half*ppu)*2+2),H=Math.max(2,(int)Math.ceil((top-bot)*ppu)+2);
+        Sprites.Sprite sp=new Sprites.Sprite(W,H,bright);sp.ppu=ppu;float[] zb=new float[W*H];java.util.Arrays.fill(zb,1e9f);
+        int S=m.atlas*TILE;
+        for(int t=0;t+2<n;t+=3){
+            float[] sxv=new float[3],syv=new float[3];
+            for(int k=0;k<3;k++){sxv[k]=W*.5f+X[t+k]*ppu;syv[k]=H-1-(Y[t+k]-bot)*ppu;}
+            float area=(sxv[1]-sxv[0])*(syv[2]-syv[0])-(sxv[2]-sxv[0])*(syv[1]-syv[0]);if(Math.abs(area)<1e-6f)continue;
+            int o=t*9;float nx=fr.v[o+3]+fr.v[o+12]+fr.v[o+21],ny=fr.v[o+4]+fr.v[o+13]+fr.v[o+22],nz=fr.v[o+5]+fr.v[o+14]+fr.v[o+23];
+            float nl=(float)Math.sqrt(nx*nx+ny*ny+nz*nz);if(nl>0){nx/=nl;ny/=nl;nz/=nl;}
+            if(nx*w[0]+ny*w[1]+nz*w[2]>0){nx=-nx;ny=-ny;nz=-nz;}
+            boolean glow=fr.v[o+8]>.5f;float shade=glow?1.1f:.42f+.68f*Math.max(0,nx*lx+ny*ly+nz*lz);
+            int x0=Math.max(0,(int)Math.floor(Math.min(sxv[0],Math.min(sxv[1],sxv[2])))),x1=Math.min(W-1,(int)Math.ceil(Math.max(sxv[0],Math.max(sxv[1],sxv[2]))));
+            int y0=Math.max(0,(int)Math.floor(Math.min(syv[0],Math.min(syv[1],syv[2])))),y1=Math.min(H-1,(int)Math.ceil(Math.max(syv[0],Math.max(syv[1],syv[2]))));
+            for(int py=y0;py<=y1;py++)for(int px=x0;px<=x1;px++){float qx=px+.5f,qy=py+.5f;
+                float b0=((sxv[1]-qx)*(syv[2]-qy)-(sxv[2]-qx)*(syv[1]-qy))/area,b1=((sxv[2]-qx)*(syv[0]-qy)-(sxv[0]-qx)*(syv[2]-qy))/area,b2=1-b0-b1;
+                if(b0<-1e-4f||b1<-1e-4f||b2<-1e-4f)continue;
+                float z=b0*Z[t]+b1*Z[t+1]+b2*Z[t+2];int pi=py*W+px;if(z>=zb[pi])continue;zb[pi]=z;
+                float tu=b0*fr.v[o+6]+b1*fr.v[o+15]+b2*fr.v[o+24],tv=b0*fr.v[o+7]+b1*fr.v[o+16]+b2*fr.v[o+25];
+                int c=m.color[Math.min(S-1,Math.max(0,(int)(tv*S)))*S+Math.min(S-1,Math.max(0,(int)(tu*S)))];
+                sp.px[pi]=0xff000000|(c255(((c>>16)&255)/255f*shade)<<16)|(c255(((c>>8)&255)/255f*shade)<<8)|c255((c&255)/255f*shade);}
+        }
+        return sp;
     }
     private static int c255(float v){return Math.max(0,Math.min(255,Math.round(v*255)));}
 }

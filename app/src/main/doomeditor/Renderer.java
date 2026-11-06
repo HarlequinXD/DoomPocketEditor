@@ -384,8 +384,8 @@ final class Renderer {
         Atmosphere.Particles ps=particles;
         for(int i=0;i<ps.n;i++){
             float dx=ps.x[i]-camX,dy=ps.y[i]-camY,cx=-dx*sn+dy*cs,cz=dx*cs+dy*sn;if(cz<NEAR*2)continue;
-            float sc=focal/cz;int sxp=(int)(W*.5f+cx*sc),syp=(int)(horizon-(ps.z[i]-eye)*sc);int rad=Math.max(0,(int)(ps.size[i]*sc*.5f));
-            float fade=Math.min(1,ps.life[i]/Math.max(.01f,ps.max[i])*2.2f);float iz=1f/cz;int col=ps.col[i];
+            float sc=focal/cz;int sxp=(int)(W*.5f+cx*sc),syp=(int)(horizon-(ps.z[i]-eye)*sc);int rad=Math.max(0,(int)(ps.size(i)*sc*.5f));
+            float fade=Math.min(1,ps.life[i]/Math.max(.01f,ps.max[i])*2.2f);float iz=1f/cz;int col=ps.color(i);
             for(int yy=syp-rad;yy<=syp+rad;yy++){if(yy<0||yy>=H)continue;for(int xx=sxp-rad;xx<=sxp+rad;xx++){if(xx<0||xx>=W)continue;int o=yy*W+xx;if(iz<=zb[o])continue;
                 int b=pix[o];float a=fade*(rad==0?.85f:.75f);
                 pix[o]=0xff000000|((int)(((col>>16)&255)*a+((b>>16)&255)*(1-a))<<16)|((int)(((col>>8)&255)*a+((b>>8)&255)*(1-a))<<8)|(int)((col&255)*a+(b&255)*(1-a));amb[o]=0;}}

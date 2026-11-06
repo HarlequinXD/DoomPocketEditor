@@ -76,8 +76,18 @@ final class World {
     int fog,tint,weather;
     private void tickParticles(float dt){
         particles.update(dt);
-        for(Actor a:actors){if(a.removed||a.def==null||a.def.particles<=0||(!a.visible&&!a.isPlayer))continue;
+        for(Actor a:actors){if(a.removed||a.def==null||(!a.visible&&!a.isPlayer))continue;
+            int type=a.def.particles;boolean autoFire=type<=0&&a.def.glow==Atmosphere.G_AUTO&&PropMesh.fire(a.sprite)&&project.builtinLook(a.def,a.sprite)&&a.alive;
+            if(type<=0&&!autoFire)continue;
             if(Math.hypot(a.x-player.x,a.y-player.y)>22)continue;
+            if(autoFire){   // built-in fires burn on their own: flames plus a few embers
+                boolean big=PropMesh.bigFire(a.sprite);float z=a.z+PropMesh.flameZ(a.sprite);float spread=big?(a.sprite==Sprites.CAMPFIRE?.16f:.12f):.025f;
+                if(a.sprite==Sprites.CANDLE||a.sprite==Sprites.CANDELABRA)continue;
+                a.emitAcc+=dt*(big?22:9);
+                while(a.emitAcc>=1){a.emitAcc-=1;float ox=(float)(Math.random()-.5)*2*spread,oy=(float)(Math.random()-.5)*2*spread;
+                    if(a.sprite==Sprites.FIREPLACE){float ca=(float)Math.cos(a.angle),sa=(float)Math.sin(a.angle);ox+=ca*-.08f;oy+=sa*-.08f;}
+                    particles.emit(Math.random()<.15?Atmosphere.P_EMBERS:Atmosphere.P_FLAMES,a.x+ox,a.y+oy,z,1);}
+                continue;}
             a.emitAcc+=dt*Atmosphere.rate(a.def.particles);while(a.emitAcc>=1){a.emitAcc-=1;particles.emit(a.def.particles,a.x,a.y,a.z+Atmosphere.emitHeight(a.def.particles,a),1);}}
     }
     /** Testing cheat from the debug panel. */
