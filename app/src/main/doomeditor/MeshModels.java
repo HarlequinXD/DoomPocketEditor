@@ -30,13 +30,13 @@ final class MeshModels {
     /** Builds the character meshes ahead of time (loading screen), so the first fight doesn't hitch. */
     static void warm(){for(int id:new int[]{Sprites.HERO,Sprites.SKELETON,Sprites.GOBLIN,Sprites.ORC,Sprites.CULTIST,Sprites.VILLAGER})get(id);}
     // ------------------------------------------------------------------ build
+    static final int BUDGET=320;   // triangles per model
     static Mesh build(int id){
         Mesh out=new Mesh();
         SpriteModels.Model first=model(id,0);if(first==null)return null;
-        // pick a level of detail so a character lands near 300 triangles
-        int lod=2;while(lod>0&&count(first,lod)>340)lod--;
+        int[] lv=plan(first);
         int n=Math.max(1,first.mats.size());int g=1;while(g*g<n)g++;out.atlas=g;
-        for(int f=0;f<Sprites.FRAMES;f++){SpriteModels.Model m=f==0?first:model(id,f);if(m==null)m=first;out.frames[f]=mesh(m,lod,g);}
+        for(int f=0;f<Sprites.FRAMES;f++){SpriteModels.Model m=f==0?first:model(id,f);if(m==null)m=first;out.frames[f]=mesh(m,lv,g);}
         paint(out,first,g);
         return out;
     }
@@ -54,38 +54,44 @@ final class MeshModels {
             }
         }catch(Throwable t){return null;}
     }
-    private static int count(SpriteModels.Model m,int lod){int c=0;for(SpriteModels.Prim p:m.prims)c+=tris(p,lod);return c;}
-    private static boolean tiny(SpriteModels.Prim p){
-        switch(p.type){case SpriteModels.ELL:return Math.max(p.h[0],Math.max(p.h[1],p.h[2]))<.022f;
-            case SpriteModels.RCONE:case SpriteModels.CYL:return Math.max(p.r,p.r2)<.012f&&dist(p.a,p.b)<.05f;
-            case SpriteModels.BOX:return Math.max(p.h[0],Math.max(p.h[1],p.h[2]))<.015f;default:return false;}
+    static float size(SpriteModels.Prim p){
+        switch(p.type){case SpriteModels.ELL:case SpriteModels.BOX:return Math.max(p.h[0],Math.max(p.h[1],p.h[2]));case SpriteModels.TORUS:return p.r+p.r2;
+            default:return Math.max(Math.max(p.r,p.r2),dist(p.a,p.b)*.25f);}
     }
-    private static int[] seg(SpriteModels.Prim p,int lod){
-        float size;switch(p.type){case SpriteModels.ELL:size=Math.max(p.h[0],Math.max(p.h[1],p.h[2]));break;case SpriteModels.TORUS:size=p.r;break;default:size=Math.max(p.r,p.r2);}
-        int around=lod==2?(size>.08f?8:6):lod==1?(size>.08f?6:5):4;int rings=lod==2?(size>.08f?5:4):lod==1?4:3;
-        return new int[]{around,rings};
+    /** Triangles for a primitive at detail level 0..3 (-1 = left out). */
+    static int cost(SpriteModels.Prim p,int l){
+        if(l<0)return 0;
+        switch(p.type){case SpriteModels.ELL:return new int[]{8,16,30,48}[l];case SpriteModels.BOX:return 12;case SpriteModels.TORUS:return new int[]{24,24,36,64}[l];
+            default:return 4*(3+l);}
     }
-    private static int tris(SpriteModels.Prim p,int lod){
-        if(tiny(p))return 8;int[] s=seg(p,lod);
-        switch(p.type){case SpriteModels.ELL:return s[0]*(s[1]-1)*2;case SpriteModels.RCONE:case SpriteModels.CYL:return s[0]*4;case SpriteModels.BOX:return 12;
-            case SpriteModels.TORUS:return Math.max(5,s[0])*3*2;default:return 0;}
+    /**
+     * Spends the triangle budget like a PS1 artist: every part starts as the simplest shape (8-sided gem, 3-sided
+     * prism, box); the smallest details are dropped if even that is too much; then the biggest, most visible parts
+     * get rounder first.
+     */
+    static int[] plan(SpriteModels.Model m){
+        int n=m.prims.size();int[] lv=new int[n];Integer[] ord=new Integer[n];for(int i=0;i<n;i++)ord[i]=i;
+        java.util.Arrays.sort(ord,(a,b)->Float.compare(size(m.prims.get(a)),size(m.prims.get(b))));
+        int total=0;for(int i=0;i<n;i++)total+=cost(m.prims.get(i),0);
+        for(int k=0;k<n&&total>BUDGET*.85f;k++){int i=ord[k];SpriteModels.Prim p=m.prims.get(i);if(size(p)>=.05f)break;total-=cost(p,0);lv[i]=-1;}
+        for(int level=1;level<=3;level++)for(int k=n-1;k>=0;k--){int i=ord[k];if(lv[i]!=level-1)continue;SpriteModels.Prim p=m.prims.get(i);
+            int d=cost(p,level)-cost(p,level-1);if(total+d<=BUDGET){total+=d;lv[i]=level;}}
+        return lv;
     }
 
     // ------------------------------------------------------------------ tessellation
     private static float[] buf;private static int nv;
-    private static Frame mesh(SpriteModels.Model m,int lod,int g){
+    private static Frame mesh(SpriteModels.Model m,int[] lv,int g){
         buf=new float[9*3*400];nv=0;
-        for(SpriteModels.Prim p:m.prims){
+        for(int pi=0;pi<m.prims.size();pi++){SpriteModels.Prim p=m.prims.get(pi);int l=pi<lv.length?lv[pi]:0;if(l<0)continue;
             int mi=Math.max(0,Math.min(m.mats.size()-1,p.mat));SpriteModels.Mat mat=m.mats.isEmpty()?null:m.mats.get(mi);
             float glow=mat!=null&&mat.glow?1:0;int tx=mi%g,ty=mi/g;
-            if(tiny(p)){octa(p,glow,tx,ty,g);continue;}
-            int[] s=seg(p,lod);
             switch(p.type){
-                case SpriteModels.ELL:ellipsoid(p,s[0],s[1],glow,tx,ty,g);break;
-                case SpriteModels.RCONE:tube(p,s[0],p.r,p.r2,true,glow,tx,ty,g);break;
-                case SpriteModels.CYL:tube(p,s[0],p.r,p.r,false,glow,tx,ty,g);break;
+                case SpriteModels.ELL:if(l==0)octa(p,glow,tx,ty,g);else ellipsoid(p,new int[]{0,4,5,6}[l],new int[]{0,3,4,5}[l],glow,tx,ty,g);break;
+                case SpriteModels.RCONE:tube(p,3+l,p.r,p.r2,l>0,glow,tx,ty,g);break;
+                case SpriteModels.CYL:tube(p,3+l,p.r,p.r,false,glow,tx,ty,g);break;
                 case SpriteModels.BOX:box(p,glow,tx,ty,g);break;
-                case SpriteModels.TORUS:torus(p,Math.max(5,s[0]),3,glow,tx,ty,g);break;
+                case SpriteModels.TORUS:torus(p,l>=3?8:l==2?6:4,l>=3?4:3,glow,tx,ty,g);break;
             }
         }
         Frame f=new Frame();f.v=java.util.Arrays.copyOf(buf,nv*9);f.count=nv;return f;
@@ -148,7 +154,12 @@ final class MeshModels {
     private static void octa(SpriteModels.Prim p,float glow,int tx,int ty,int g){
         float r;float[] c=p.c;switch(p.type){case SpriteModels.ELL:r=Math.max(p.h[0],Math.max(p.h[1],p.h[2]));break;case SpriteModels.BOX:r=Math.max(p.h[0],Math.max(p.h[1],p.h[2]));break;default:r=Math.max(p.r,Math.max(p.r2,dist(p.a,p.b)*.5f));}
         float[][] d={{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}};int[][] f={{0,2,4},{2,1,4},{1,3,4},{3,0,4},{2,0,5},{1,2,5},{3,1,5},{0,3,5}};
-        for(int[] t:f){float[][] q=new float[3][];for(int k=0;k<3;k++){float[] e=d[t[k]];q[k]=P(c[0]+e[0]*r,c[1]+e[1]*r,c[2]+e[2]*r,e[0],e[1],e[2],.5f+e[0]*.4f,.5f+e[2]*.4f);}tri(q[0],q[1],q[2],glow,tx,ty,g);}
+        boolean axes=p.type==SpriteModels.ELL;
+        for(int[] t:f){float[][] q=new float[3][];for(int k=0;k<3;k++){float[] e=d[t[k]];float x,y,z,nx,ny,nz;
+            if(axes){float[] u=p.ax[0],v=p.ax[1],w=p.ax[2];float ex=e[0]*p.h[0],ey=e[1]*p.h[1],ez=e[2]*p.h[2];x=c[0]+u[0]*ex+v[0]*ey+w[0]*ez;y=c[1]+u[1]*ex+v[1]*ey+w[1]*ez;z=c[2]+u[2]*ex+v[2]*ey+w[2]*ez;
+                nx=u[0]*e[0]+v[0]*e[1]+w[0]*e[2];ny=u[1]*e[0]+v[1]*e[1]+w[1]*e[2];nz=u[2]*e[0]+v[2]*e[1]+w[2]*e[2];}
+            else{x=c[0]+e[0]*r;y=c[1]+e[1]*r;z=c[2]+e[2]*r;nx=e[0];ny=e[1];nz=e[2];}
+            q[k]=P(x,y,z,nx,ny,nz,.5f+e[1]*.45f,.5f-e[2]*.45f);}tri(q[0],q[1],q[2],glow,tx,ty,g);}
     }
     private static float[] sub(float[] a,float[] b){return new float[]{a[0]-b[0],a[1]-b[1],a[2]-b[2]};}
     private static float len(float[] a){return (float)Math.sqrt(a[0]*a[0]+a[1]*a[1]+a[2]*a[2]);}
