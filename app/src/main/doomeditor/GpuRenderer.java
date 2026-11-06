@@ -226,7 +226,9 @@ final class GpuRenderer {
 
     void setup(int w,int h){
         if(w==W&&h==H&&fbo!=0)return;
-        release();W=w;H=h;
+        // smaller sizes (dynamic resolution) reuse the same framebuffer: only the viewport and read-back shrink
+        if(fbo!=0&&w<=capW&&h<=capH){W=w;H=h;bmp=bitmapFor(W,H);return;}
+        release();W=w;H=h;capW=w;capH=h;
         int[] t=new int[3];
         GLES20.glGenFramebuffers(2,t,0);fbo=t[0];idFbo=t[1];
         GLES20.glGenRenderbuffers(2,t,0);depthRb=t[0];idDepth=t[1];
@@ -245,11 +247,21 @@ final class GpuRenderer {
         GLES20.glFramebufferRenderbuffer(GLES20.GL_FRAMEBUFFER,GLES20.GL_DEPTH_ATTACHMENT,GLES20.GL_RENDERBUFFER,idDepth);
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER,fbo);
         if(GLES20.glCheckFramebufferStatus(GLES20.GL_FRAMEBUFFER)!=GLES20.GL_FRAMEBUFFER_COMPLETE)throw new RuntimeException("framebuffer incomplete");
-        bmp=Bitmap.createBitmap(W,H,Bitmap.Config.ARGB_8888);read=ByteBuffer.allocateDirect(W*H*4).order(ByteOrder.nativeOrder());
+        bitmaps.clear();bmp=bitmapFor(W,H);read=ByteBuffer.allocateDirect(W*H*4).order(ByteOrder.nativeOrder());
+    }
+    private int capW,capH;private final HashMap<Long,Bitmap> bitmaps=new HashMap<>();
+    private Bitmap bitmapFor(int w,int h){long k=((long)w<<32)|h;Bitmap b=bitmaps.get(k);if(b==null){b=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);bitmaps.put(k,b);}return b;}
+    /** Frees this view's GPU memory (framebuffers and cached sprite/blood textures). */
+    void dispose(){
+        try{if(!available())return;release();
+            for(int[] e:spriteTex.values())GLES20.glDeleteTextures(1,e,0);spriteTex.clear();
+            for(int[] e:splatTex.values())GLES20.glDeleteTextures(1,e,0);splatTex.clear();
+            for(Bitmap b:bitmaps.values())b.recycle();bitmaps.clear();bmp=null;W=H=0;
+        }catch(Throwable ignored){}
     }
     private int colorTex;
     private void release(){
-        if(fbo!=0){GLES20.glDeleteFramebuffers(2,new int[]{fbo,idFbo},0);GLES20.glDeleteRenderbuffers(2,new int[]{depthRb,idDepth},0);GLES20.glDeleteTextures(2,new int[]{colorTex,idColor},0);fbo=0;}
+        if(fbo!=0){capW=capH=0;GLES20.glDeleteFramebuffers(2,new int[]{fbo,idFbo},0);GLES20.glDeleteRenderbuffers(2,new int[]{depthRb,idDepth},0);GLES20.glDeleteTextures(2,new int[]{colorTex,idColor},0);fbo=0;}
     }
 
     // ------------------------------------------------------------------ geometry building
@@ -276,7 +288,7 @@ final class GpuRenderer {
         computeGi(level);pickLights();
         if(shadows&&nl>0)buildShadows(level,sprites);
         // pass 1: floors, ceilings, walls into per-material buckets (stored as start indexes after sorting)
-        ArrayList<float[]>[] lists=new ArrayList[nm];
+        java.util.Arrays.fill(mn,0);Object lists=null;
         for(int si=0;si<level.sectors.size()&&si<r.tris.length;si++){
             Level.Sector s=level.sectors.get(si);int[] t=r.tris[si];int L=Renderer.lightLevel(s.light);
             for(int k=0;k+2<t.length;k+=3){
@@ -300,8 +312,8 @@ final class GpuRenderer {
         }
         // sky ceilings first: they only fill depth, so whatever is behind them must not be drawn yet
         int[] order=new int[nm];order[0]=Textures.SKY;for(int m=0,k=1;m<nm;m++)if(m!=Textures.SKY)order[k++]=m;
-        for(int m:order){ArrayList<float[]> lst=lists[m];if(lst==null)continue;int first=nv;ensure(lst.size());
-            for(float[] q:lst){System.arraycopy(q,0,verts,nv*ST,ST);nv++;}
+        for(int m:order){int cnt=mn[m];if(cnt==0)continue;int first=nv;ensure(cnt);
+            System.arraycopy(mb[m],0,verts,nv*ST,cnt*ST);nv+=cnt;
             batches.add(new int[]{m==Textures.SKY?-1:wallTex[Math.max(0,Math.min(nm-1,m))],first,nv-first,m==Textures.SKY?3:0,m});}
         // ---- splats (decals lying on surfaces)
         World fx=r.fx;
@@ -337,21 +349,27 @@ final class GpuRenderer {
         GLES20.glDisable(GLES20.GL_DEPTH_TEST);
         trimCaches();
     }
-    private void plane(ArrayList<float[]>[] lists,Level level,int a,int b,int c,float h,int mat,int L,int pid){
-        ArrayList<float[]> l=list(lists,mat);boolean br=mat>=0&&mat<Textures.COUNT&&Textures.BRIGHT[mat];float[] id=idVec(pid);
-        for(int v:new int[]{a,b,c}){Level.Vertex w=level.vertices.get(v);l.add(new float[]{w.x,w.y,h,w.x*.5f,w.y*.5f,L,br?1:0,id[0],id[1],id[2],id[3],1,0,0,0,0,gv(v,0),gv(v,1),gv(v,2),0,0,0,0,0});}
+    // per-texture vertex buffers, reused every frame (building the scene makes no garbage)
+    private final float[][] mb=new float[Textures.COUNT][];private final int[] mn=new int[Textures.COUNT];
+    private int slot(int m){float[] b=mb[m];int need=(mn[m]+1)*ST;if(b==null||b.length<need)mb[m]=b=java.util.Arrays.copyOf(b==null?new float[0]:b,Math.max(need*2,ST*96));return (mn[m]++)*ST;}
+    private void put(int m,float x,float y,float z,float u,float v,float L,float B,int id,float tx,float ty,float kind,float gr,float gg,float gb,float e0,float e1,float e2){
+        int o=slot(m);float[] b=mb[m];b[o]=x;b[o+1]=y;b[o+2]=z;b[o+3]=u;b[o+4]=v;b[o+5]=L;b[o+6]=B;
+        if(id<0){b[o+7]=b[o+8]=b[o+9]=b[o+10]=0;}else{b[o+7]=((id>>>24)&255)/255f;b[o+8]=((id>>16)&255)/255f;b[o+9]=((id>>8)&255)/255f;b[o+10]=(id&255)/255f;}
+        b[o+11]=tx;b[o+12]=ty;b[o+13]=0;b[o+14]=kind;b[o+15]=0;b[o+16]=gr;b[o+17]=gg;b[o+18]=gb;b[o+19]=0;b[o+20]=e0;b[o+21]=e1;b[o+22]=e2;b[o+23]=0;
     }
-    private void wall(ArrayList<float[]>[] lists,Level.Vertex a,Level.Vertex b,float len,float lo,float hi,int mat,int L,int pid,float peg,int ia,int ib){wall(lists,a,b,len,lo,hi,mat,L,pid,peg,ia,ib,0);}
+    private void plane(Object lists,Level level,int a,int b,int c,float h,int mat,int L,int pid){
+        int m=clampMat(mat);float br=Textures.BRIGHT[m]?1:0;
+        for(int k=0;k<3;k++){int v=k==0?a:k==1?b:c;Level.Vertex w=level.vertices.get(v);put(m,w.x,w.y,h,w.x*.5f,w.y*.5f,L,br,pid,1,0,0,gv(v,0),gv(v,1),gv(v,2),0,0,0);}
+    }
+    private void wall(Object lists,Level.Vertex a,Level.Vertex b,float len,float lo,float hi,int mat,int L,int pid,float peg,int ia,int ib){wall(lists,a,b,len,lo,hi,mat,L,pid,peg,ia,ib,0);}
     /** {@code edge}: 1 = top edge is open (a step), 2 = bottom edge is open (a lintel); used for relief silhouettes. */
-    private void wall(ArrayList<float[]>[] lists,Level.Vertex a,Level.Vertex b,float len,float lo,float hi,int mat,int L,int pid,float peg,int ia,int ib,int edge){
-        if(hi-lo<.001f)return;ArrayList<float[]> l=list(lists,mat);boolean br=mat>=0&&mat<Textures.COUNT&&Textures.BRIGHT[mat];float[] id=idVec(pid);float B=br?1:0;
+    private void wall(Object lists,Level.Vertex a,Level.Vertex b,float len,float lo,float hi,int mat,int L,int pid,float peg,int ia,int ib,int edge){
+        if(hi-lo<.001f)return;int m=clampMat(mat);float B=Textures.BRIGHT[m]?1:0;
         float u1=len*.5f,vt=-(hi-peg)*.5f,vb2=-(lo-peg)*.5f,tx=len<1e-6f?1:(b.x-a.x)/len,ty=len<1e-6f?0:(b.y-a.y)/len;
         float ar=gv(ia,0),ag=gv(ia,1),ab=gv(ia,2),br2=gv(ib,0),bg=gv(ib,1),bb=gv(ib,2);
-        float[] p0={a.x,a.y,hi,0,vt,L,B,id[0],id[1],id[2],id[3],tx,ty,0,1,0,ar,ag,ab,0,vt,vb2,edge,0},p1={b.x,b.y,hi,u1,vt,L,B,id[0],id[1],id[2],id[3],tx,ty,0,1,0,br2,bg,bb,0,vt,vb2,edge,0},p2={b.x,b.y,lo,u1,vb2,L,B,id[0],id[1],id[2],id[3],tx,ty,0,1,0,br2,bg,bb,0,vt,vb2,edge,0},p3={a.x,a.y,lo,0,vb2,L,B,id[0],id[1],id[2],id[3],tx,ty,0,1,0,ar,ag,ab,0,vt,vb2,edge,0};
-        l.add(p0);l.add(p1);l.add(p2);l.add(p0);l.add(p2);l.add(p3);
+        put(m,a.x,a.y,hi,0,vt,L,B,pid,tx,ty,1,ar,ag,ab,vt,vb2,edge);put(m,b.x,b.y,hi,u1,vt,L,B,pid,tx,ty,1,br2,bg,bb,vt,vb2,edge);put(m,b.x,b.y,lo,u1,vb2,L,B,pid,tx,ty,1,br2,bg,bb,vt,vb2,edge);
+        put(m,a.x,a.y,hi,0,vt,L,B,pid,tx,ty,1,ar,ag,ab,vt,vb2,edge);put(m,b.x,b.y,lo,u1,vb2,L,B,pid,tx,ty,1,br2,bg,bb,vt,vb2,edge);put(m,a.x,a.y,lo,0,vb2,L,B,pid,tx,ty,1,ar,ag,ab,vt,vb2,edge);
     }
-    @SuppressWarnings("unchecked")
-    private static ArrayList<float[]> list(ArrayList<float[]>[] lists,int mat){int m=Math.max(0,Math.min(lists.length-1,mat));if(lists[m]==null)lists[m]=new ArrayList<>();return lists[m];}
 
     private void sprite(Level level,Renderer.SpriteDraw d){
         Sprites.Sprite s=d.spr;if(s==null)return;
@@ -379,16 +397,16 @@ final class GpuRenderer {
         if(nz>.5f){ux=1;uy=0;uz=0;vx2=0;vy2=1;vz2=0;}else{ux=-ny;uy=nx;uz=0;vx2=0;vy2=0;vz2=1;}
         byte[] mask=s.mask;if(mask==null){mask=SplatDesigns.mask(s.type,s.ang,nz<.5f,s.seed,MS,SPAN);s.mask=mask;}
         int[] e=splatTex.get(s);
+        if(e==null&&splatTex.size()>=260){World.Splat oldest=null;int age=Integer.MAX_VALUE;for(Map.Entry<World.Splat,int[]> en:splatTex.entrySet())if(en.getValue()[1]<age){age=en.getValue()[1];oldest=en.getKey();}
+            if(oldest!=null){GLES20.glDeleteTextures(1,splatTex.remove(oldest),0);}}
         if(e==null){int[] px=new int[MS*MS];int c1=s.color|0xff000000,c2=Textures.mul(s.color,190),c3=Textures.mul(s.color,330),c4=Textures.mul(s.color,150);
             for(int i=0;i<px.length;i++){int sh=mask[i];px[i]=sh==0?0:sh==1?c1:sh==2?c2:sh==3?c3:c4;}
             e=new int[]{texture(px,MS,MS,false),frame};splatTex.put(s,e);}
         e[1]=frame;
         int si=level.sectorAt(s.x+nx*.02f,s.y+ny*.02f);int L=si<0?24:Renderer.lightLevel(level.sectors.get(si).light);
-        int first=nv;ensure(6);setGi(si);float[][] c=new float[4][];
-        for(int k=0;k<4;k++){float a=(k==0||k==3)?-R:R,b=k<2?-R:R;
-            c[k]=new float[]{s.x+ux*a+vx2*b,s.y+uy*a+vy2*b,s.z+uz*a+vz2*b,(a/R+1)*.5f,(b/R+1)*.5f};}
-        int[] order={0,1,2,0,2,3};
-        for(int k:order)vtx(c[k][0],c[k][1],c[k][2],c[k][3],c[k][4],L,0,-1);
+        int first=nv;ensure(6);setGi(si);
+        for(int q=0;q<6;q++){int k=q<3?q:(q==3?0:q==4?2:3);float a=(k==0||k==3)?-R:R,b=k<2?-R:R;
+            vtx(s.x+ux*a+vx2*b,s.y+uy*a+vy2*b,s.z+uz*a+vz2*b,(a/R+1)*.5f,(b/R+1)*.5f,L,0,-1);}
         batches.add(new int[]{e[0],first,6,2});
     }
     // ------------------------------------------------------------------ sky light and bounce light

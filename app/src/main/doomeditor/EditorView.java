@@ -1764,4 +1764,5 @@ public class EditorView extends View {
         }
         return true;
     }
+    @Override protected void onDetachedFromWindow(){super.onDetachedFromWindow();renderer.dispose();}
 }

@@ -536,4 +536,5 @@ public class UiEditorView extends View {
             L().place(sel,pt[0]+dx,pt[1]+dy,w,h,ui.dp);changed();
         }
     }
+    @Override protected void onDetachedFromWindow(){super.onDetachedFromWindow();renderer.dispose();}
 }

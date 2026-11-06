@@ -190,4 +190,5 @@ public class TitleView extends View {
             refresh();
         });
     }
+    @Override protected void onDetachedFromWindow(){super.onDetachedFromWindow();renderer.dispose();}
 }

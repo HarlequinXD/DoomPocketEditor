@@ -52,12 +52,16 @@ final class Renderer {
     static void savePrefs(android.content.Context c){try{c.getSharedPreferences("app",0).edit().putBoolean("gpu",useGpu).putInt("gpuLines",gpuLines).putBoolean("relief",GpuRenderer.relief).putBoolean("pbr",GpuRenderer.pbr).putBoolean("gi",GpuRenderer.gi).putBoolean("shadows",GpuRenderer.shadows).apply();}catch(Throwable ignored){}}
     boolean onGpu(){return gpu!=null;}
     /** One-line state for crash diagnostics. */
-    String stats(){return (gpu!=null?"GPU "+W+"x"+H+" (size step "+dynLevel+"), last frame "+Math.round(frameAvg)+" ms":"software "+W+"x"+H)+", lights "+lightCount;}
+    String stats(){Runtime rt=Runtime.getRuntime();return (gpu!=null?"GPU "+W+"x"+H+" (size step "+dynLevel+"), last frame "+Math.round(lastMs)+" ms":"software "+W+"x"+H)+", lights "+lastLights
+        +", java heap "+(rt.totalMemory()-rt.freeMemory())/1048576+" MB, native "+android.os.Debug.getNativeHeapAllocatedSize()/1048576+" MB";}
+    private float lastMs;private int lastLights;
+    /** Frees GPU memory held for this view (call when the view goes away). */
+    void dispose(){if(gpu!=null)gpu.dispose();}
     // dynamic resolution: if frames get slow (big fights, lots of lights) the 3D picture drops a size until it's
     // smooth again, then climbs back; a very slow frame drops straight to the smallest size so the phone never stalls
     private static final float[] DYN={1f,.85f,.72f,.6f,.5f};
     private int dynLevel;private long gpuStart;private float frameAvg;private int calm;
-    private void adapt(float ms){
+    private void adapt(float ms){lastMs=ms;
         if(ms>220){dynLevel=DYN.length-1;frameAvg=0;calm=0;return;}
         frameAvg=frameAvg==0?ms:frameAvg*.9f+ms*.1f;
         if(frameAvg>28&&dynLevel<DYN.length-1){dynLevel++;frameAvg=0;calm=0;}
@@ -142,7 +146,7 @@ final class Renderer {
                 camX=x;camY=y;eye=eyeZ;cs=(float)Math.cos(angle);sn=(float)Math.sin(angle);
                 focal=W*.5f;kx=(W*.5f)/focal*1.04f;horizon=H*.5f+(float)Math.tan(Math.max(-.6f,Math.min(.6f,pitch)))*focal;
                 gpu.renderScene(level,x,y,eyeZ,angle,pitch,sprites);
-                lastCamX=camX;lastCamY=camY;lightCount=0;return;
+                lastCamX=camX;lastCamY=camY;lastLights=lightCount;lightCount=0;return;
             }catch(Throwable e){android.util.Log.w("Renderer","GPU frame failed, switching to software",e);gpu=null;useGpu=false;W=H=0;pix=null;}
         }
         setup(vw,vh);geometry(level);
