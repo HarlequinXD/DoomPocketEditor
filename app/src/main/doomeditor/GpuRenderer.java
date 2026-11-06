@@ -314,8 +314,9 @@ final class GpuRenderer {
             Level.Sector s=level.sectors.get(si);int[] t=r.tris[si];int L=Renderer.lightLevel(s.light);
             for(int k=0;k+2<t.length;k+=3){
                 if(t[k]>=vs||t[k+1]>=vs||t[k+2]>=vs)continue;
-                if(s.floor<eyeZ)plane(lists,level,t[k],t[k+1],t[k+2],s.floor,s.floorMaterial,L,Renderer.id(Renderer.ID_FLOOR,si));
-                if(s.ceiling>eyeZ)plane(lists,level,t[k],t[k+1],t[k+2],s.ceiling,s.ceilingMaterial,L,Renderer.id(Renderer.ID_CEIL,si));
+                float[] sub=tile(level,si,k/3,t[k],t[k+1],t[k+2]);
+                if(s.floor<eyeZ)plane(sub,t[k],t[k+1],t[k+2],s.floor,s.floorMaterial,L,Renderer.id(Renderer.ID_FLOOR,si));
+                if(s.ceiling>eyeZ)plane(sub,t[k],t[k+1],t[k+2],s.ceiling,s.ceilingMaterial,L,Renderer.id(Renderer.ID_CEIL,si));
             }
         }
         for(int li=0;li<r.lines.size();li++){
@@ -388,9 +389,41 @@ final class GpuRenderer {
         if(id<0){b[o+7]=b[o+8]=b[o+9]=b[o+10]=0;}else{b[o+7]=((id>>>24)&255)/255f;b[o+8]=((id>>16)&255)/255f;b[o+9]=((id>>8)&255)/255f;b[o+10]=(id&255)/255f;}
         b[o+11]=tx;b[o+12]=ty;b[o+13]=0;b[o+14]=kind;b[o+15]=0;b[o+16]=gr;b[o+17]=gg;b[o+18]=gb;b[o+19]=0;b[o+20]=e0;b[o+21]=e1;b[o+22]=e2;b[o+23]=0;
     }
-    private void plane(Object lists,Level level,int a,int b,int c,float h,int mat,int L,int pid){
+    // ------------------------------------------------------------------ meta tiles
+    /**
+     * Like PS1 games, big surfaces are cut into 2 x 2 unit tiles before drawing: floors and ceilings along the world
+     * grid, walls every 2 units along and up. Small triangles keep the wobble and warped-texture look without the
+     * huge swimming textures one large polygon would get. The floor cut is worked out once per map shape.
+     */
+    static final float META=2f;
+    private int[][] tessFor;private float[][][] tess;
+    /** Sub-triangles of sector si's triangle n: per vertex x, y and the 3 barycentric weights of the original corners. */
+    private float[] tile(Level level,int si,int n,int a,int b,int c){
+        if(tessFor!=r.tris){tessFor=r.tris;tess=new float[r.tris.length][][];}
+        if(tess[si]==null)tess[si]=new float[r.tris[si].length/3][];
+        float[] got=tess[si][n];if(got!=null)return got;
+        Level.Vertex A=level.vertices.get(a),B=level.vertices.get(b),C=level.vertices.get(c);
+        float minX=Math.min(A.x,Math.min(B.x,C.x)),maxX=Math.max(A.x,Math.max(B.x,C.x)),minY=Math.min(A.y,Math.min(B.y,C.y)),maxY=Math.max(A.y,Math.max(B.y,C.y));
+        float[] out=new float[64];int on=0;
+        float[] poly0={A.x,A.y,1,0,0, B.x,B.y,0,1,0, C.x,C.y,0,0,1};
+        for(float gx=(float)Math.floor(minX/META)*META;gx<maxX;gx+=META)for(float gy=(float)Math.floor(minY/META)*META;gy<maxY;gy+=META){
+            float[] p=poly0;int n5=3;
+            float[][] planes={{1,0,-gx},{-1,0,gx+META},{0,1,-gy},{0,-1,gy+META}};
+            for(float[] pl:planes){if(n5<3)break;float[] q=new float[(n5+4)*5];int qn=0;
+                for(int i2=0;i2<n5;i2++){int j2=(i2+1)%n5;float di=pl[0]*p[i2*5]+pl[1]*p[i2*5+1]+pl[2],dj=pl[0]*p[j2*5]+pl[1]*p[j2*5+1]+pl[2];
+                    if(di>=0){System.arraycopy(p,i2*5,q,qn*5,5);qn++;}
+                    if((di>=0)!=(dj>=0)){float tt=di/(di-dj);for(int e=0;e<5;e++)q[qn*5+e]=p[i2*5+e]+(p[j2*5+e]-p[i2*5+e])*tt;qn++;}}
+                p=q;n5=qn;}
+            if(n5<3)continue;
+            for(int k=1;k+1<n5;k++){if(on+15>out.length)out=java.util.Arrays.copyOf(out,out.length*2);
+                System.arraycopy(p,0,out,on,5);on+=5;System.arraycopy(p,k*5,out,on,5);on+=5;System.arraycopy(p,(k+1)*5,out,on,5);on+=5;}
+        }
+        got=java.util.Arrays.copyOf(out,on);tess[si][n]=got;return got;
+    }
+    private void plane(float[] sub,int a,int b,int c,float h,int mat,int L,int pid){
         int m=clampMat(mat);float br=Textures.BRIGHT[m]?1:0;
-        for(int k=0;k<3;k++){int v=k==0?a:k==1?b:c;Level.Vertex w=level.vertices.get(v);put(m,w.x,w.y,h,w.x*.5f,w.y*.5f,L,br,pid,1,0,0,gv(v,0),gv(v,1),gv(v,2),0,0,0);}
+        for(int o=0;o+4<sub.length;o+=5){float x=sub[o],y=sub[o+1],w0=sub[o+2],w1=sub[o+3],w2=sub[o+4];
+            put(m,x,y,h,x*.5f,y*.5f,L,br,pid,1,0,0,gv(a,0)*w0+gv(b,0)*w1+gv(c,0)*w2,gv(a,1)*w0+gv(b,1)*w1+gv(c,1)*w2,gv(a,2)*w0+gv(b,2)*w1+gv(c,2)*w2,0,0,0);}
     }
     private void wall(Object lists,Level.Vertex a,Level.Vertex b,float len,float lo,float hi,int mat,int L,int pid,float peg,int ia,int ib){wall(lists,a,b,len,lo,hi,mat,L,pid,peg,ia,ib,0);}
     /** {@code edge}: 1 = top edge is open (a step), 2 = bottom edge is open (a lintel); used for relief silhouettes. */
@@ -398,8 +431,15 @@ final class GpuRenderer {
         if(hi-lo<.001f)return;int m=clampMat(mat);float B=Textures.BRIGHT[m]?1:0;
         float u1=len*.5f,vt=-(hi-peg)*.5f,vb2=-(lo-peg)*.5f,tx=len<1e-6f?1:(b.x-a.x)/len,ty=len<1e-6f?0:(b.y-a.y)/len;
         float ar=gv(ia,0),ag=gv(ia,1),ab=gv(ia,2),br2=gv(ib,0),bg=gv(ib,1),bb=gv(ib,2);
-        put(m,a.x,a.y,hi,0,vt,L,B,pid,tx,ty,1,ar,ag,ab,vt,vb2,edge);put(m,b.x,b.y,hi,u1,vt,L,B,pid,tx,ty,1,br2,bg,bb,vt,vb2,edge);put(m,b.x,b.y,lo,u1,vb2,L,B,pid,tx,ty,1,br2,bg,bb,vt,vb2,edge);
-        put(m,a.x,a.y,hi,0,vt,L,B,pid,tx,ty,1,ar,ag,ab,vt,vb2,edge);put(m,b.x,b.y,lo,u1,vb2,L,B,pid,tx,ty,1,br2,bg,bb,vt,vb2,edge);put(m,a.x,a.y,lo,0,vb2,L,B,pid,tx,ty,1,ar,ag,ab,vt,vb2,edge);
+        // meta tiles: columns every 2 units along the wall, rows on 2-unit heights
+        int cols=Math.max(1,(int)Math.ceil(len/META-1e-3f));
+        float[] zs=new float[2+(int)Math.max(0,(hi-lo)/META)+1];int nz=0;zs[nz++]=lo;for(float z=(float)Math.floor(lo/META+1)*META;z<hi-1e-3f;z+=META)zs[nz++]=z;zs[nz++]=hi;
+        for(int ci=0;ci<cols;ci++){float t0=ci/(float)cols,t1=(ci+1)/(float)cols;
+            float x0=a.x+(b.x-a.x)*t0,y0=a.y+(b.y-a.y)*t0,x1=a.x+(b.x-a.x)*t1,y1=a.y+(b.y-a.y)*t1,u0=u1*t0,uu1=u1*t1;
+            float r0=ar+(br2-ar)*t0,g0=ag+(bg-ag)*t0,b0=ab+(bb-ab)*t0,r1=ar+(br2-ar)*t1,g1=ag+(bg-ag)*t1,b1=ab+(bb-ab)*t1;
+            for(int zi=0;zi+1<nz;zi++){float zl=zs[zi],zh=zs[zi+1],vl=-(zl-peg)*.5f,vh=-(zh-peg)*.5f;
+                put(m,x0,y0,zh,u0,vh,L,B,pid,tx,ty,1,r0,g0,b0,vt,vb2,edge);put(m,x1,y1,zh,uu1,vh,L,B,pid,tx,ty,1,r1,g1,b1,vt,vb2,edge);put(m,x1,y1,zl,uu1,vl,L,B,pid,tx,ty,1,r1,g1,b1,vt,vb2,edge);
+                put(m,x0,y0,zh,u0,vh,L,B,pid,tx,ty,1,r0,g0,b0,vt,vb2,edge);put(m,x1,y1,zl,uu1,vl,L,B,pid,tx,ty,1,r1,g1,b1,vt,vb2,edge);put(m,x0,y0,zl,u0,vl,L,B,pid,tx,ty,1,r0,g0,b0,vt,vb2,edge);}}
     }
 
     // ------------------------------------------------------------------ 3D models (PS1-style vertex-animated meshes)
@@ -619,7 +659,7 @@ final class GpuRenderer {
     }
     private void sceneUniforms(int p){
         camUniforms(p);atmosUniforms(p);
-        GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uAffine"),ps1?.65f:0f);GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uDither"),ps1?1:0);GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uPom"),1f);
+        GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uAffine"),ps1?1f:0f);GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uDither"),ps1?1:0);GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uPom"),1f);
         GLES20.glUniform1i(GLES20.glGetUniformLocation(p,"uTex"),0);GLES20.glUniform1i(GLES20.glGetUniformLocation(p,"uNorm"),1);GLES20.glUniform1i(GLES20.glGetUniformLocation(p,"uMat"),2);GLES20.glUniform1i(GLES20.glGetUniformLocation(p,"uShadow"),3);
         GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uShadowOn"),shadows&&nl>0?1:0);GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uPbr"),pbr?1:0);GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
         GLES20.glUniform3f(GLES20.glGetUniformLocation(p,"uCamPos"),cx,cy,eye);
