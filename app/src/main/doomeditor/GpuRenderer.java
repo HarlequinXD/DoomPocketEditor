@@ -257,6 +257,7 @@ final class GpuRenderer {
             for(int[] e:spriteTex.values())GLES20.glDeleteTextures(1,e,0);spriteTex.clear();
             for(int[] e:splatTex.values())GLES20.glDeleteTextures(1,e,0);splatTex.clear();
             for(Bitmap b:bitmaps.values())b.recycle();bitmaps.clear();bmp=null;W=H=0;
+            if(vbos!=null){GLES20.glDeleteBuffers(3,vbos,0);vbos=null;}
         }catch(Throwable ignored){}
     }
     private int colorTex;
@@ -522,17 +523,28 @@ final class GpuRenderer {
         FloatBuffer b=vb.capacity()>=nv*ST?vb:ByteBuffer.allocateDirect(Math.max(nv*ST,4096)*4*2).order(ByteOrder.nativeOrder()).asFloatBuffer();
         b.clear();b.put(verts,0,nv*ST);b.position(0);return b;
     }
-    private void bindScene(int prog,FloatBuffer b){
+    /**
+     * Vertex data goes into GPU buffers (one each for the scene, coloured specks and screen quads), re-filled every
+     * frame. Client-side arrays made the driver copy everything per draw call into memory it only recycles at a
+     * buffer swap, which an off-screen renderer never does, so it piled up in big fights.
+     */
+    private int[] vbos;private int lastUpload=-1;
+    private static final int VBO_SCENE=0,VBO_COLOR=1,VBO_QUAD=2;
+    private void bindScene(int prog,FloatBuffer b){bindVbo(b==vb?VBO_SCENE:b==qb?VBO_QUAD:VBO_COLOR,b,b==vb?nv*ST:b==qb?6*ST:-1);}
+    private void bindVbo(int which,FloatBuffer data,int floats){
+        if(vbos==null){vbos=new int[3];GLES20.glGenBuffers(3,vbos,0);}
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER,vbos[which]);
+        if(data!=null&&floats!=0){if(floats<0)floats=data.limit();
+            if(!(which==VBO_SCENE&&lastUpload==frame)){data.position(0);GLES20.glBufferData(GLES20.GL_ARRAY_BUFFER,Math.max(4,floats*4),data,GLES20.GL_STREAM_DRAW);if(which==VBO_SCENE)lastUpload=frame;}}
         int stride=ST*4;
-        b.position(0);GLES20.glVertexAttribPointer(0,3,GLES20.GL_FLOAT,false,stride,b);GLES20.glEnableVertexAttribArray(0);
-        b.position(3);GLES20.glVertexAttribPointer(1,2,GLES20.GL_FLOAT,false,stride,b);GLES20.glEnableVertexAttribArray(1);
-        b.position(5);GLES20.glVertexAttribPointer(2,2,GLES20.GL_FLOAT,false,stride,b);GLES20.glEnableVertexAttribArray(2);
-        b.position(7);GLES20.glVertexAttribPointer(3,4,GLES20.GL_FLOAT,false,stride,b);GLES20.glEnableVertexAttribArray(3);
-        b.position(11);GLES20.glVertexAttribPointer(4,3,GLES20.GL_FLOAT,false,stride,b);GLES20.glEnableVertexAttribArray(4);
-        b.position(14);GLES20.glVertexAttribPointer(5,1,GLES20.GL_FLOAT,false,stride,b);GLES20.glEnableVertexAttribArray(5);
-        b.position(16);GLES20.glVertexAttribPointer(6,3,GLES20.GL_FLOAT,false,stride,b);GLES20.glEnableVertexAttribArray(6);
-        b.position(20);GLES20.glVertexAttribPointer(7,3,GLES20.GL_FLOAT,false,stride,b);GLES20.glEnableVertexAttribArray(7);
-        b.position(0);
+        GLES20.glVertexAttribPointer(0,3,GLES20.GL_FLOAT,false,stride,0);GLES20.glEnableVertexAttribArray(0);
+        GLES20.glVertexAttribPointer(1,2,GLES20.GL_FLOAT,false,stride,3*4);GLES20.glEnableVertexAttribArray(1);
+        GLES20.glVertexAttribPointer(2,2,GLES20.GL_FLOAT,false,stride,5*4);GLES20.glEnableVertexAttribArray(2);
+        GLES20.glVertexAttribPointer(3,4,GLES20.GL_FLOAT,false,stride,7*4);GLES20.glEnableVertexAttribArray(3);
+        GLES20.glVertexAttribPointer(4,3,GLES20.GL_FLOAT,false,stride,11*4);GLES20.glEnableVertexAttribArray(4);
+        GLES20.glVertexAttribPointer(5,1,GLES20.GL_FLOAT,false,stride,14*4);GLES20.glEnableVertexAttribArray(5);
+        GLES20.glVertexAttribPointer(6,3,GLES20.GL_FLOAT,false,stride,16*4);GLES20.glEnableVertexAttribArray(6);
+        GLES20.glVertexAttribPointer(7,3,GLES20.GL_FLOAT,false,stride,20*4);GLES20.glEnableVertexAttribArray(7);
     }
     private void camUniforms(int p){
         GLES20.glUniform3f(GLES20.glGetUniformLocation(p,"uCam"),cx,cy,eye);
@@ -596,7 +608,7 @@ final class GpuRenderer {
         if(ps!=null)for(int i=0;i<ps.n;i++){float fade=Math.min(1,ps.life[i]/Math.max(.01f,ps.max[i])*2.2f);n=cquad(n,ps.x[i],ps.y[i],ps.z[i],Math.max(.012f,ps.size[i]*.5f),ps.col[i],fade*.8f);}
         if(n==0)return;
         if(cbuf==null||cbuf.capacity()<n*ST)cbuf=ByteBuffer.allocateDirect(Math.max(n*ST,6*ST*256)*4*2).order(ByteOrder.nativeOrder()).asFloatBuffer();
-        FloatBuffer b=cbuf;b.clear();b.put(cverts,0,n*ST);b.position(0);
+        FloatBuffer b=cbuf;b.clear();b.put(cverts,0,n*ST);b.flip();
         GLES20.glUseProgram(progColor);camUniforms(progColor);atmosUniforms(progColor);
         GLES20.glEnable(GLES20.GL_BLEND);GLES20.glBlendFuncSeparate(GLES20.GL_SRC_ALPHA,GLES20.GL_ONE_MINUS_SRC_ALPHA,GLES20.GL_ZERO,GLES20.GL_ONE);GLES20.glDepthMask(false);
         bindScene(progColor,b);GLES20.glDisableVertexAttribArray(1);GLES20.glDisableVertexAttribArray(2);GLES20.glDisableVertexAttribArray(4);GLES20.glDisableVertexAttribArray(5);GLES20.glDisableVertexAttribArray(6);GLES20.glDisableVertexAttribArray(7);
@@ -630,7 +642,9 @@ final class GpuRenderer {
     Bitmap finish(){
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER,fbo);read.position(0);
         GLES20.glReadPixels(0,0,W,H,GLES20.GL_RGBA,GLES20.GL_UNSIGNED_BYTE,read);read.position(0);
-        bmp.copyPixelsFromBuffer(read);return bmp;
+        bmp.copyPixelsFromBuffer(read);
+        EGL14.eglSwapBuffers(dpy,surf);   // frame boundary for the driver (frees its per-frame memory)
+        return bmp;
     }
     /** Pick id at an internal pixel, by drawing last frame's surfaces and sprites with their ids. */
     private final ByteBuffer pickBuf=ByteBuffer.allocateDirect(4).order(ByteOrder.nativeOrder());
