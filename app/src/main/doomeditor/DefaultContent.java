@@ -180,7 +180,7 @@ final class DefaultContent {
         idle.on("USED",check);
         check.add("face_target").set("to","Player").set("everyFrame","false");
         check.add("quest_state").set("id","idol").set("notStartedEvent","OFFER").set("activeEvent","ASK").set("doneEvent","DONE");
-        check.on("OFFER",offer).on("ASK",ask).on("DONE",thanks);
+        check.on("OFFER",offer).on("ASK",ask).on("DONE",thanks).on("FINISHED",idle);   // a failed quest (or anything else) goes back to idle
         offer.add("say").set("text","Thank the gods, an adventurer! Cultists stole our golden idol and fled into the old crypt. Will you bring it back?")
             .set("answer1","I'll find your idol.").set("event1","YES").set("answer2","Not now.").set("event2","NO");
         offer.on("YES",accept).on("NO",idle);
@@ -249,7 +249,7 @@ final class DefaultContent {
     /** Treasure chest: open it (Use) for gold and a potion. */
     static EntityDef chest(){
         EntityDef d=new EntityDef("chest","Treasure Chest",EntityDef.TRIGGER,Sprites.CHEST);
-        d.radius=.45f;d.height=.7f;d.solid=true;d.shootable=false;d.countItem=true;
+        d.radius=.45f;d.height=.7f;d.solid=true;d.shootable=false;d.countItem=false;   // used, never picked up: it can't count towards the items found
         FSMGraph g=d.fsm;FSMGraph.Node closed=g.add("Closed",0,0),open=g.add("Open",280,0),empty=g.add("Empty",560,0);
         closed.on("USED",open);
         open.add("set_sprite").set("sprite","Chest (open)");open.add("play_sound").set("sound","Door");
@@ -300,7 +300,7 @@ final class DefaultContent {
             case 5:d=item(id,name,Sprites.MEDKIT,"Potion of Healing");break;
             case 6:{d=chest();d.id=id;d.name=name;break;}
             case 7:d=decoration(id,name,Sprites.PILLAR,.35f,1.5f);break;
-            case 8:{d=exitLever();d.id=id;d.name=name;FSMGraph.Node p=d.fsm.byName("Pulled");p.actions.clear();p.add("play_sound").set("sound","Switch");p.add("set_sprite").set("sprite","Lever (pulled)");p.add("show_message").set("text",name+" pulled");p.transitions.clear();break;}
+            case 8:{d=exitLever();d.id=id;d.name=name;FSMGraph.Node p=d.fsm.byName("Pulled");p.actions.clear();p.add("play_sound").set("sound","Switch");p.add("set_sprite").set("sprite","Lever (pulled)");p.add("show_message").set("text",name+" pulled");p.transitions.clear();d.fsm.remove(d.fsm.byName("Exit"));break;}
             case 9:{d=new EntityDef(id,name,EntityDef.NPC,Sprites.VILLAGER);d.solid=true;d.radius=.4f;d.height=1.4f;FSMGraph g=d.fsm;FSMGraph.Node idle=g.add("Idle",0,0),talk=g.add("Talking",280,0);
                 idle.on("USED",talk);talk.add("talk").set("endEvent","DONE");talk.on("DONE",idle);g.start=idle.id;break;}
             case 10:{d=new EntityDef(id,name,EntityDef.TRIGGER,Sprites.BRAZIER);d.solid=false;d.shootable=false;d.radius=.6f;d.height=1f;

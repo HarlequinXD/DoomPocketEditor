@@ -1376,6 +1376,12 @@ public class EditorView extends View {
     private final java.util.HashMap<Integer,Bitmap> itemThumbs=new java.util.HashMap<>();
     private final float[] proj=new float[3];
     private Bitmap thumbFor(int sprite){Bitmap b=itemThumbs.get(sprite);if(b==null){b=Sprites.preview(sprite);itemThumbs.put(sprite,b);}return b;}
+    /** Does the hero's FSM react to this button anywhere? */
+    private boolean fsmListens(String button){
+        EntityDef pd=project.playerDef();if(pd==null)return false;
+        for(FSMGraph.Node n:pd.fsm.nodes)for(FSMGraph.Action a:n.actions)if(a.enabled&&a.type.startsWith("button_")&&button.equalsIgnoreCase(FsmCheck.val(a,"button")))return true;
+        return false;
+    }
     private void openBag(){bagOpen=true;bagTab=0;bagScroll=0;world.paused=true;for(int i=0;i<buttonPointer.length;i++)buttonPointer[i]=-1;world.input.clear();joyPointer=lookPointer=-1;joyVisible=false;moveX=moveY=0;}
     private void closeBag(){bagOpen=false;world.paused=false;}
     private void drawFloaters(Canvas c){
@@ -1391,7 +1397,7 @@ public class EditorView extends View {
     }
     private void drawPlayControls(Canvas c){
         hudDown[HudLayout.ATTACK]=buttonPointer[Input.FIRE]>=0;hudDown[HudLayout.CAST]=buttonPointer[Input.SPELL]>=0;hudDown[HudLayout.JUMP]=buttonPointer[Input.JUMP]>=0;
-        hudDown[HudLayout.USE]=buttonPointer[Input.USE]>=0;hudDown[HudLayout.POTION]=buttonPointer[Input.POTION]>=0;
+        hudDown[HudLayout.USE]=buttonPointer[Input.USE]>=0;hudDown[HudLayout.POTION]=buttonPointer[Input.POTION]>=0;hudDown[HudLayout.BAG]=buttonPointer[Input.MENU]>=0;
         GameHud g=hud();
         // joystick: floating fades out after release; a fixed one always shows its base
         if(g.layout.joyFixed){float[] jc=g.joyCenter(w,h);
@@ -1750,7 +1756,7 @@ public class EditorView extends View {
             if(bagOpen){bagTap(hid);bagDragY=y;bagDragged=false;return true;}
             if(world.dialogue!=null){if(hid>=H_DLG&&hid<H_DLG+8)world.chooseDialogue(hid-H_DLG);return true;}
             if(hid==H_EXITPLAY){pauseToMenu();return true;}
-            if(hid==H_BAG){openBag();return true;}
+            if(hid==H_BAG){if(!fsmListens("Inventory")){openBag();return true;}buttonPointer[Input.MENU]=id;world.input.setButton(Input.MENU,true);return true;}   // the hero's FSM decides (On Button Pressed: Inventory)
             int b=hid==H_FIRE?Input.FIRE:hid==H_USE?Input.USE:hid==H_JUMP?Input.JUMP:hid==H_WEAPON?Input.WEAPON:hid==H_SPELL?Input.SPELL:hid==H_POTION?Input.POTION:-1;
             if(b>=0){buttonPointer[b]=id;world.input.setButton(b,true);return true;}
             GameHud g=hud();boolean joyHit;

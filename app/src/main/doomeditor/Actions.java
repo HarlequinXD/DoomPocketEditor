@@ -266,7 +266,7 @@ final class Actions {
         def("give_health","Give Health","Health",Icons.HEART,"Heals up to a maximum. Sends the fail event if already at the maximum.",c->{if(!c.w.giveHealth(c.w.player,c.i("amount"),c.i("max")))c.send("failEvent");return DONE;},"amount:i=25","max:i=100","failEvent:e=");
         def("damage_self","Damage Self","Health",Icons.MINUS,"Hurts this entity.",c->{c.w.damage(c.self,c.i("amount"),null);return DONE;},"amount:i=10");
         def("damage_target","Damage Entity","Health",Icons.MINUS,"Hurts the target or the player.",c->{Actor t=c.who("to");if(t!=null)c.w.damage(t,c.i("amount"),c.self);return DONE;},"amount:i=10","to:c(Target|Player)=Target");
-        def("kill_self","Kill Self","Health",Icons.SKULL,"Kills this entity (sends DIED).",c->{c.w.damage(c.self,100000,null);return DONE;});
+        def("kill_self","Kill Self","Health",Icons.SKULL,"Kills this entity (sends DIED), even if it is invulnerable.",c->{c.self.invulnerable=false;c.w.damage(c.self,100000,null);return DONE;});
         def("set_health","Set Health","Health",Icons.HEART,"Sets this entity's health.",c->{c.self.health=Math.max(1,c.i("value"));return DONE;},"value:i=100");
         def("health_compare","Health Below","Health",Icons.HEART,"Sends an event when health drops below a value.",c->{if(c.self.health<c.i("below"))c.send("event");return c.doneOrRun();},"below:i=30","event:e=","everyFrame:b=true");
         def("set_invulnerable","Set Invulnerable","Health",Icons.VALIDATE,"Makes this entity ignore damage.",c->{c.self.invulnerable=c.b("value");return DONE;},"value:b=true");
@@ -302,15 +302,15 @@ final class Actions {
         def("set_target_player","Target Player","AI",Icons.CROSSHAIR,"Makes the player this entity's target.",c->{c.self.target=c.w.player;return DONE;});
         def("clear_target","Clear Target","AI",Icons.CANCEL,"Forgets the current target.",c->{c.self.target=null;return DONE;});
         def("target_dead_event","Target Lost","AI",Icons.SKULL,"Sends an event when there is no living target.",c->{if(c.self.target==null||!c.self.target.alive)c.send("event");return c.doneOrRun();},"event:e=LOST","everyFrame:b=true");
-        def("hitscan_attack","Hitscan Attack","AI",Icons.CROSSHAIR,"Fires instant bullets at the target (like a zombieman or shotgun guy).",c->{
+        def("hitscan_attack","Hitscan Attack (old)","Legacy",Icons.CROSSHAIR,"Older projects: instant shots at the target with flat damage.",c->{
             c.self.attackTimer=.3f;Actor t=c.self.target;float ang=t!=null?c.w.angleTo(c.self,t):c.self.angle;
             c.w.playSound(c.s("sound"),c.self,1,1,true);
             c.w.hitscan(c.self,ang,c.i("damageMin"),c.i("damageMax"),(float)Math.toRadians(c.f("spread")),Math.max(1,c.i("pellets")),32);return DONE;},
             "damageMin:i=3","damageMax:i=15","spread:f=5","pellets:i=1","sound:S=Pistol");
-        def("melee_attack","Melee Attack","AI",Icons.SKULL,"Bites or claws the target if it is in range; otherwise sends the miss event.",c->{
+        def("melee_attack","Flat Melee Damage","AI",Icons.SKULL,"Hits the target in range for flat damage that ignores armour class (traps, hazards); otherwise sends the miss event. Creatures should use Creature Melee Attack, which rolls d20 against AC.",c->{
             c.self.attackTimer=.3f;if(!c.w.melee(c.self,c.f("range"),c.rndInt(c.i("damageMin"),c.i("damageMax"))))c.send("missEvent");return DONE;},"damageMin:i=4","damageMax:i=20","range:f=1.4","missEvent:e=");
-        def("fire_projectile","Fire Projectile","AI",Icons.SUN,"Launches a projectile at the target (fireball, rocket or plasma).",c->{
-            c.self.attackTimer=.35f;c.w.projectile(c.self,c.choice("type","Fireball|Rocket|Plasma"),c.i("damageMin"),c.i("damageMax"),c.f("speed"));return DONE;},"type:c(Fireball|Rocket|Plasma)=Fireball","damageMin:i=3","damageMax:i=24","speed:f=10");
+        def("fire_projectile","Flat Projectile","AI",Icons.SUN,"Launches a fireball, arrow or arcane bolt for flat damage that ignores armour class (traps, turrets). Creatures should use Creature Ranged Attack, which rolls d20 against AC.",c->{
+            c.self.attackTimer=.35f;c.w.projectile(c.self,c.choice("type","Fireball|Arrow|Arcane bolt"),c.i("damageMin"),c.i("damageMax"),c.f("speed"));return DONE;},"type:c(Fireball|Arrow|Arcane bolt)=Fireball","damageMin:i=3","damageMax:i=24","speed:f=10");
 
         // ------------------------------------------------------------------ World
         def("set_sector_light","Set Sector Light","World",Icons.SUN,"Sets a sector's brightness (0-255).",c->{c.w.setLight(c.i("sector"),c.i("light"));return DONE;},"sector:X=0","light:i=255");
@@ -350,14 +350,14 @@ final class Actions {
         // ------------------------------------------------------------------ Entities
         def("spawn_entity","Spawn Entity","Entities",Icons.PLUS_SQUARE,"Creates a new entity in front of this one.",c->{
             float d=c.f("distance");Actor a=c.w.spawn(c.s("entity"),c.self.x+(float)Math.cos(c.self.angle)*d,c.self.y+(float)Math.sin(c.self.angle)*d,c.self.angle);
-            if(a!=null&&c.b("storeAsTarget"))c.self.target=a;return DONE;},"entity:E=trooper","distance:f=1.5","storeAsTarget:b=false");
-        def("drop_item","Drop Item","Entities",Icons.PACKAGE,"Drops an entity (usually a pickup) where this entity stands.",c->{c.w.spawn(c.s("entity"),c.self.x,c.self.y,0);return DONE;},"entity:E=clip");
+            if(a!=null&&c.b("storeAsTarget"))c.self.target=a;return DONE;},"entity:E=skeleton","distance:f=1.5","storeAsTarget:b=false");
+        def("drop_item","Drop Item","Entities",Icons.PACKAGE,"Drops an entity (usually a pickup) where this entity stands.",c->{c.w.spawn(c.s("entity"),c.self.x,c.self.y,0);return DONE;},"entity:E=gold");
         def("destroy_self","Destroy Self","Entities",Icons.TRASH,"Removes this entity from the level.",c->{c.w.remove(c.self);return DONE;});
         def("set_visible","Set Visible","Entities",Icons.SUN,"Shows or hides this entity's sprite.",c->{c.self.visible=c.b("value");return DONE;},"value:b=true");
         def("set_solid","Set Solid","Entities",Icons.STOP,"Makes this entity block movement, or not.",c->{c.self.solid=c.b("value");return DONE;},"value:b=true");
         def("set_shootable","Set Shootable","Entities",Icons.CROSSHAIR,"Lets bullets hit this entity, or not.",c->{c.self.shootable=c.b("value");return DONE;},"value:b=true");
-        def("set_sprite","Set Model","Entities",Icons.ENTITIES,"Changes the model (or sprite) this entity shows.",c->{c.self.sprite=Actions.indexOf(Sprites.NAMES_JOINED,c.s("sprite"));return DONE;},"sprite:c("+Sprites.NAMES_JOINED+")=Trooper");
-        def("count_entities","Count Entities","Entities",Icons.LIST,"Stores how many living entities of a type exist.",c->{c.setVar("store",c.w.count(c.s("entity")));return c.doneOrRun();},"entity:E=trooper","store:v=count","everyFrame:b=false");
+        def("set_sprite","Set Model","Entities",Icons.ENTITIES,"Changes the model (or sprite) this entity shows.",c->{c.self.sprite=Actions.indexOf(Sprites.NAMES_JOINED,c.s("sprite"));return DONE;},"sprite:c("+Sprites.NAMES_JOINED+")=Skeleton");
+        def("count_entities","Count Entities","Entities",Icons.LIST,"Stores how many living entities of a type exist.",c->{c.setVar("store",c.w.count(c.s("entity")));return c.doneOrRun();},"entity:E=skeleton","store:v=count","everyFrame:b=false");
         def("spawn_effect","Spawn Effect","Entities",Icons.SPARKLE,"Shows a visual effect at this entity.",c->{c.w.effect(c.choice("effect","Puff|Blood|Explosion|Teleport"),c.self.x,c.self.y,c.self.z+c.self.height*.5f);return DONE;},"effect:c(Puff|Blood|Explosion|Teleport)=Explosion");
 
         // ------------------------------------------------------------------ Camera (first / third person)
@@ -400,7 +400,8 @@ final class Actions {
         // ------------------------------------------------------------------ Feedback
         def("show_message","Show Message","Feedback",Icons.INFO,"Shows a message at the top of the screen, like item pickups.",c->{c.w.message(c.s("text"),c.f("seconds"));return DONE;},"text:t=Hello","seconds:f=3");
         def("show_popup","Show Popup","Feedback",Icons.SCROLL,"Shows a message box in the game's theme (a sign, a tip, a question). The game waits until a button is tapped, then this entity gets that button's event.",
-            c->{c.w.showPopup(c.self,c.s("title"),c.s("text"),c.choice("buttons","OK|Yes / No|Accept / Decline|Continue"),c.s("event"),c.s("event2"));return DONE;},
+            c->{if(c.enter){c.w.showPopup(c.self,c.s("title"),c.s("text"),c.choice("buttons","OK|Yes / No|Accept / Decline|Continue"),c.s("event"),c.s("event2"));return RUNNING;}
+                return c.w.popup!=null&&c.w.popup.owner==c.self?RUNNING:DONE;},   // waits for the answer, so a FINISHED transition doesn't leave before it
             "title:t=Notice","text:t=","buttons:c(OK|Yes / No|Accept / Decline|Continue)=OK","event:e=CLOSED","event2:e=NO");
         def("center_print","Center Message","Feedback",Icons.INFO,"Shows large text in the middle of the screen.",c->{c.w.centerPrint(c.s("text"),c.f("seconds"));return DONE;},"text:t=","seconds:f=2");
         def("screen_flash","Screen Flash","Feedback",Icons.SUN,"Tints the screen briefly (red for pain, gold for pickups).",c->{c.w.flash(c.choice("color","Red|Gold|White|Green"),c.f("strength"));return DONE;},"color:c(Red|Gold|White|Green)=Gold","strength:f=0.4");

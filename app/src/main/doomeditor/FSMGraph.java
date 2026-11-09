@@ -70,7 +70,7 @@ public final class FSMGraph {
             JSONArray acts=o.optJSONArray("actions");
             if(acts!=null)for(int k=0;k<acts.length();k++){JSONObject ao=acts.getJSONObject(k);String type=ao.optString("type","");if(Actions.get(type)==null)continue;
                 Action a=new Action(type);a.enabled=!"false".equals(ao.optString("enabled","true"));JSONObject ps=ao.optJSONObject("params");
-                if(ps!=null){Iterator<String> it=ps.keys();while(it.hasNext()){String key=it.next();if(a.params.containsKey(key))a.params.put(key,ps.optString(key,""));}}
+                if(ps!=null){Iterator<String> it=ps.keys();while(it.hasNext()){String key=it.next();if(a.params.containsKey(key))a.params.put(key,renamed(type,key,ps.optString(key,"")));}}
                 n.actions.add(a);}
             else migrateLegacy(n,o.optString("action","NONE"),o.optString("argument",""));
             JSONObject tr=o.optJSONObject("transitions");if(tr!=null){Iterator<String> keys=tr.keys();while(keys.hasNext()){String k=keys.next();n.transitions.put(k,tr.optString(k));}}
@@ -79,6 +79,11 @@ public final class FSMGraph {
         if(g.find(g.start)==null&&!g.nodes.isEmpty())g.start=g.nodes.get(0).id;
     }catch(Exception ignored){}return g;}
 
+    /** Option values renamed since older projects were saved. */
+    private static String renamed(String type,String key,String v){
+        if(type.equals("fire_projectile")&&key.equals("type")){if(v.equalsIgnoreCase("Rocket"))return "Arrow";if(v.equalsIgnoreCase("Plasma"))return "Arcane bolt";}
+        return v;
+    }
     /** Converts the single action/argument format of earlier versions. */
     private static void migrateLegacy(Node n,String action,String arg){
         String[] s=arg.split(",");
