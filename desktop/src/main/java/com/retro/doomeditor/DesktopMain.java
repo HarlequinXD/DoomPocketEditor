@@ -174,7 +174,9 @@ public final class DesktopMain implements Controls.Shell {
     }
     private final GLFWGamepadState pad=GLFWGamepadState.create();
     /** The first connected gamepad (Xbox controllers via XInput, others via SDL's mapping database). */
+    private boolean fakePad;   // the screenshot test drives a pretend controller
     private void pollPad(){
+        if(fakePad){dev.padActivity();return;}
         int found=-1;for(int j=GLFW_JOYSTICK_1;j<=GLFW_JOYSTICK_LAST;j++)if(glfwJoystickIsGamepad(j)){found=j;break;}
         dev.padConnected=found>=0;if(found<0){dev.buttons=0;dev.lx=dev.ly=dev.rx=dev.ry=dev.lt=dev.rt=0;return;}
         if(!glfwGetGamepadState(found,pad))return;
@@ -411,6 +413,15 @@ public final class DesktopMain implements Controls.Shell {
             for(int i=0;i<names.length;i++){editor.openEditorAt(4+i);run(30);dev.mouseMove(fbW*.5f,fbH*.4f);run(10);shot(dir+"/"+names[i]+".png");back();run(10);}
             ((Host)editor.host).prompt("Rename the map","A short name for this map","Dungeon of Doom",false,s->{});run(15);shot(dir+"/20-dialog-prompt.png");layer.back();
             showTitle();run(20);shot(dir+"/21-title-again.png");
+            // a controller: the stick moves the cursor, the d-pad jumps between buttons, A clicks
+            fakePad=true;dev.padConnected=true;dev.lx=.9f;dev.ly=.3f;run(25);dev.lx=dev.ly=0;run(5);shot(dir+"/22-pad-cursor.png");
+            dev.buttons=Devices.DOWN;run(2);dev.buttons=0;run(12);shot(dir+"/23-pad-dpad.png");
+            dev.buttons=Devices.A;run(3);dev.buttons=0;run(20);shot(dir+"/24-pad-clicked.png");
+            dev.buttons=Devices.B;run(3);dev.buttons=0;run(10);
+            openProject(p.id);run(10);editor.startPlayNow();run(40);
+            dev.ly=-1;dev.rx=.6f;run(60);dev.ly=0;dev.rx=0;dev.rt=1;run(10);shot(dir+"/25-pad-playing.png");dev.rt=0;run(5);
+            dev.buttons=Devices.START;run(3);dev.buttons=0;run(15);shot(dir+"/26-pad-paused.png");
+            fakePad=false;
             System.out.println("shots saved to "+dir);
         }catch(Throwable t){t.printStackTrace();System.exit(1);}
         saveAll();glfwDestroyWindow(window);glfwTerminate();System.exit(0);

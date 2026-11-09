@@ -1161,7 +1161,7 @@ public class EditorView extends View implements Pointer.Aware {
             r.set(tx,ty,tx+size,ty+size);clipHit(r,H_MAT+i,top,bottom);}
         c.restoreToCount(save);
         ui.text(c,ui.ellipsize(Textures.NAMES[selectedMaterial],11.5f,1,left-pad*2),pad,h-dp(28),11.5f,Ui.TEXT,1,-1);
-        ui.text(c,"Double-tap a surface",pad,h-dp(12),10.5f,Ui.TEXT_3);
+        ui.text(c,Platform.pc()?"Double-click a surface":"Double-tap a surface",pad,h-dp(12),10.5f,Ui.TEXT_3);
     }
     private void drawJoystick(Canvas c){
         float alpha=joyVisible?1f:Math.max(0f,1f-(System.currentTimeMillis()-joyReleaseTime)/240f);if(alpha<=0)return;
@@ -1715,7 +1715,7 @@ public class EditorView extends View implements Pointer.Aware {
         int id=e.getPointerId(idx);float left=browserW();
         if(a==MotionEvent.ACTION_DOWN||a==MotionEvent.ACTION_POINTER_DOWN){
             int hid=ui.hitAt(x,y);
-            if(hid>=H_MAT&&hid<H_MAT+Textures.COUNT){selectedMaterial=hid-H_MAT;hint(Textures.NAMES[selectedMaterial]+" · double-tap a surface to apply");scrollTarget=3;downY=lastY=y;dragged=false;return true;}
+            if(hid>=H_MAT&&hid<H_MAT+Textures.COUNT){selectedMaterial=hid-H_MAT;hint(Textures.NAMES[selectedMaterial]+(Platform.pc()?" · double-click a surface to apply":" · double-tap a surface to apply"));scrollTarget=3;downY=lastY=y;dragged=false;return true;}
             if(x<left){scrollTarget=3;downY=lastY=y;dragged=false;return true;}
             if(hid==H_PLAYHERE&&walker!=null){playFrom=new float[]{walker.player.x,walker.player.y,walker.player.angle};playThisMap=project.currentMap;changeMode(PLAY);hint("Testing from the camera position · DEBUG at the top for cheats");return true;}
             if(hid==H_FLY){fly=!fly;if(walker!=null)walker.player.vz=0;hint(fly?"Fly mode · use Up and Down":"Walk mode · gravity and steps");invalidate();return true;}
@@ -1746,7 +1746,7 @@ public class EditorView extends View implements Pointer.Aware {
                     long now=System.currentTimeMillis();boolean twice=now-last3DTapTime<380&&Math.hypot(x-last3DTapX,y-last3DTapY)<dp(16)&&hit==sel3d;
                     sel3d=hit;
                     if(hit>=0&&twice&&Renderer.kind(hit)!=Renderer.ID_SPRITE)apply3DTexture();
-                    else if(hit>=0&&Renderer.kind(hit)!=Renderer.ID_SPRITE)hint("Selected · double-tap to apply "+Textures.NAMES[selectedMaterial]);
+                    else if(hit>=0&&Renderer.kind(hit)!=Renderer.ID_SPRITE)hint((Platform.pc()?"Selected · double-click (or Enter) to apply ":"Selected · double-tap to apply ")+Textures.NAMES[selectedMaterial]);
                     last3DTapTime=now;last3DTapX=x;last3DTapY=y;}
                 lookPointer=-1;}
             if(id==joyPointer){joyPointer=-1;joyVisible=false;joyReleaseTime=System.currentTimeMillis();moveX=moveY=0;}
@@ -1830,11 +1830,12 @@ public class EditorView extends View implements Pointer.Aware {
     }
     void devicePause(){devMoveX=devMoveY=0;java.util.Arrays.fill(devHeld,false);if(world!=null)world.input.clear();pauseToMenu();invalidate();}
     private void moveCursorTo(float x,float y){
-        float s=snap();cursorX=Math.round(wx(x)/s)*s;cursorY=Math.round(wy(y)/s)*s;
+        if(cell<=0)return;float s=snap();
+        cursorX=Math.max(-10000,Math.min(10000,Math.round(wx(x)/s)*s));cursorY=Math.max(-10000,Math.min(10000,Math.round(wy(y)/s)*s));
         if(stage==1&&tool==MOVE&&mode==POLY)previewMove();
     }
     @Override public void pointerHover(float x,float y){
-        if(!in2D()||launcherOpen||!inMap(x,y))return;
+        if(!in2D()||launcherOpen||!inMap(x,y)||cell<=0)return;
         if(ui.hitAt(x,y)>=0||dpadHit(x,y)>=0)return;   // over the d-pad, Apply or the zoom buttons
         float ox=cursorX,oy=cursorY;moveCursorTo(x,y);followCursor=false;if(ox!=cursorX||oy!=cursorY)invalidate();
     }

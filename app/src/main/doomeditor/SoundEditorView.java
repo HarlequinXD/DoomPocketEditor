@@ -205,7 +205,7 @@ public class SoundEditorView extends View implements Pointer.Aware {
         }else{
             float cy=(T+B)*.5f;ui.icon(c,Icons.WAVE,(ml+mr)*.5f,cy-dp(50),40,Ui.TEXT_3);
             ui.text(c,"Make a sound effect",(ml+mr)*.5f,cy,17,Ui.TEXT,1,0);
-            ui.text(c,"Generate one with the synth, import a WAV/MP3/OGG file, or start from a built-in sound.",(ml+mr)*.5f,cy+dp(22),12,Ui.TEXT_2,0,0);
+            ui.text(c,Platform.pc()?"Generate one with the synth, import a WAV file, or start from a built-in sound.":"Generate one with the synth, import a WAV/MP3/OGG file, or start from a built-in sound.",(ml+mr)*.5f,cy+dp(22),12,Ui.TEXT_2,0,0);
             r.set((ml+mr)*.5f-dp(160),cy+dp(40),(ml+mr)*.5f-dp(4),cy+dp(78));ui.button(c,r,Icons.SPARKLE,"Generate",Ui.PRIMARY);ui.hit(r,H_PRESET);
             r.set((ml+mr)*.5f+dp(4),cy+dp(40),(ml+mr)*.5f+dp(160),cy+dp(78));ui.button(c,r,Icons.FOLDER,"Import file",Ui.NORMAL);ui.hit(r,H_IMPORT);
         }
@@ -528,7 +528,7 @@ public class SoundEditorView extends View implements Pointer.Aware {
             a.preset(hid-H_PRESET,rng);a.changed();playSel();return;}
         switch(hid){
             case H_NEW_SOUND:if(host==null)return;
-                host.choose("New sound",new String[]{"Generate with the synth","Import an audio file (WAV, MP3, OGG…)","Edit a copy of a built-in sound"},-1,k->{
+                host.choose("New sound",new String[]{"Generate with the synth",Platform.pc()?"Import an audio file (WAV, AIFF)":"Import an audio file (WAV, MP3, OGG…)","Edit a copy of a built-in sound"},-1,k->{
                     if(k==0){SoundAsset a=addSound("Sound "+(project.sounds.size()+1));a.preset(2,rng);playSel();}
                     else if(k==1){replaceTarget=null;host.importAudio();}
                     else host.choose("Copy which sound?",SoundFx.NAMES,-1,b->{copyBuiltin(b);invalidate();});
