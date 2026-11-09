@@ -1,0 +1,30 @@
+plugins { id 'application' }
+repositories { mavenCentral() }
+
+def lwjgl = '3.3.4'
+def natives = ['natives-windows', 'natives-linux']
+dependencies {
+    implementation platform("org.lwjgl:lwjgl-bom:$lwjgl")
+    ['lwjgl', 'lwjgl-glfw', 'lwjgl-opengl', 'lwjgl-tinyfd'].each { m ->
+        implementation "org.lwjgl:$m"
+        natives.each { n -> runtimeOnly "org.lwjgl:$m::$n" }
+    }
+    implementation 'org.json:json:20240303'   // Android's built-in org.json
+}
+java { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
+// The app's own sources (all but the Android activities and platform glue) plus the desktop platform layer.
+sourceSets {
+    main {
+        java {
+            srcDirs = ['src/main/java', '../app/src/main/doomeditor']
+            exclude '**/*Activity.java', '**/DoomApp.java', '**/Diag.java', '**/PerfDisplay.java', '**/ShareProvider.java', '**/AudioDecode.java'
+        }
+        resources { srcDirs = ['src/main/resources'] }
+    }
+}
+tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8'; options.compilerArgs << '-nowarn' }
+application {
+    mainClass = 'com.retro.doomeditor.DesktopMain'
+    applicationDefaultJvmArgs = ['-Xmx2g']
+}
+jar { manifest { attributes 'Main-Class': 'com.retro.doomeditor.DesktopMain' } }

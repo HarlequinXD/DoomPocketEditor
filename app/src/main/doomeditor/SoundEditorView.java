@@ -16,7 +16,10 @@ import java.util.Random;
  *  Game Audio - level music, volumes, and replacing the engine's built-in sounds with project sounds.
  * Project sounds and songs are what FSM actions such as Play Sound and Play Music pick from.
  */
-public class SoundEditorView extends View {
+public class SoundEditorView extends View implements Pointer.Aware {
+    @Override public Ui pointerUi(){return ui;}
+    @Override public boolean wheelDrags(){return false;}
+
     interface Host extends UiHost {void exit();void saved();void importAudio();void exportWav(short[] pcm,String name);}
     static final int TAB_SOUNDS=0,TAB_MUSIC=1,TAB_GAME=2;
     private static final String[] TABS={"Sounds","Music","Game Audio"};

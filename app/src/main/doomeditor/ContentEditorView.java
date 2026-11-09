@@ -14,7 +14,9 @@ import java.util.ArrayList;
  * the left and an inspector on the right. Everything here is what the game, the inventory, the hero's
  * starting gear and the FSM actions (Give Item, Cast Spell, Give Loot, Open Shop...) use.
  */
-public class ContentEditorView extends View {
+public class ContentEditorView extends View implements Pointer.Aware {
+    @Override public Ui pointerUi(){return ui;}
+
     interface Host extends UiHost {void exit();void saved();}
     static final String[] TABS={"Items","Spells","Classes","Loot","Shops"};
     private static final int[] TAB_ICONS={Icons.SWORD,Icons.SPARKLE,Icons.PERSON,Icons.PACKAGE,Icons.COIN};

@@ -14,7 +14,10 @@ import android.view.View;
  * control or HUD element to select it, drag it anywhere, and use the floating panel to change its size,
  * opacity and visibility, nudge it a step at a time, or apply a ready-made layout. Saved in the project.
  */
-public class UiEditorView extends View {
+public class UiEditorView extends View implements Pointer.Aware {
+    @Override public Ui pointerUi(){return ui;}
+    @Override public boolean wheelDrags(){return false;}
+
     interface Host extends UiHost {void exit();void saved();default void pickImage(java.util.function.Consumer<android.graphics.Bitmap> done){}}
     private static final int H_HEAD=1,H_COLLAPSE=2,H_PRESETS=3,H_GRID=4,H_RESET_ALL=5,H_SAVE=6,H_EXIT=7,H_SHOW=8,H_JOYMODE=9,H_RESET_ONE=10,
             H_NUDGE=20,H_SIZE=30,H_ALPHA=31,H_TAB=40,H_LIST=100,H_BACK=101,H_TOPSAVE=102,H_GUNDO=103,H_GREDO=104,H_CASTER=105;

@@ -14,7 +14,14 @@ import java.util.ArrayList;
  * selected node's speaker, text, effects and choices. Quests: titles, stage objectives and rewards.
  * NPCs run a conversation with the Talk (Conversation) FSM action.
  */
-public class DialogueEditorView extends View {
+public class DialogueEditorView extends View implements Pointer.Aware {
+    @Override public Ui pointerUi(){return ui;}
+    @Override public boolean pointerZoom(float steps,float x,float y){
+        if(tab!=0||!canvasR.contains(x,y))return false;
+        float gx=camX+(x-canvasR.left)/sc(),gy=camY+(y-canvasR.top)/sc();zoom=Math.max(.3f,Math.min(2.5f,zoom*(float)Math.pow(1.15,steps)));
+        camX=gx-(x-canvasR.left)/sc();camY=gy-(y-canvasR.top)/sc();invalidate();return true;}
+    @Override public void pointerPan(float dx,float dy){if(tab!=0)return;camX+=dx/sc();camY+=dy/sc();invalidate();}
+
     interface Host extends UiHost {void exit();void saved();}
     static final String[] TABS={"Conversations","Quests"};
     private static final int H_BACK=1,H_SAVE=2,H_PICK=3,H_ZIN=4,H_ZOUT=5,H_FIT=6,H_NEWQ=7,H_DELQ=8,H_ADDNODE=9,H_TAB=10,H_UNDO=11,H_REDO=12,H_QROW=100,H_PROP=1000;

@@ -15,7 +15,7 @@ import java.util.ArrayList;
  * Main editor surface: Sectors (cursor-driven geometry tools), Entities (entity manager + placement),
  * 3D View (grounded walk/fly camera with surface editing) and Play (the Doom game framework).
  */
-public class EditorView extends View {
+public class EditorView extends View implements Pointer.Aware {
     private static final int THINGS=2, PLAY=3, POLY=4, POLY3D=5, HOME=6;
     private static final int[] MODES={POLY,THINGS,POLY3D,PLAY};
     private static final String[] MODE_NAMES={"Sectors","Entities","3D View","Play"};
@@ -278,6 +278,10 @@ public class EditorView extends View {
             invalidate();});
     }
     /** Opens an editor by index (see EDITOR_NAMES); -1 is the home screen. */
+    /** Opens an editor by its index in EDITOR_NAMES (the PC build's screenshot test). */
+    void openEditorAt(int i){openEditor(i);}
+    /** Skips the splash and menus straight into the first map (the PC build's screenshot test). */
+    void startPlayNow(){if(mode!=PLAY)changeMode(PLAY);if(menu!=null)menu.state=GameMenu.OFF;creator=null;playing=null;startPlay();invalidate();}
     private void openEditor(int i){
         launcherOpen=false;
         if(i<0){if(mode!=HOME)changeMode(HOME);return;}
@@ -301,15 +305,17 @@ public class EditorView extends View {
         if(mode!=HOME){changeMode(HOME);invalidate();return true;}
         return false;
     }
+    private static String[] noNulls(String[] a){int n=0;for(String x:a)if(x!=null)n++;String[] o=new String[n];n=0;for(String x:a)if(x!=null)o[n++]=x;return o;}
     private void moreMenu(){
         if(host==null)return;
         ArrayList<String> errs=MapValidator.check(level);
         boolean sv=Perf.saver(getContext());
-        host.choose(project.name,new String[]{"Check map ("+(errs.isEmpty()?"no problems":errs.size()+" warning"+(errs.size()==1?"":"s"))+")","Save now",
+        host.choose(project.name,noNulls(new String[]{"Check map ("+(errs.isEmpty()?"no problems":errs.size()+" warning"+(errs.size()==1?"":"s"))+")","Save now",
                 sv?"Battery saver: ON (tap to turn off)":"Battery saver: off (30 fps, still backdrops)",
                 Sprites.pixel?"Built-in sprites: Pixel art (tap for HD)":"Built-in sprites: HD (tap for pixel art)","Reset level…","Back to projects",
                 frontEnd()?"Play: splash + main menu ON (tap to start straight in the level)":"Play: starts straight in the level (tap for splash + main menu)",
-                "Play from the cursor (testing)","Maps… (switch, add, rename, delete)","Search the project…","3D renderer: "+rendererLabel()},-1,k->{
+                "Play from the cursor (testing)","Maps… (switch, add, rename, delete)","Search the project…","3D renderer: "+rendererLabel(),Platform.pc()?"Display: "+(Platform.displayName==null?"":Platform.displayName.get()):null}),-1,k->{
+            if(k==11){if(Platform.display!=null)Platform.display.run();return;}
             if(k==0)showMapCheck();
             else if(k==1)save(true);
             else if(k==2){Perf.setSaver(getContext(),!sv);hint(!sv?"Battery saver on · 30 fps game and 3D, still previews":"Battery saver off · 60 fps");lastInteraction=System.currentTimeMillis();}
@@ -1106,9 +1112,9 @@ public class EditorView extends View {
         ensureWalker();Actor cam=walker.player;
         cam.noGravity=fly;
         float spd=fly?6f:5f;
-        float cs=(float)Math.cos(cam.angle),sn=(float)Math.sin(cam.angle),fw=-moveY,st=moveX;
-        cam.wishX=(cs*fw-sn*st)*spd;cam.wishY=(sn*fw+cs*st)*spd;cam.wishActive=joyVisible;
-        if(fly)cam.vz=flyUp?4f:flyDown?-4f:0;
+        float cs=(float)Math.cos(cam.angle),sn=(float)Math.sin(cam.angle),fw=joyVisible?-moveY:devMoveY3,st=joyVisible?moveX:devMoveX3;
+        cam.wishX=(cs*fw-sn*st)*spd;cam.wishY=(sn*fw+cs*st)*spd;cam.wishActive=joyVisible||devCam;
+        if(fly)cam.vz=flyUp||devUD>0?4f:flyDown||devUD<0?-4f:0;
         walker.walkerTick(dt);
         float left=browserW();view3d.set(left,toolbarH,w,h);
         renderer.highlight=sel3d;
@@ -1135,7 +1141,7 @@ public class EditorView extends View {
             r.set(bx,by-dp(64),bx+dp(56),by-dp(8));ui.stackButton(c,r,Icons.ARROW_UP,"Up",flyUp?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_UP);
             r.set(bx,by,bx+dp(56),by+dp(56));ui.stackButton(c,r,Icons.ARROW_DOWN,"Down",flyDown?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_DOWN);}
         drawSelection3D(c,left);
-        if(joyVisible||flyUp||flyDown||Math.abs(cam.vz)>.01f||Math.hypot(cam.vx,cam.vy)>.01f||walker.viewZ!=cam.z+World.EYE)nextFrame();
+        if(joyVisible||devCam||devUD!=0||flyUp||flyDown||Math.abs(cam.vz)>.01f||Math.hypot(cam.vx,cam.vy)>.01f||walker.viewZ!=cam.z+World.EYE)nextFrame();
     }
     private float floorAtLevel(float x,float y){int s=level.sectorAt(x,y);return s<0?0:level.sectors.get(s).floor;}
     private Renderer.SpriteDraw sd(int i){while(spritePool.size()<=i)spritePool.add(new Renderer.SpriteDraw());return spritePool.get(i);}
@@ -1213,7 +1219,7 @@ public class EditorView extends View {
     private GameMenu menu;
     private GameMenu menu(){
         if(menu==null)menu=new GameMenu(getContext(),ui,project,renderer,sfx,new GameMenu.Listener(){
-            @Override public void newGame(){if(project.screens.charCreate)openCreator(project.startMap);else{playing=null;startPlay();hint("Left: move · right: look · Attack, Cast, Use and Potion on the right · Bag top right");}}
+            @Override public void newGame(){if(project.screens.charCreate)openCreator(project.startMap);else{playing=null;startPlay();hint(playHint());}}
             @Override public void resume(){if(world==null)startPlay();else{world.paused=bagOpen;}}
             @Override public void restart(){if(world!=null)startPlay(world.mapNum);else startPlay();}
             @Override public boolean saveGame(String slot){return world!=null&&GameSave.save(getContext(),project,world,slot);}
@@ -1297,7 +1303,7 @@ public class EditorView extends View {
         if(world==null)startPlay();
         if(world.restartRequested){startPlay(world.mapNum);hint("Level restarted");}
         Input in=world.input;
-        in.moveX=joyVisible?moveX:0;in.moveY=joyVisible?moveY:0;
+        in.moveX=joyVisible?moveX:devMoveX;in.moveY=joyVisible?moveY:devMoveY;
         world.tick(dt);
         if(world.pendingMap>0){   // exit sector or Go To Map: load the next map, carrying the hero over
             World next=new World(project,sfx,world.pendingMap,world,world.pendingArrival);world=next;mapFade=1f;bagOpen=false;
@@ -1404,6 +1410,7 @@ public class EditorView extends View {
         hud.layout=project.hud;hud.theme=project.theme;return hud;
     }
     private void drawPlayControls(Canvas c){
+        if(!Controls.touchControls&&!joyVisible)return;   // PC: a controller or keyboard is driving
         hudDown[HudLayout.ATTACK]=buttonPointer[Input.FIRE]>=0;hudDown[HudLayout.CAST]=buttonPointer[Input.SPELL]>=0;hudDown[HudLayout.JUMP]=buttonPointer[Input.JUMP]>=0;
         hudDown[HudLayout.USE]=buttonPointer[Input.USE]>=0;hudDown[HudLayout.POTION]=buttonPointer[Input.POTION]>=0;hudDown[HudLayout.BAG]=buttonPointer[Input.MENU]>=0;hudDown[HudLayout.SWAP]=buttonPointer[Input.WEAPON]>=0;hudDown[HudLayout.SPRINT]=buttonPointer[Input.ALT]>=0;
         GameHud g=hud();
@@ -1612,7 +1619,7 @@ public class EditorView extends View {
                 playFrom=null;}
             else if(frontEnd()){world=null;playing=null;menu().begin();}else if(project.screens.charCreate){world=null;openCreator(project.currentMap);}else{playing=null;startPlay(project.currentMap);}}
         setKeepScreenOn(next==PLAY);   // the screen may sleep normally while editing
-        if(next!=HOME&&!(next==PLAY&&frontEnd()))hint(next==PLAY?"Left: move · right: look · Attack, Cast, Use and Potion on the right · Bag top right":next==POLY?"Pick a tool, move the cursor, tap Apply":next==THINGS?"Pick an entity type, then Apply to place it":"Left: move · right: look · double-tap a surface to texture it");
+        if(next!=HOME&&!(next==PLAY&&frontEnd()))hint(next==PLAY?playHint():next==POLY?"Pick a tool, move the cursor, tap Apply":next==THINGS?"Pick an entity type, then Apply to place it":Controls.touchControls?"Left: move · right: look · double-tap a surface to texture it":Controls.padHint?"Hold RT to look and move · A selects a surface · X applies the texture · d-pad raises and lowers":"Hold the right mouse button to look, WASD to move · click a surface, double-click to texture it · arrows raise and lower");
     }
 
     // ---------------------------------------------------------------- touch
@@ -1650,6 +1657,7 @@ public class EditorView extends View {
                 int dir=dpadHit(x,y);
                 if(dir>=0){dpadPointer=e.getPointerId(idx);dpadDirection=dir;cursorStep(dir);nextDpadRepeat=System.currentTimeMillis()+270;postDpadRepeat();return true;}
                 if(hid==H_APPLY){cursorApply();invalidate();return true;}
+                if(Pointer.dispatching&&hid<0){moveCursorTo(x,y);cursorApply();invalidate();return true;}   // PC: click where to apply
                 return true; // cursor-only editing: other touches on the canvas are ignored
             }
             if(mode==THINGS&&x<entPanelW()){scrollTarget=1;return true;}
@@ -1716,7 +1724,8 @@ public class EditorView extends View {
             if(hid==H_DOWN){flyDown=true;downPointer=id;invalidate();return true;}
             if(hid==H_RAISE||hid==H_LOWER||hid==H_LIGHTUP||hid==H_LIGHTDN){adjust3D(hid);return true;}
             if(hid==H_EDITFSM3D){int v=Renderer.value(sel3d);if(v<level.things.size())openFsm(level.things.get(v).def);return true;}
-            if(x<left+(w-left)*.45f){if(joyPointer<0){joyPointer=id;joyVisible=true;joyOriginX=joyX=x;joyOriginY=joyY=y;moveX=moveY=0;}}
+            if(Pointer.dispatching){lookPointer=id;lookLastX=x;lookLastY=y;lookDownX=x;lookDownY=y;}
+            else if(x<left+(w-left)*.45f){if(joyPointer<0){joyPointer=id;joyVisible=true;joyOriginX=joyX=x;joyOriginY=joyY=y;moveX=moveY=0;}}
             else if(lookPointer<0){lookPointer=id;lookLastX=x;lookLastY=y;lookDownX=x;lookDownY=y;}
             invalidate();return true;
         }
@@ -1724,7 +1733,7 @@ public class EditorView extends View {
             if(scrollTarget==3){float yy=e.getY(0);if(Math.abs(yy-downY)>dp(6))dragged=true;matScroll-=(yy-lastY);lastY=yy;invalidate();return true;}
             for(int i=0;i<e.getPointerCount();i++){int pid=e.getPointerId(i);float px=e.getX(i),py=e.getY(i);
                 if(pid==joyPointer)moveJoystick(px,py);
-                if(pid==lookPointer&&walker!=null){walker.player.angle+=(px-lookLastX)*.0065f;walker.player.pitch=Math.max(-.55f,Math.min(.55f,walker.player.pitch-(py-lookLastY)*.0045f));lookLastX=px;lookLastY=py;}}
+                if(pid==lookPointer&&walker!=null&&!Pointer.dispatching){walker.player.angle+=(px-lookLastX)*.0065f;walker.player.pitch=Math.max(-.55f,Math.min(.55f,walker.player.pitch-(py-lookLastY)*.0045f));lookLastX=px;lookLastY=py;}}
             invalidate();return true;
         }
         if(a==MotionEvent.ACTION_UP||a==MotionEvent.ACTION_POINTER_UP||a==MotionEvent.ACTION_CANCEL){
@@ -1794,6 +1803,85 @@ public class EditorView extends View {
             return true;
         }
         return true;
+    }
+
+    // ---------------------------------------------------------------- PC: mouse, keyboard and controller (see Controls)
+    private float devMoveX,devMoveY,devMoveX3,devMoveY3,devUD;private boolean devCam,looking3D;private final boolean[] devHeld=new boolean[Input.COUNT];
+    @Override public Ui pointerUi(){return ui;}
+    /** The game has the input: playing, with no menu, bag, shop, conversation or end screen up. */
+    boolean deviceGame(){
+        return mode==PLAY&&!launcherOpen&&world!=null&&creator==null&&(menu==null||!menu.active())&&!bagOpen&&world.shop==null&&world.dialogue==null&&world.popup==null
+                &&!(debug!=null&&debug.open)&&!world.levelComplete&&(world.player==null||world.player.alive);
+    }
+    /** One frame of controller / keyboard / mouse play: move (-1..1, y down = back), look (pixels), held buttons (Input.*). */
+    void devicePlay(float mx,float my,float lx,float ly,boolean[] held){
+        if(world==null)return;
+        devMoveX=mx;devMoveY=my;
+        if(lx!=0||ly!=0){float sens=GameSettings.lookSensitivity;world.input.lookX+=lx*sens;world.input.lookY+=ly*sens*(GameSettings.invertLook?-1:1);}
+        for(int b=0;b<Input.COUNT;b++){if(held[b]==devHeld[b])continue;devHeld[b]=held[b];
+            if(b==Input.MENU){if(held[b]&&!fsmListens("Inventory")){devHeld[b]=false;java.util.Arrays.fill(devHeld,false);devMoveX=devMoveY=0;openBag();return;}}
+            if(buttonPointer[b]<0)world.input.setButton(b,held[b]);}
+    }
+    /** How to play, for whatever is driving the game: touch, a controller, or keyboard and mouse. */
+    private static String playHint(){
+        if(Controls.touchControls)return "Left: move · right: look · Attack, Cast, Use and Potion on the right · Bag top right";
+        if(Controls.padHint)return "Left stick: move · right stick: look · RT attack · LT cast · A jump · X use · Y potion · RB next spell · View: bag";
+        return "WASD: move · mouse: look · click attack · right-click cast · Space jump · E use · R potion · Q next spell · Tab: bag";
+    }
+    void devicePause(){devMoveX=devMoveY=0;java.util.Arrays.fill(devHeld,false);if(world!=null)world.input.clear();pauseToMenu();invalidate();}
+    private void moveCursorTo(float x,float y){
+        float s=snap();cursorX=Math.round(wx(x)/s)*s;cursorY=Math.round(wy(y)/s)*s;
+        if(stage==1&&tool==MOVE&&mode==POLY)previewMove();
+    }
+    @Override public void pointerHover(float x,float y){
+        if(!in2D()||launcherOpen||!inMap(x,y))return;
+        if(ui.hitAt(x,y)>=0||dpadHit(x,y)>=0)return;   // over the d-pad, Apply or the zoom buttons
+        float ox=cursorX,oy=cursorY;moveCursorTo(x,y);followCursor=false;if(ox!=cursorX||oy!=cursorY)invalidate();
+    }
+    @Override public void pointerPan(float dx,float dy){if(!in2D()||launcherOpen||cell<=0)return;viewX+=dx/cell;viewY+=dy/cell;followCursor=false;invalidate();}
+    @Override public boolean pointerZoom(float steps,float x,float y){
+        if(launcherOpen)return false;
+        if(mode==POLY3D)return x>=browserW();   // the wheel scrolls the texture list, and does nothing over the view
+        if(!in2D()||!inMap(x,y)||cell<=0)return false;
+        float wx0=wx(x),wy0=wy(y);zoom=Math.max(.35f,Math.min(4f,zoom*(float)Math.pow(1.18,steps)));
+        cell=(mapB()-mapT())/14f*zoom;viewX=wx0-(x-(mapL()+mapR())*.5f)/cell;viewY=wy0-(y-(mapT()+mapB())*.5f)/cell;followCursor=false;invalidate();return true;
+    }
+    @Override public boolean pointerDpad(int dx,int dy){
+        if(launcherOpen)return false;
+        if(in2D()){cursorStep(dy<0?0:dx>0?1:dy>0?2:3);return true;}
+        if(mode==POLY3D){if(dy!=0){if(sel3d<0){hint("Select a surface first");return true;}adjust3D(dy<0?H_RAISE:H_LOWER);invalidate();return true;}
+            pointerShortcut(dx<0?'[':']');return true;}
+        return false;
+    }
+    @Override public boolean pointerCamera(){return mode==POLY3D&&!launcherOpen;}
+    @Override public void pointerShortcut(char key){
+        if(key=='s'){save(true);invalidate();return;}
+        if(key=='z'||key=='y'){if(mode==POLY)sectorAction(key=='z'?UNDO:REDO);else if(mode==THINGS)entityUndoRedo(key=='z');invalidate();return;}
+        if(mode!=POLY3D)return;
+        switch(key){
+            case '\n':if(sel3d>=0&&Renderer.kind(sel3d)!=Renderer.ID_SPRITE)apply3DTexture();else hint("Select a floor, ceiling or wall first");break;
+            case '[':case ']':selectedMaterial=(selectedMaterial+(key==']'?1:Textures.COUNT-1))%Textures.COUNT;{float size=(browserW()-dp(28))/2f;matScroll=Math.max(0,selectedMaterial/2-1)*(size+dp(8));}hint(Textures.NAMES[selectedMaterial]+" · Enter or X applies it");break;
+            case '+':case '-':if(sel3d>=0)adjust3D(key=='+'?H_RAISE:H_LOWER);break;
+            case 'l':case 'k':if(sel3d>=0)adjust3D(key=='l'?H_LIGHTUP:H_LIGHTDN);break;
+            case 'f':fly=!fly;if(walker!=null)walker.player.vz=0;hint(fly?"Fly mode":"Walk mode");break;
+            case 'h':ensureWalker();walker.player.x=level.playerX;walker.player.y=level.playerY;walker.player.angle=level.facing;walker.player.pitch=0;walker.player.z=walker.floorAt(level.playerX,level.playerY);walker.viewZ=walker.player.z+World.EYE;hint("Back at the player start");break;
+            case 'p':if(walker!=null){playFrom=new float[]{walker.player.x,walker.player.y,walker.player.angle};playThisMap=project.currentMap;changeMode(PLAY);}break;
+        }
+        invalidate();
+    }
+    /** The 3D view's look mode (right trigger / right mouse button held). */
+    void setLooking(boolean on){looking3D=on;if(!on){devCam=false;devMoveX3=devMoveY3=devUD=0;}invalidate();}
+    /** Look mode: move (mx right, my forward), look stick (-1..1), up/down (-1..1). */
+    void padCamera(float mx,float my,float lx,float ly,float ud,float dt){
+        devMoveX3=mx;devMoveY3=my;devUD=fly?ud:0;devCam=mx!=0||my!=0;
+        if(walker!=null&&(lx!=0||ly!=0)){walker.player.angle+=lx*dt*2.6f;walker.player.pitch=Math.max(-.55f,Math.min(.55f,walker.player.pitch-ly*dt*1.7f));}
+        invalidate();
+    }
+    void mouseLook(float dx,float dy){if(walker==null)return;walker.player.angle+=dx*.0042f;walker.player.pitch=Math.max(-.55f,Math.min(.55f,walker.player.pitch-dy*.0032f));invalidate();}
+    /** Selects the surface under the crosshair. */
+    void pickCentre(){
+        if(walker==null)return;int hit=renderer.pick(view3d.centerX(),view3d.centerY(),view3d);sel3d=hit;
+        if(hit>=0&&Renderer.kind(hit)!=Renderer.ID_SPRITE)hint("Selected · Enter / X applies "+Textures.NAMES[selectedMaterial]+" · arrows raise and lower");invalidate();
     }
     @Override protected void onDetachedFromWindow(){super.onDetachedFromWindow();renderer.dispose();}
 }

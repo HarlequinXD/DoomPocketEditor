@@ -58,7 +58,7 @@ public class SoundEditorActivity extends Activity implements SoundEditorView.Hos
         if (req == REQ_IMPORT) {
             Toast.makeText(this, "Loading audio…", Toast.LENGTH_SHORT).show();
             new Thread(() -> {
-                try { AudioIO.Result r = AudioIO.load(this, uri); runOnUiThread(() -> { view.imported(r); project.save(this); }); }
+                try { AudioIO.Result r = AudioDecode.load(this, uri); runOnUiThread(() -> { view.imported(r); project.save(this); }); }
                 catch (Throwable t) { runOnUiThread(() -> Toast.makeText(this, "Couldn't load that file: " + (t.getMessage() == null ? t.getClass().getSimpleName() : t.getMessage()), Toast.LENGTH_LONG).show()); }
             }, "AudioImport").start();
         } else if (req == REQ_EXPORT && pendingExport != null) {
