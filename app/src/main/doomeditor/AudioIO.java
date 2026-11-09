@@ -1,19 +1,10 @@
 package com.retro.doomeditor;
 
-import android.content.Context;
-import android.database.Cursor;
-import android.media.MediaCodec;
-import android.media.MediaExtractor;
-import android.media.MediaFormat;
-import android.net.Uri;
-import android.provider.OpenableColumns;
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
-/** Loads audio files (WAV directly; MP3, OGG, M4A, FLAC... through the phone's decoders) and writes WAV files. */
+/** Audio files: WAV parsing and writing, resampling, and song rendering (the platform decoders are in AudioDecode). */
 final class AudioIO {
     private AudioIO(){}
     static final int MAX_SAMPLES=SoundFx.RATE*SoundAsset.MAX_SECONDS;
@@ -21,33 +12,16 @@ final class AudioIO {
     /** Decoded file: mono samples at SoundFx.RATE, and whether it was cut to the length limit. */
     static final class Result {short[] pcm;boolean cut;String name;}
 
-    static Result load(Context c,Uri uri)throws Exception{
-        Result r=new Result();r.name=displayName(c,uri);
-        byte[] head=new byte[12];int got=0;
-        try(InputStream in=c.getContentResolver().openInputStream(uri)){if(in==null)throw new java.io.IOException("Can't open file");int n;while(got<12&&(n=in.read(head,got,12-got))>0)got+=n;}
-        float[] mono;int rate;
-        if(got==12&&head[0]=='R'&&head[1]=='I'&&head[2]=='F'&&head[3]=='F'&&head[8]=='W'&&head[9]=='A'&&head[10]=='V'&&head[11]=='E'){
-            byte[] all=readAll(c,uri,64<<20);float[][] w=parseWav(all);mono=w[0];rate=(int)w[1][0];
-        }else{float[][] d=decodeCodec(c,uri);mono=d[0];rate=(int)d[1][0];}
+    /** Wraps decoded audio: mixes to mono at SoundFx.RATE and cuts it to the length limit. */
+    static Result finish(String name,float[] mono,int rate)throws java.io.IOException{
         if(mono.length==0)throw new java.io.IOException("No audio found in that file");
+        Result r=new Result();r.name=name;
         float[] res=resample(mono,rate,SoundFx.RATE);
         int n=Math.min(res.length,MAX_SAMPLES);r.cut=res.length>MAX_SAMPLES;
         r.pcm=new short[n];for(int i=0;i<n;i++)r.pcm[i]=(short)Math.max(-32767,Math.min(32767,res[i]*32767f));
         return r;
     }
-    static String displayName(Context c,Uri uri){
-        try(Cursor cur=c.getContentResolver().query(uri,new String[]{OpenableColumns.DISPLAY_NAME},null,null,null)){
-            if(cur!=null&&cur.moveToFirst()){String s=cur.getString(0);if(s!=null)return s;}
-        }catch(Exception ignored){}
-        String p=uri.getLastPathSegment();return p==null?"sound":p;
-    }
-    private static byte[] readAll(Context c,Uri uri,int max)throws Exception{
-        try(InputStream in=c.getContentResolver().openInputStream(uri)){
-            ByteArrayOutputStream o=new ByteArrayOutputStream();byte[] b=new byte[16384];int n;
-            while((n=in.read(b))>0){o.write(b,0,n);if(o.size()>max)break;}
-            return o.toByteArray();
-        }
-    }
+    static boolean isWav(byte[] h,int got){return got>=12&&h[0]=='R'&&h[1]=='I'&&h[2]=='F'&&h[3]=='F'&&h[8]=='W'&&h[9]=='A'&&h[10]=='V'&&h[11]=='E';}
     private static int u16(byte[] b,int i){return (b[i]&255)|((b[i+1]&255)<<8);}
     private static int s32(byte[] b,int i){return (b[i]&255)|((b[i+1]&255)<<8)|((b[i+2]&255)<<16)|(b[i+3]<<24);}
 
@@ -75,48 +49,6 @@ final class AudioIO {
                 sum+=v;}
             out[f]=sum/ch;}
         return new float[][]{out,{rate}};
-    }
-    /** Decodes compressed audio with MediaCodec. Returns {mono samples, {sampleRate}}. */
-    private static float[][] decodeCodec(Context c,Uri uri)throws Exception{
-        MediaExtractor ex=new MediaExtractor();MediaCodec codec=null;
-        try{
-            ex.setDataSource(c,uri,null);
-            int track=-1;MediaFormat f=null;
-            for(int i=0;i<ex.getTrackCount();i++){MediaFormat tf=ex.getTrackFormat(i);String m=tf.getString(MediaFormat.KEY_MIME);if(m!=null&&m.startsWith("audio/")){track=i;f=tf;break;}}
-            if(track<0)throw new java.io.IOException("That file has no audio track");
-            ex.selectTrack(track);
-            int rate=f.getInteger(MediaFormat.KEY_SAMPLE_RATE),ch=f.containsKey(MediaFormat.KEY_CHANNEL_COUNT)?f.getInteger(MediaFormat.KEY_CHANNEL_COUNT):1;
-            boolean floats=false;
-            codec=MediaCodec.createDecoderByType(f.getString(MediaFormat.KEY_MIME));codec.configure(f,null,null,0);codec.start();
-            MediaCodec.BufferInfo info=new MediaCodec.BufferInfo();
-            float[] acc=new float[SoundFx.RATE*2];int n=0;
-            boolean inDone=false,outDone=false;long deadline=System.currentTimeMillis()+20000;
-            while(!outDone&&System.currentTimeMillis()<deadline){
-                if(!inDone){int ii=codec.dequeueInputBuffer(5000);
-                    if(ii>=0){ByteBuffer ib=codec.getInputBuffer(ii);int sz=ib==null?-1:ex.readSampleData(ib,0);
-                        if(sz<0){codec.queueInputBuffer(ii,0,0,0,MediaCodec.BUFFER_FLAG_END_OF_STREAM);inDone=true;}
-                        else{codec.queueInputBuffer(ii,0,sz,ex.getSampleTime(),0);ex.advance();}}}
-                int oi=codec.dequeueOutputBuffer(info,5000);
-                if(oi==MediaCodec.INFO_OUTPUT_FORMAT_CHANGED){MediaFormat of=codec.getOutputFormat();
-                    if(of.containsKey(MediaFormat.KEY_SAMPLE_RATE))rate=of.getInteger(MediaFormat.KEY_SAMPLE_RATE);
-                    if(of.containsKey(MediaFormat.KEY_CHANNEL_COUNT))ch=of.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
-                    if(of.containsKey("pcm-encoding"))floats=of.getInteger("pcm-encoding")==4;}
-                else if(oi>=0){
-                    ByteBuffer ob=codec.getOutputBuffer(oi);
-                    if(ob!=null&&info.size>0){ob.position(info.offset);ob.limit(info.offset+info.size);ob.order(ByteOrder.LITTLE_ENDIAN);
-                        int chs=Math.max(1,ch);int frames=info.size/((floats?4:2)*chs);
-                        for(int fr=0;fr<frames;fr++){float sum=0;for(int k=0;k<chs;k++)sum+=floats?ob.getFloat():ob.getShort()/32768f;
-                            if(n==acc.length)acc=java.util.Arrays.copyOf(acc,acc.length*2);acc[n++]=sum/chs;}}
-                    codec.releaseOutputBuffer(oi,false);
-                    if((info.flags&MediaCodec.BUFFER_FLAG_END_OF_STREAM)!=0)outDone=true;
-                    if(n>(long)rate*(SoundAsset.MAX_SECONDS+1))outDone=true;
-                }
-            }
-            return new float[][]{java.util.Arrays.copyOf(acc,n),{rate}};
-        }finally{
-            try{if(codec!=null){codec.stop();codec.release();}}catch(Exception ignored){}
-            ex.release();
-        }
     }
     static float[] resample(float[] in,int from,int to){
         if(from<=0||from==to)return in;

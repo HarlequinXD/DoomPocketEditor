@@ -8,7 +8,9 @@ import android.view.View;
  * Shown when the editor launches: warms up textures, sprites, sounds and the action library on a
  * background thread, with a progress bar and a line saying what is loading, then hands over.
  */
-final class LoadingView extends View {
+final class LoadingView extends View implements Pointer.Aware {
+    @Override public Ui pointerUi(){return ui;}
+
     private final Ui ui;
     private volatile int step;private volatile String label="Starting up";
     private float shown;private long last,start;

@@ -16,7 +16,14 @@ import java.util.Map;
  * state graph in the middle (action lists, event rows, global events, curved transitions),
  * inspector on the right (state, action parameters, transitions) and a searchable action browser.
  */
-public class FSMGraphView extends View {
+public class FSMGraphView extends View implements Pointer.Aware {
+    @Override public Ui pointerUi(){return ui;}
+    @Override public boolean pointerZoom(float steps,float x,float y){
+        if(x<canvasL()||x>=canvasR()||y<toolbarH||browserOpen)return false;
+        float gx=camX+(x-canvasL())/scale(),gy=camY+(y-toolbarH)/scale();zoom=Math.max(.3f,Math.min(2.5f,zoom*(float)Math.pow(1.15,steps)));
+        camX=gx-(x-canvasL())/scale();camY=gy-(y-toolbarH)/scale();invalidate();return true;}
+    @Override public void pointerPan(float dx,float dy){camX+=dx/scale();camY+=dy/scale();invalidate();}
+
     interface Host extends UiHost {void exit();void saved();}
     static final String[] STANDARD_EVENTS={"FINISHED","DIED","DAMAGED","TOUCHED","USED","SEE","READY","ATTACK","LOST","LOOT","CLOSED","DONE","YES","NO","TRUE","FALSE"};
 

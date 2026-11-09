@@ -12,9 +12,11 @@ import android.view.View;
 import java.util.ArrayList;
 
 /** Title screen and project manager: live 3D backdrop, project list and the New Project screen. */
-public class TitleView extends View {
+public class TitleView extends View implements Pointer.Aware {
+    @Override public Ui pointerUi(){return ui;}
+
     interface Listener {void openProject(String id);default void playProject(String id){}default void exportProject(String id,boolean share){}default void importProject(){}}
-    private static final int H_IMPORT=6,H_NEW=1,H_CONTINUE=2,H_NAME=3,H_CANCEL=4,H_CREATE=5,H_TEMPLATE=10,H_OPEN=100,H_MENU=600;
+    private static final int H_IMPORT=6,H_NEW=1,H_CONTINUE=2,H_NAME=3,H_CANCEL=4,H_CREATE=5,H_TEMPLATE=10,H_OPEN=100,H_MENU=600,H_DISPLAY=7,H_QUIT=8;
 
     private final Ui ui;
     private final Paint p;
@@ -78,12 +80,15 @@ public class TitleView extends View {
         float ls=dp(64);ui.logo(c,x,y-dp(10),ls);
         ui.text(c,"RPG POCKET",x,y+ls+dp(40),30,Ui.TEXT,2,-1);
         ui.text(c,"E D I T O R",x+dp(2),y+ls+dp(62),13,0xff8fbcff,1,-1);
-        ui.text(c,"Build, script and play fantasy RPG adventures on your phone.",x,y+ls+dp(92),12.5f,Ui.TEXT_2);
+        ui.text(c,Platform.pc()?"Build, script and play fantasy RPG adventures on your PC.":"Build, script and play fantasy RPG adventures on your phone.",x,y+ls+dp(92),12.5f,Ui.TEXT_2);
         float by=y+ls+dp(116),bw=Math.min(dp(260),w*.34f);
         r.set(x,by,x+bw,by+dp(44));ui.button(c,r,Icons.PLUS_SQUARE,"New Project",Ui.PRIMARY);ui.hit(r,H_NEW);
         String cur=ProjectStore.currentId(getContext());ProjectStore.Meta m=find(cur);
         if(m!=null){r.set(x,by+dp(54),x+bw,by+dp(98));ui.button(c,r,Icons.PLAY,"Continue · "+m.name,Ui.NORMAL);ui.hit(r,H_CONTINUE);}
         float iy=by+(m!=null?dp(108):dp(54));if(iy+dp(40)<h-dp(30)){r.set(x,iy,x+bw,iy+dp(38));ui.button(c,r,Icons.FOLDER,"Import a game file",Ui.GHOST);ui.hit(r,H_IMPORT);}
+        if(Platform.pc()&&iy+dp(88)<h-dp(30)){float hw=(bw-dp(8))*.5f;   // PC: display mode and quit
+            r.set(x,iy+dp(46),x+hw,iy+dp(84));ui.button(c,r,Icons.LAYERS,Platform.displayName==null?"Display":Platform.displayName.get(),Ui.GHOST);ui.hit(r,H_DISPLAY);
+            r.set(x+hw+dp(8),iy+dp(46),x+bw,iy+dp(84));ui.button(c,r,Icons.ARROW_LEFT,"Quit",Ui.GHOST);ui.hit(r,H_QUIT);}
         ui.text(c,"v0.5  ·  "+Actions.visibleCount()+" FSM actions  ·  d20 RPG framework",x,h-dp(20),10.5f,Ui.TEXT_3);
     }
     private ProjectStore.Meta find(String id){if(id==null)return null;for(ProjectStore.Meta m:projects)if(m.id.equals(id))return m;return null;}
@@ -167,6 +172,8 @@ public class TitleView extends View {
         }
         if(id==H_NEW){creating=true;newName="My Adventure";template=0;}
         else if(id==H_IMPORT){if(listener!=null)listener.importProject();}
+        else if(id==H_DISPLAY){if(Platform.display!=null)Platform.display.run();}
+        else if(id==H_QUIT){if(Platform.quit!=null)Platform.quit.run();}
         else if(id==H_CONTINUE){String cur=ProjectStore.currentId(getContext());if(cur!=null&&listener!=null)listener.openProject(cur);}
         else if(id>=H_MENU){int i=id-H_MENU;if(i<projects.size())menu(projects.get(i));}
         else if(id>=H_OPEN){int i=id-H_OPEN;if(i<projects.size()&&listener!=null)listener.openProject(projects.get(i).id);}

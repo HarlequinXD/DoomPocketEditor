@@ -19,7 +19,10 @@ import java.util.HashMap;
  * Pixel art sprite editor. Drawing is cursor-driven: an 8-way D-pad moves a pixel cursor and the Draw button
  * applies the current tool (hold it while moving to paint strokes). Sprites are stored inside the project.
  */
-public class SpriteEditorView extends View {
+public class SpriteEditorView extends View implements Pointer.Aware {
+    @Override public Ui pointerUi(){return ui;}
+    @Override public boolean wheelDrags(){return false;}
+
     interface Host extends UiHost {void exit();void saved();}
     // tools
     static final int PENCIL=0,ERASER=1,FILL=2,PICKER=3,LINE=4,RECT=5,RECT_FILL=6,ELLIPSE=7,DITHER=8,LIGHTEN=9,DARKEN=10,SELECT=11;

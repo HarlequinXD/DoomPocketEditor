@@ -17,6 +17,8 @@ final class Ui {
     static final int NORMAL=0, ACTIVE=1, PRIMARY=2, DANGER=3, GHOST=4, DISABLED=5, SUCCESS=6;
 
     final float dp;
+    /** Where the app-wide cursor is (NaN when it is hidden), for hover highlights. */
+    static float hoverX=Float.NaN,hoverY=Float.NaN;
     final Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Typeface regular=Typeface.create("sans-serif",Typeface.NORMAL),
             medium=Typeface.create("sans-serif-medium",Typeface.NORMAL),
