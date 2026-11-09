@@ -417,9 +417,9 @@ public final class DesktopMain implements Controls.Shell {
             fakePad=true;dev.padConnected=true;dev.lx=.9f;dev.ly=.3f;run(25);dev.lx=dev.ly=0;run(5);shot(dir+"/22-pad-cursor.png");
             dev.buttons=Devices.DOWN;run(2);dev.buttons=0;run(12);shot(dir+"/23-pad-dpad.png");
             dev.buttons=Devices.A;run(3);dev.buttons=0;run(20);shot(dir+"/24-pad-clicked.png");
-            dev.buttons=Devices.B;run(3);dev.buttons=0;run(10);
+            dev.buttons=Devices.B;run(3);dev.buttons=0;run(10);shot(dir+"/24b-pad-back.png");layer.back();run(3);
             openProject(p.id);run(10);editor.startPlayNow();run(40);
-            dev.ly=-1;dev.rx=.6f;run(60);dev.ly=0;dev.rx=0;dev.rt=1;run(10);shot(dir+"/25-pad-playing.png");dev.rt=0;run(5);
+            dev.ly=-1;dev.rx=.6f;run(60);dev.ly=0;dev.rx=0;dev.rt=1;run(4);shot(dir+"/25-pad-playing.png");dev.rt=0;run(5);
             dev.buttons=Devices.START;run(3);dev.buttons=0;run(15);shot(dir+"/26-pad-paused.png");
             fakePad=false;
             System.out.println("shots saved to "+dir);
