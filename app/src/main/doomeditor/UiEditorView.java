@@ -17,8 +17,8 @@ import android.view.View;
 public class UiEditorView extends View {
     interface Host extends UiHost {void exit();void saved();default void pickImage(java.util.function.Consumer<android.graphics.Bitmap> done){}}
     private static final int H_HEAD=1,H_COLLAPSE=2,H_PRESETS=3,H_GRID=4,H_RESET_ALL=5,H_SAVE=6,H_EXIT=7,H_SHOW=8,H_JOYMODE=9,H_RESET_ONE=10,
-            H_NUDGE=20,H_SIZE=30,H_ALPHA=31,H_TAB=40,H_LIST=100,H_BACK=101,H_TOPSAVE=102,H_GUNDO=103,H_GREDO=104;
-    static final String[] TABS={"HUD & Controls","Theme","Main Menu","Screens"};
+            H_NUDGE=20,H_SIZE=30,H_ALPHA=31,H_TAB=40,H_LIST=100,H_BACK=101,H_TOPSAVE=102,H_GUNDO=103,H_GREDO=104,H_CASTER=105;
+    static final String[] TABS={"HUD & Controls","Theme","Main Menu","Screens"},TABS_SHORT={"HUD","Theme","Menu","Screens"};
     private static final int[] TAB_ICONS={Icons.GAMEPAD,Icons.PALETTE,Icons.LIST,Icons.FLAG};
     private int tab;
     /** The game screen is previewed at its real size, scaled to fit under the top bar. */
@@ -44,7 +44,10 @@ public class UiEditorView extends View {
         world=new World(project,null);
         dash.setStyle(Paint.Style.STROKE);dash.setPathEffect(new DashPathEffect(new float[]{ui.dp(6),ui.dp(4)},0));
         history=new Undo(()->project.section(Project.SEC_UI),t->project.restoreSection(Project.SEC_UI,t));history.reset();
+        previewCaster=world.hero!=null&&!world.hero.spells.isEmpty();
     }
+    /** HUD page: lay the buttons out as they are for a spellcaster (with Cast) or for a hero without spells. */
+    private boolean previewCaster;
     final Undo history;
     void afterEdit(){history.commit();invalidate();}
     private void undoRedo(boolean back){
@@ -68,7 +71,7 @@ public class UiEditorView extends View {
         c.save();c.translate(offX,offY);c.scale(scale,scale);c.clipRect(0,0,w,h);
         drawBackdrop(c);
         if(grid)drawGrid(c);
-        boolean caster=world.hero!=null&&!world.hero.spells.isEmpty();
+        hud.previewCaster=previewCaster;
         // joystick (fixed: its base; floating: the half of the screen it appears on)
         HudLayout.Elem je=L().e[HudLayout.JOYSTICK];
         if(L().joyFixed){float[] jc=hud.joyCenter(w,h);hud.drawJoystick(c,jc[0],jc[1],jc[0],jc[1],1f);
@@ -80,7 +83,6 @@ public class UiEditorView extends View {
             float jr=L().radius(HudLayout.JOYSTICK,ui.dp);hud.rects[HudLayout.JOYSTICK].set(jc[0]-jr,jc[1]-jr,jc[0]+jr,jc[1]+jr);}
         hud.drawStatus(c,w,h,world,true);
         hud.drawControls(c,w,h,world.hero,null,true);
-        if(!caster){RectF cr=hud.rects[HudLayout.CAST];ui.text(c,"spellcasters only",cr.centerX(),cr.bottom+dp(10),9,0xb0c8b0ff,1,0);}
         // labels on hidden elements
         for(int i=0;i<HudLayout.N;i++)if(!L().e[i].visible&&(hud.drawn[i]||i==HudLayout.JOYSTICK)){RectF q=hud.rects[i];ui.text(c,"hidden",q.centerX(),q.centerY()+dp(4),10,0xd0ffffff,2,0);}
         if(sel>=0)drawSelection(c);
@@ -107,7 +109,6 @@ public class UiEditorView extends View {
     private final RectF side=new RectF(),texTrack=new RectF();
     private float sideScroll,sideContent;
     private final UiTheme[] presetThemes=new UiTheme[UiTheme.PRESETS.length];
-    private final java.util.ArrayDeque<UiTheme> undo=new java.util.ArrayDeque<>();
     private final java.util.Random rng=new java.util.Random();
     private static final String[] PROPS={"Material","Panel colour","Accent colour","Text colour","Border","Corners","Button shape","Button fill","Bar style"};
     private void drawHint(Canvas c){
@@ -138,10 +139,10 @@ public class UiEditorView extends View {
         c.save();c.clipRect(side);
         float l=side.left+dp(12),rr=side.right-dp(12),y=side.top+dp(12)-sideScroll;
         ui.text(c,ui.ellipsize(th.name,15,1,rr-l),l,y+dp(14),15,Ui.TEXT,1,-1);ui.text(c,"Current theme",l,y+dp(30),10.5f,Ui.TEXT_3);y+=dp(42);
-        float bw=(rr-l-dp(12))/3f;
-        r.set(l,y,l+bw,y+dp(34));ui.button(c,r,Icons.SPARKLE,"Random",Ui.PRIMARY);sideHit(r,H_RANDOM);
-        r.set(l+bw+dp(6),y,l+bw*2+dp(6),y+dp(34));ui.button(c,r,Icons.RESET,"Mutate",Ui.ACTIVE);sideHit(r,H_MUTATE);
-        r.set(l+bw*2+dp(12),y,rr,y+dp(34));ui.button(c,r,Icons.UNDO,"Undo",history.canUndo()?Ui.NORMAL:Ui.DISABLED);sideHit(r,H_UNDO);y+=dp(44);
+        float bw=(rr-l-dp(12))/3f;boolean icons=bw>=ui.measure("Random",12.5f,1)+dp(50);   // narrow: words only, so they aren't cut off
+        r.set(l,y,l+bw,y+dp(34));ui.button(c,r,icons?Icons.SPARKLE:-1,"Random",Ui.PRIMARY);sideHit(r,H_RANDOM);
+        r.set(l+bw+dp(6),y,l+bw*2+dp(6),y+dp(34));ui.button(c,r,icons?Icons.RESET:-1,"Mutate",Ui.ACTIVE);sideHit(r,H_MUTATE);
+        r.set(l+bw*2+dp(12),y,rr,y+dp(34));ui.button(c,r,icons?Icons.UNDO:-1,"Undo",history.canUndo()?Ui.NORMAL:Ui.DISABLED);sideHit(r,H_UNDO);y+=dp(44);
         ui.caption(c,"Built-in themes",l,y+dp(8),Ui.TEXT_3);y+=dp(16);
         float tw=(rr-l-dp(8))/2f;
         for(int i=0;i<presetThemes.length;i++){if(presetThemes[i]==null)presetThemes[i]=UiTheme.preset(i);UiTheme pt2=presetThemes[i];
@@ -175,7 +176,7 @@ public class UiEditorView extends View {
     }
     private void sideHit(RectF rr,int id){if(rr.bottom<side.top||rr.top>side.bottom)return;ui.hit(rr.left,Math.max(rr.top,side.top),rr.right,Math.min(rr.bottom,side.bottom),id);}
     private static String colorName(int c,String[] names,int[] cols){for(int i=0;i<cols.length;i++)if((cols[i]|0xff000000)==(c|0xff000000))return names[i];return String.format("#%06X",c&0xffffff);}
-    private void pushUndo(){undo.push(project.theme.copy());while(undo.size()>20)undo.removeLast();}
+    private void pushUndo(){}   // the page's Undo uses the editor's history (it records every theme change)
     private void themeChanged(){project.theme.changed();changed();invalidate();}
     private void setTexture(float x){project.theme.texture=Math.round(Math.max(0,Math.min(1,(x-texTrack.left)/Math.max(1,texTrack.width())))*20)/20f;project.theme.changed();invalidate();}
     private void themeTap(int hid){
@@ -225,7 +226,8 @@ public class UiEditorView extends View {
         float saveW=wide?dp(84):bh;r.set(vw-dp(10)-saveW,top,vw-dp(10),top+bh);ui.button(c,r,Icons.SAVE,wide?"Save":null,Ui.PRIMARY);ui.hit(r,H_TOPSAVE);
         float ux=Undo.buttons(ui,c,r,history,vw-dp(16)-saveW,top,bh,H_GUNDO,H_GREDO);
         float avail=ux-tl-dp(4),tw=Math.min(dp(150),avail/TABS.length);
-        for(int i=0;i<TABS.length;i++){r.set(tl+i*tw,top,tl+(i+1)*tw-dp(5),top+bh);ui.button(c,r,TAB_ICONS[i],TABS[i],i==tab?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_TAB+i);}
+        boolean full=true;for(String t:TABS)if(ui.measure(t,12.5f,1)+dp(50)>tw-dp(5))full=false;   // narrow phones: short names rather than cut-off ones
+        for(int i=0;i<TABS.length;i++){r.set(tl+i*tw,top,tl+(i+1)*tw-dp(5),top+bh);ui.button(c,r,TAB_ICONS[i],full?TABS[i]:TABS_SHORT[i],i==tab?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,H_TAB+i);}
     }
     // ================================================================== side-panel rows (Main Menu and Screens tabs)
     private static final int H_ROW=400;
@@ -292,7 +294,7 @@ public class UiEditorView extends View {
         head("Title");
         val("Title text",m.title.isEmpty()?project.name+" (game name)":m.title,()->text("Menu title","Empty uses the game's name",m.title,t->m.title=t));
         val("Subtitle",m.subtitle,()->text("Subtitle","A line under the title, e.g. \"Chapter One\"",m.subtitle,t->m.subtitle=t));
-        val("Size",m.titleSize==0?"Fit automatically":m.titleSize+"",()->pick("Title size",SIZES,0,k->m.titleSize=k==0?0:Integer.parseInt(SIZES[k])));
+        val("Size",m.titleSize==0?"Fit automatically":m.titleSize+"",()->pick("Title size",SIZES,java.util.Arrays.asList(SIZES).indexOf(m.titleSize==0?SIZES[0]:String.valueOf(m.titleSize)),k->m.titleSize=k==0?0:Integer.parseInt(SIZES[k])));
         val("Colour",MenuStyle.TITLE_COLOR_NAMES[m.titleColor],()->pick("Title colour",MenuStyle.TITLE_COLOR_NAMES,m.titleColor,k->m.titleColor=k));rows.get(rows.size()-1).swatch=m.titleColor(project.theme);
         val("Effect",MenuStyle.TITLE_STYLES[m.titleStyle],()->pick("Title effect",MenuStyle.TITLE_STYLES,m.titleStyle,k->m.titleStyle=k));
         tog("ALL CAPITALS",m.upper,()->m.upper=!m.upper);
@@ -407,8 +409,8 @@ public class UiEditorView extends View {
 
     // ------------------------------------------------------------------ floating panel
     private void drawPanel(Canvas c){
-        panelW=Math.min(dp(320),vw-dp(24));
-        panelH=collapsed?dp(40):sel>=0?dp(sel==HudLayout.JOYSTICK?320:sel==HudLayout.STATUS?198:286):dp(152);
+        panelW=Math.min(dp(340),vw-dp(24));
+        panelH=collapsed?dp(40):sel>=0?dp(sel==HudLayout.JOYSTICK?320:sel==HudLayout.STATUS?198:286):dp(198);
         if(panelX<0){panelX=(vw-panelW)*.5f;panelY=barH+(vh-barH-panelH)*.42f;}
         panelX=Math.max(dp(4),Math.min(vw-panelW-dp(4),panelX));panelY=Math.max(barH+dp(4),Math.min(vh-panelH-dp(4),panelY));
         float l=panelX,t=panelY,rr=l+panelW,b=t+panelH;panel.set(l,t,rr,b);
@@ -419,14 +421,16 @@ public class UiEditorView extends View {
         ui.textMid(c,"HUD & Controls",l+dp(34),t+dp(20),12.5f,Ui.TEXT,1,-1);
         r.set(rr-dp(38),t+dp(4),rr-dp(4),t+dp(36));ui.button(c,r,collapsed?Icons.CHEVRON_DOWN:Icons.CHEVRON_UP,null,Ui.GHOST);ui.hit(r,H_COLLAPSE);
         if(collapsed)return;
-        float x=l+dp(10),y=t+dp(42),bw2=(panelW-dp(20)-dp(18))/4f;
-        int[] ic={Icons.LIST,Icons.GRID,Icons.RESET,Icons.SAVE};String[] lb={"Layouts","Grid","Reset","Save"};int[] id={H_PRESETS,H_GRID,H_RESET_ALL,H_SAVE};
-        for(int i=0;i<4;i++){r.set(x+i*(bw2+dp(6)),y,x+i*(bw2+dp(6))+bw2,y+dp(34));ui.button(c,r,ic[i],lb[i],i==1&&grid?Ui.ACTIVE:i==3?Ui.PRIMARY:Ui.NORMAL);ui.hit(r,id[i]);}
+        // (Save is on the top bar)
+        float x=l+dp(10),y=t+dp(42),bw2=(panelW-dp(20)-dp(12))/3f;
+        int[] ic={Icons.LIST,Icons.GRID,Icons.RESET};String[] lb={"Layouts","Grid","Reset"};int[] id={H_PRESETS,H_GRID,H_RESET_ALL};
+        for(int i=0;i<3;i++){r.set(x+i*(bw2+dp(6)),y,x+i*(bw2+dp(6))+bw2,y+dp(34));ui.button(c,r,ic[i],lb[i],i==1&&grid?Ui.ACTIVE:Ui.NORMAL);ui.hit(r,id[i]);}
         y+=dp(42);
         if(sel<0){
             ui.text(c,"Tap a control or HUD part to select it,",l+dp(12),y+dp(14),11.5f,Ui.TEXT_2);
             ui.text(c,"then drag it where you want it.",l+dp(12),y+dp(30),11.5f,Ui.TEXT_2);
             r.set(l+dp(10),y+dp(42),rr-dp(10),y+dp(72));ui.button(c,r,Icons.LIST,"Pick from a list…",Ui.NORMAL);ui.hit(r,H_LIST);
+            toggle(c,l+dp(12),rr-dp(12),y+dp(78),"Preview a spellcaster (with Cast)",previewCaster,H_CASTER);
             return;}
         HudLayout.Elem el=L().e[sel];
         ui.text(c,HudLayout.NAMES[sel],l+dp(12),y+dp(14),14,Ui.ORANGE,2,-1);
@@ -497,7 +501,7 @@ public class UiEditorView extends View {
         if(a==MotionEvent.ACTION_CANCEL){mode=0;invalidate();}
         return true;
     }
-    private boolean isCaster(){return world.hero!=null&&!world.hero.spells.isEmpty();}
+    private boolean isCaster(){return previewCaster;}
     /** Topmost element under a point: buttons, joystick, then quest/messages, then the status bar. */
     private int elementAt(float x,float y){
         int[] order={HudLayout.MENU,HudLayout.BAG,HudLayout.ATTACK,HudLayout.CAST,HudLayout.JUMP,HudLayout.USE,HudLayout.POTION,HudLayout.JOYSTICK,HudLayout.QUEST,HudLayout.MESSAGE,HudLayout.MINIMAP,HudLayout.STATUS};
@@ -524,7 +528,8 @@ public class UiEditorView extends View {
             case H_EXIT:if(host!=null)host.exit();return;
             case H_PRESETS:if(host!=null)host.choose("Apply a layout",HudLayout.PRESETS,-1,k->{L().preset(k,w,h,ui.dp,isCaster());changed();hint(HudLayout.PRESETS[k]+" layout applied");invalidate();});return;
             case H_RESET_ALL:if(host!=null)host.confirm("Reset every control?","All controls and HUD parts go back to their default spot, size and opacity.","Reset",()->{L().resetAll();changed();invalidate();});return;
-            case H_LIST:if(host!=null)host.choose("Select",HudLayout.NAMES,-1,k->{sel=k;invalidate();});return;
+            case H_LIST:if(host!=null)host.choose("Select",HudLayout.NAMES,-1,k->{if(k==HudLayout.CAST&&!previewCaster){previewCaster=true;hint("Previewing a spellcaster: Cast only shows for heroes with spells");}sel=k;invalidate();});return;
+            case H_CASTER:previewCaster=!previewCaster;if(!previewCaster&&sel==HudLayout.CAST)sel=-1;hint(previewCaster?"Spellcaster: Cast shows, Use and Potion make room for it":"No spells: no Cast button, Use and Potion move closer");return;
         }
         if(el==null)return;
         switch(hid){

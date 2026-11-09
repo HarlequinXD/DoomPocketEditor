@@ -27,13 +27,15 @@ final class GameHud {
      * Round buttons. {@code down[i]} lights a pressed control; {@code editing} shows every control
      * (Cast even for heroes without spells, hidden ones faintly) for the UI Editor.
      */
+    /** UI Editor: preview the buttons as a spellcaster (true) or not (false); null = the hero's own spells decide. */
+    Boolean previewCaster;
     void drawControls(Canvas c,float w,float h,Hero hero,boolean[] down,boolean editing){
-        boolean caster=hero!=null&&!hero.spells.isEmpty();
+        boolean caster=previewCaster!=null?previewCaster:hero!=null&&!hero.spells.isEmpty();
         java.util.Arrays.fill(drawn,HudLayout.ATTACK,HudLayout.JOYSTICK+1,false);
         int pots=hero==null?0:hero.potionCount();
         for(int id=HudLayout.ATTACK;id<=HudLayout.MENU;id++){
             HudLayout.Elem el=layout.e[id];
-            if(id==HudLayout.CAST&&!caster&&!editing)continue;
+            if(id==HudLayout.CAST&&!caster)continue;   // only spellcasters have a Cast button (the other buttons move to make room for it)
             if(!el.visible&&!editing)continue;
             layout.center(id,w,h,ui.dp,caster,pt);float x=pt[0],y=pt[1],rad=layout.radius(id,ui.dp);
             float a=el.visible?el.alpha:.25f;

@@ -18,9 +18,9 @@ import java.util.Map;
  */
 public class FSMGraphView extends View {
     interface Host extends UiHost {void exit();void saved();}
-    static final String[] STANDARD_EVENTS={"FINISHED","DIED","DAMAGED","TOUCHED","USED","SEE","READY","NO_AMMO","FIRE","USE","ATTACK","LOST","TRUE","FALSE"};
+    static final String[] STANDARD_EVENTS={"FINISHED","DIED","DAMAGED","TOUCHED","USED","SEE","READY","ATTACK","LOST","LOOT","CLOSED","DONE","YES","NO","TRUE","FALSE"};
 
-    private static final int H_BACK=1,H_ADD=2,H_LINK=3,H_START=4,H_DELETE=5,H_FIT=6,H_RUN=7,H_SAVE=8,H_NEWDEF=9,H_UNDO=10,H_REDO=11,
+    private static final int H_BACK=1,H_ADD=2,H_LINK=3,H_START=4,H_DELETE=5,H_FIT=6,H_RUN=7,H_SAVE=8,H_NEWDEF=9,H_UNDO=10,H_REDO=11,H_CHECK=12,
             H_NAME=20,H_ADD_ACTION=21,H_ADD_TR=23,H_ADD_GLOBAL=24,H_ACTION_BACK=25,H_ACT_UP=26,H_ACT_DOWN=27,H_ACT_TOGGLE=28,H_ACT_DEL=29,
             H_CANCEL_LINK=30,H_BROWSER_CLOSE=31,H_BROWSER_SEARCH=32,H_DUP_STATE=33,H_ANIM=34,H_EDIT_SPRITE=35,
             H_DEL_TR=100,H_ACTION=150,H_DEL_GLOBAL=200,H_PARAM=250,H_SEND=300,H_DEF=400,H_CAT=900,H_PICK=1000;
@@ -86,6 +86,26 @@ public class FSMGraphView extends View {
         for(int i=graph.nodes.size()-1;i>=0;i--){FSMGraph.Node n=graph.nodes.get(i);
             if(x>=sx(n.x)&&x<=sx(n.x+NODE_W)&&y>=sy(n.y-globalsTo(n)*TAB_H)&&y<=sy(n.y+nodeH(n)))return n;}
         return null;
+    }
+    // ---------------------------------------------------------------- check
+    private java.util.ArrayList<FsmCheck.Issue> lastIssues=new java.util.ArrayList<>();private long issuesAt;
+    /** This entity's problems, worked out at most twice a second while editing. */
+    private java.util.ArrayList<FsmCheck.Issue> issues(){long now=System.currentTimeMillis();if(now-issuesAt>500){issuesAt=now;Rpg.use(project);lastIssues=FsmCheck.check(project,def);FsmCheck.sort(lastIssues);}return lastIssues;}
+    /** Lists the problems; picking one goes to its state (and entity). With all, every entity in the project. */
+    private void showCheck(boolean all){
+        if(host==null)return;Rpg.use(project);
+        java.util.ArrayList<FsmCheck.Issue> l=all?FsmCheck.project(project):FsmCheck.check(project,def);FsmCheck.sort(l);
+        java.util.ArrayList<String> items=new java.util.ArrayList<>();
+        items.add(all?"Every entity · "+l.size()+(l.size()==1?" problem":" problems"):"Check every entity in the project…");
+        for(FsmCheck.Issue i:l)items.add((i.level==FsmCheck.ERROR?"✖ ":"⚠ ")+(all?i.def.name+" · ":"")+(i.node!=null?i.node.name+" — ":"")+i.text);
+        if(l.isEmpty())items.add(all?"No problems found in any entity.":"No problems found in "+def.name+".");
+        host.choose(all?"Project check":"Check · "+def.name,items.toArray(new String[0]),-1,k->{
+            if(k==0){if(!all)showCheck(true);return;}
+            if(k-1>=l.size())return;FsmCheck.Issue i=l.get(k-1);
+            if(i.def!=def)selectDef(i.def);
+            if(i.node!=null){selected=i.node;selectedAction=i.action;browserOpen=false;
+                float cw=(canvasR()-canvasL())/ui.dp,ch=(h-toolbarH)/ui.dp;camX=i.node.x+NODE_W*.5f-cw/zoom*.5f;camY=i.node.y+nodeH(i.node)*.5f-ch/zoom*.5f;}
+            invalidate();});
     }
     void fit(){
         if(graph.nodes.isEmpty()||w<=0)return;
@@ -258,6 +278,11 @@ public class FSMGraphView extends View {
         float sw=wide?dp(82):bh;r.set(x-sw,top,x,top+bh);ui.button(c,r,Icons.SAVE,wide?"Save":null,Ui.PRIMARY);ui.hit(r,H_SAVE);x-=sw+dp(8);
         float rw=wide?dp(78):bh;r.set(x-rw,top,x,top+bh);ui.button(c,r,sim!=null?Icons.STOP:Icons.PLAY,wide?(sim!=null?"Stop":"Run"):null,sim!=null?Ui.SUCCESS:Ui.NORMAL);ui.hit(r,H_RUN);x-=rw+dp(8);
         r.set(x-bh,top,x,top+bh);ui.button(c,r,Icons.FIT,null,Ui.NORMAL);ui.hit(r,H_FIT);x-=bh+dp(8);
+        // Check: problems in this FSM, with a badge (red for errors, amber for warnings)
+        java.util.ArrayList<FsmCheck.Issue> iss=issues();int errs=0;for(FsmCheck.Issue i:iss)if(i.level==FsmCheck.ERROR)errs++;
+        float cbw=wide?dp(84):bh;r.set(x-cbw,top,x,top+bh);ui.button(c,r,Icons.VALIDATE,wide?"Check":null,Ui.NORMAL);ui.hit(r,H_CHECK);
+        if(!iss.isEmpty()){String n=String.valueOf(iss.size());float bw2=Math.max(dp(16),ui.measure(n,10,1)+dp(8));ui.round(c,x-bw2+dp(4),top-dp(4),x+dp(4),top+dp(12),dp(8),errs>0?0xffe0483c:0xffe0a030);ui.textMid(c,n,x-bw2*.5f+dp(4),top+dp(4),10,0xffffffff,1,0);}
+        x-=cbw+dp(8);
         x=Undo.buttons(ui,c,r,undo,x,top,bh,H_UNDO,H_REDO)-dp(6);
         ui.vline(c,x+dp(6),top+dp(4),top+bh-dp(4),Ui.BORDER);
         boolean has=selected!=null,labels=w>dp(1000);
@@ -520,6 +545,7 @@ public class FSMGraphView extends View {
             case H_UNDO:case H_REDO:undoRedo(id==H_UNDO);break;
             case H_RUN:if(sim!=null)stopRun();else startRun();break;
             case H_FIT:fit();break;
+            case H_CHECK:showCheck(false);break;
             case H_CANCEL_LINK:linkFrom=null;break;
             case H_NEWDEF:newEntity();break;
             case H_ADD:{float cx=camX+(canvasR()-canvasL())*.5f/scale()-NODE_W*.5f,cy=camY+(h-toolbarH)*.4f/scale();
