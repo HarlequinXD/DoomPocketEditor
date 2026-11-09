@@ -42,6 +42,7 @@ final class Overlay extends View implements Pointer.Aware {
     private void focus(){post(()->{if(Float.isNaN(pointer.x)||!pointer.visible)return;RectF t=firstTarget();if(t!=null)pointer.jumpTo(t.centerX(),t.centerY());});}
     private RectF firstTarget(){
         for(Ui.Hit h:ui.hits)if(kind==CHOOSE&&h.id==H_ITEM+Math.max(0,selected))return h.r;
+        for(Ui.Hit h:ui.hits)if(kind==CONFIRM&&h.id==H_CANCEL)return h.r;   // a confirmation starts on Cancel, so a double press can't do it by accident
         for(Ui.Hit h:ui.hits)if(h.id==H_OK||h.id>=H_ITEM&&h.id<H_ITEM+999)return h.r;return null;}
     /** Keyboard: typed characters, Backspace, Enter, paste. */
     void typed(String s){if(kind!=PROMPT||s.isEmpty())return;for(char ch:s.toCharArray())if(ch>=32&&text.length()<MAX_TEXT&&(!numeric||"0123456789-.".indexOf(ch)>=0))text.append(ch);}

@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - desktop
   workflow_dispatch:
 
 jobs:
