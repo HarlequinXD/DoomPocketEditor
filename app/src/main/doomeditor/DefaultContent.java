@@ -93,6 +93,7 @@ final class DefaultContent {
         play.add("button_pressed").set("button","Potion").set("event","DRINK");
         play.add("button_pressed").set("button","Inventory").set("event","BAG");
         play.add("button_pressed").set("button","Jump").set("event","JUMP");
+        play.add("weapon_on_button").set("button","Weapon");   // the Switch weapon button (shown from the UI Editor's HUD page)
         play.on("ATTACK",atk).on("CAST",cast).on("USE",use).on("DRINK",drink).on("BAG",bag).on("JUMP",jump);
         controls(atk,third);atk.add("attack");atk.on("READY",play);
         controls(cast,third);cast.add("cast_spell").set("spell","Selected");cast.on("READY",play);

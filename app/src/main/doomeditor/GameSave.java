@@ -98,6 +98,7 @@ final class GameSave {
         JSONObject o=new JSONObject();o.put("class",h.cls.name);o.put("level",h.level);o.put("xp",h.xp);o.put("gold",h.gold);
         o.put("maxHp",h.maxHp);o.put("sp",h.sp);o.put("maxSp",h.maxSp);o.put("selectedSpell",h.selectedSpell);
         JSONArray sc=new JSONArray();for(int v:h.scores)sc.put(v);o.put("scores",sc);
+        JSONArray ln=new JSONArray();for(String id:h.learned)ln.put(id);o.put("learned",ln);
         JSONArray inv=new JSONArray();for(Hero.Stack s:h.inventory){JSONObject j=new JSONObject();j.put("id",s.item.id);j.put("count",s.count);inv.put(j);}o.put("inventory",inv);
         if(h.look!=null)o.put("look",h.look.toJson());
         o.put("weapon",h.weapon==null?"":h.weapon.id);o.put("armour",h.armour==null?"":h.armour.id);o.put("shield",h.shield==null?"":h.shield.id);
@@ -111,6 +112,7 @@ final class GameSave {
         h.level=Math.max(1,o.optInt("level",1));h.xp=o.optInt("xp",0);h.gold=o.optInt("gold",0);h.maxHp=Math.max(1,o.optInt("maxHp",h.maxHp));
         h.sp=o.optInt("sp",h.sp);h.maxSp=o.optInt("maxSp",h.maxSp);
         JSONArray sc=o.optJSONArray("scores");if(sc!=null)for(int i=0;i<6&&i<sc.length();i++)h.scores[i]=sc.optInt(i,h.scores[i]);
+        JSONArray ln=o.optJSONArray("learned");h.learned.clear();if(ln!=null)for(int i=0;i<ln.length();i++)h.learned.add(ln.optString(i));
         h.inventory.clear();h.weapon=h.armour=h.shield=null;
         JSONArray inv=o.optJSONArray("inventory");
         if(inv!=null)for(int i=0;i<inv.length();i++){JSONObject j=inv.optJSONObject(i);if(j==null)continue;Rpg.Item it=Rpg.item(j.optString("id"));if(it!=null)h.inventory.add(new Hero.Stack(it,Math.max(1,j.optInt("count",1))));}

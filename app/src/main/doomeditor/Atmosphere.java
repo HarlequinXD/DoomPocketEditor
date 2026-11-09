@@ -89,6 +89,7 @@ final class Atmosphere {
     }
 
     // ------------------------------------------------------------------ particles
+    static int particleIndex(String name){for(int i=0;i<PARTICLES.length;i++)if(PARTICLES[i].equalsIgnoreCase(name))return i;return 0;}
     static final String[] PARTICLES={"None","Smoke","Fire embers","Magic sparkles","Dust","Dripping water","Poison bubbles","Holy light","Flames"};
     static final int P_EMBERS=2,P_FLAMES=8;
     //                   colour      rise  spread life size gravity

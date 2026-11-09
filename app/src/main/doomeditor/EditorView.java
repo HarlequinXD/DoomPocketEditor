@@ -31,7 +31,7 @@ public class EditorView extends View {
     // Touch target ids registered while drawing.
     private static final int H_MODE=100,H_FSM=110,H_SAVE=111,H_RESET=112,H_PAGE=120,H_TOOL=200,H_APPLY=520,H_MAT=4000,
             H_RAISE=500,H_LOWER=501,H_LIGHTUP=502,H_LIGHTDN=503,H_FLY=504,H_UP=505,H_DOWN=506,H_EDITFSM3D=507,H_START3D=508,
-            H_FIRE=510,H_USE=511,H_JUMP=512,H_WEAPON=513,H_EXITPLAY=514,H_SPELL=515,H_POTION=516,H_BAG=517,H_DLG=3200,H_INV_ITEM=3300,H_INV_SPELL=3600,H_INV_CLOSE=3700,H_INV_TAB=3710,H_RETRY=530,H_BACK=531,
+            H_FIRE=510,H_USE=511,H_JUMP=512,H_WEAPON=513,H_EXITPLAY=514,H_SPELL=515,H_POTION=516,H_BAG=517,H_SPRINT=518,H_DLG=3200,H_INV_ITEM=3300,H_INV_SPELL=3600,H_INV_CLOSE=3700,H_INV_TAB=3710,H_RETRY=530,H_BACK=531,
             H_NEWDEF=590,H_LOGO=593,H_SPRITES=594,H_EDITSPRITE=813,H_ZOOMIN=591,H_ZOOMOUT=592,H_DEF=2000,H_PROP=700,H_ETOOL=800,H_EDITFSM=810,H_DUPDEF=811,H_DELDEF=812,H_EUNDO=814,H_EREDO=815;
     // Sector tools (cursor + Apply) and immediate actions.
     private static final int DRAW=1,RECT=2,PREFAB=3,STAIRS=4,SELECT=5,MOVE=6,SPLIT=7,EXTRUDE=8,DUPLICATE=9,DELETE=10,SPECIAL=11,START=12;
@@ -1334,6 +1334,7 @@ public class EditorView extends View {
         Diag.noteState(getContext(),this);
         if(world.weather>0)weather.draw(c,p,world.weather,w,h,Math.min(dt,.05f),world.camAngle(),ui.dp);
         if(mapFade>0){ui.rect(c,0,0,w,h,((int)(Math.min(1,mapFade)*255))<<24);mapFade-=dt*2.2f;}
+        if(world.fade>0)ui.rect(c,0,0,w,h,((int)(Math.min(1,world.fade)*255))<<24);   // Fade Screen
         if(tp&&pl.alive){float mx=w*.5f,my=h*.5f;p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(1.5f));p.setColor(0xccffffff);
             c.drawCircle(mx,my,dp(6),p);p.setStyle(Paint.Style.FILL);c.drawCircle(mx,my,dp(1.5f),p);}
         drawFloaters(c);
@@ -1388,16 +1389,23 @@ public class EditorView extends View {
         for(World.Floater f:world.floaters){if(!renderer.project(f.x,f.y,f.z,view3d,proj))continue;
             float a=Math.max(0,Math.min(1,(1.1f-f.t)*2.5f));float sz=Math.max(11,Math.min(22,proj[2]*h/ui.dp(1)*.32f));
             int al=(int)(a*255);ui.text(c,f.text,proj[0]+dp(1),proj[1]+dp(1),sz,(al<<24),2,0);ui.text(c,f.text,proj[0],proj[1],sz,(al<<24)|(f.color&0xffffff),2,0);}
+        // speech bubbles (Say Over Head): a rounded box with a tail, fading in and out
+        for(World.Bubble b:world.bubbles){Actor a=b.a;if(!a.visible||!renderer.project(a.x,a.y,a.z+a.height+.35f,view3d,proj))continue;
+            float al=Math.min(1,Math.min(b.t*6,(b.life-b.t)*3));if(al<=0)continue;String t=ui.ellipsize(b.text,13,1,dp(260));
+            float tw=ui.measure(t,13,1)+dp(20),bx=Math.max(dp(4),Math.min(w-tw-dp(4),proj[0]-tw*.5f)),by=proj[1]-dp(34);
+            int bg=((int)(al*235)<<24)|0xf4efe4,fg=((int)(al*255)<<24)|0x1a1410;
+            ui.round(c,bx,by,bx+tw,by+dp(26),dp(10),bg);path.reset();path.moveTo(proj[0]-dp(6),by+dp(25));path.lineTo(proj[0]+dp(6),by+dp(25));path.lineTo(proj[0],by+dp(33));path.close();p.setColor(bg);p.setShader(null);p.setStyle(Paint.Style.FILL);c.drawPath(path,p);
+            ui.textMid(c,t,bx+tw*.5f,by+dp(13),13,fg,1,0);}
     }
     // ---------------------------------------------------------------- HUD from the UI Editor layout
     private GameHud hud;private final boolean[] hudDown=new boolean[HudLayout.N];
     private GameHud hud(){
-        if(hud==null){hud=new GameHud(ui,project.hud);hud.hitIds=new int[]{H_FIRE,H_SPELL,H_JUMP,H_USE,H_POTION,H_BAG,H_EXITPLAY,-1,-1,-1,-1};}
+        if(hud==null){hud=new GameHud(ui,project.hud);hud.hitIds=new int[]{H_FIRE,H_SPELL,H_JUMP,H_USE,H_POTION,H_BAG,H_EXITPLAY,-1,-1,-1,-1,-1,H_WEAPON,H_SPRINT};}
         hud.layout=project.hud;hud.theme=project.theme;return hud;
     }
     private void drawPlayControls(Canvas c){
         hudDown[HudLayout.ATTACK]=buttonPointer[Input.FIRE]>=0;hudDown[HudLayout.CAST]=buttonPointer[Input.SPELL]>=0;hudDown[HudLayout.JUMP]=buttonPointer[Input.JUMP]>=0;
-        hudDown[HudLayout.USE]=buttonPointer[Input.USE]>=0;hudDown[HudLayout.POTION]=buttonPointer[Input.POTION]>=0;hudDown[HudLayout.BAG]=buttonPointer[Input.MENU]>=0;
+        hudDown[HudLayout.USE]=buttonPointer[Input.USE]>=0;hudDown[HudLayout.POTION]=buttonPointer[Input.POTION]>=0;hudDown[HudLayout.BAG]=buttonPointer[Input.MENU]>=0;hudDown[HudLayout.SWAP]=buttonPointer[Input.WEAPON]>=0;hudDown[HudLayout.SPRINT]=buttonPointer[Input.ALT]>=0;
         GameHud g=hud();
         // joystick: floating fades out after release; a fixed one always shows its base
         if(g.layout.joyFixed){float[] jc=g.joyCenter(w,h);
@@ -1757,7 +1765,7 @@ public class EditorView extends View {
             if(world.dialogue!=null){if(hid>=H_DLG&&hid<H_DLG+8)world.chooseDialogue(hid-H_DLG);return true;}
             if(hid==H_EXITPLAY){pauseToMenu();return true;}
             if(hid==H_BAG){if(!fsmListens("Inventory")){openBag();return true;}buttonPointer[Input.MENU]=id;world.input.setButton(Input.MENU,true);return true;}   // the hero's FSM decides (On Button Pressed: Inventory)
-            int b=hid==H_FIRE?Input.FIRE:hid==H_USE?Input.USE:hid==H_JUMP?Input.JUMP:hid==H_WEAPON?Input.WEAPON:hid==H_SPELL?Input.SPELL:hid==H_POTION?Input.POTION:-1;
+            int b=hid==H_FIRE?Input.FIRE:hid==H_USE?Input.USE:hid==H_JUMP?Input.JUMP:hid==H_WEAPON?Input.WEAPON:hid==H_SPRINT?Input.ALT:hid==H_SPELL?Input.SPELL:hid==H_POTION?Input.POTION:-1;
             if(b>=0){buttonPointer[b]=id;world.input.setButton(b,true);return true;}
             GameHud g=hud();boolean joyHit;
             if(g.layout.joyFixed){float[] jc=g.joyCenter(w,h);joyHit=Math.hypot(x-jc[0],y-jc[1])<g.layout.radius(HudLayout.JOYSTICK,ui.dp)*1.6f;

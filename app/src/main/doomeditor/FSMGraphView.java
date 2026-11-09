@@ -446,48 +446,114 @@ public class FSMGraphView extends View {
     }
 
     // ---------------------------------------------------------------- action browser
+    private float detailFrom;
+    private void addAction(Actions.Spec s){selected.actions.add(new FSMGraph.Action(s.id));selectedAction=selected.actions.size()-1;browserOpen=false;detail=null;inspScroll=0;}
     private void refreshBrowser(){
         browserList.clear();
         if(!browserQuery.isEmpty())browserList.addAll(Actions.search(browserQuery));
         else browserList.addAll(Actions.inCategory(browserCat<0?null:Actions.CATEGORIES[browserCat]));
     }
+    // The catalogue: every action by category (the column scrolls), cards that scroll and fling, an info page per
+    // action that says how it runs, what it sends and what its settings do, and Add from either.
+    private float catScroll,catMax,browserMax,flingV;private long flingAt;private final RectF catBox=new RectF(),listBox=new RectF();
+    private Actions.Spec detail;private float velY;private long lastMoveT;
+    private static final int H_INFO=1400,H_DETAIL_ADD=1300,H_DETAIL_BACK=1301;
+    /** Actions that keep going for a while and then finish by themselves (the rest finish at once, or never: FsmCheck.ENDLESS). */
+    private static final java.util.Set<String> WAITS=new java.util.HashSet<>(java.util.Arrays.asList("wait","random_wait","send_event","play_animation","wait_animation","attack","cast_spell",
+            "say","talk","show_popup","open_shop","play_sound_wait","raise_floor","lower_floor","move_ceiling","fade_sector_light","move_towards","look_for_player","weapon_ready_event",
+            "next_frame_event","wait_for_flag","time_limit","flee","move_to_position","fade_screen","face_camera"));
+    static String howItRuns(Actions.Spec s){
+        if(FsmCheck.ENDLESS.contains(s.id))return "Keeps running every frame while its state is active, so the state never finishes by itself: leave it with an event (a button, a timer, DAMAGED…).";
+        if(WAITS.contains(s.id))return "Runs for a while (until it is done), then counts as finished. When every action in the state has finished, the state sends FINISHED.";
+        if(s.param("everyFrame")!=null)return "Runs once when the state starts, or every frame while the state is active if Every Frame is on (then the state won't finish by itself).";
+        return "Runs once, the moment the state starts, and counts as finished straight away.";
+    }
     private void drawBrowser(Canvas c){
-        float L=canvasL()+dp(10),R=w-dp(10),T=toolbarH+dp(10),B=h-dp(10);
-        ui.rect(c,canvasL(),toolbarH,w,h,0x99000000);
+        float L=dp(8),R=w-dp(8),T=toolbarH+dp(8),B=h-dp(8);
+        ui.rect(c,0,toolbarH,w,h,0xb0000000);
         ui.round(c,L,T+dp(3),R,B+dp(3),dp(12),0x66000000);ui.panel(c,L,T,R,B,dp(12));
+        // fling
+        long now=System.nanoTime();if(flingV!=0&&scrollZone!=4){float dt=Math.min(.05f,(now-flingAt)*1e-9f);browserScroll+=flingV*dt;flingV*=(float)Math.pow(.04,dt);if(Math.abs(flingV)<dp(20))flingV=0;postInvalidateOnAnimation();}flingAt=now;
         // header
-        ui.text(c,"Add Action",L+dp(16),T+dp(28),15,Ui.TEXT,1,-1);
-        ui.text(c,"to "+(selected==null?"":selected.name),L+dp(16)+ui.measure("Add Action",15,1)+dp(8),T+dp(28),12,Ui.TEXT_3);
-        r.set(R-dp(44),T+dp(8),R-dp(8),T+dp(40));ui.button(c,r,Icons.CANCEL,null,Ui.GHOST);ui.hit(r,H_BROWSER_CLOSE);
-        float sw=Math.min(dp(260),(R-L)*.4f);r.set(R-dp(52)-sw,T+dp(8),R-dp(52),T+dp(40));ui.round(c,r,dp(8),Ui.BG);ui.outline(c,r,dp(8),Ui.BORDER,dp(1));
-        ui.icon(c,Icons.SEARCH,r.left+dp(16),r.centerY(),14,Ui.TEXT_3);ui.textMid(c,browserQuery.isEmpty()?"Search "+Actions.visibleCount()+" actions":browserQuery,r.left+dp(30),r.centerY(),12.5f,browserQuery.isEmpty()?Ui.TEXT_3:Ui.TEXT,browserQuery.isEmpty()?0:1,-1);ui.hit(r,H_BROWSER_SEARCH);
-        ui.hline(c,L,R,T+dp(48),Ui.BORDER);
-        // categories
-        float cw=Math.max(dp(120),Math.min(dp(170),(R-L)*.26f)),ct=T+dp(56),rowH=dp(30);
-        for(int i=-1;i<Actions.CATEGORIES.length;i++){float y=ct+(i+1)*rowH;if(y+rowH>B)break;
-            boolean on=browserQuery.isEmpty()&&browserCat==i;r.set(L+dp(8),y,L+cw,y+rowH-dp(3));
+        float hh=dp(46);
+        ui.text(c,"Actions",L+dp(16),T+dp(28),15,Ui.TEXT,1,-1);
+        ui.text(c,ui.ellipsize("to "+(selected==null?"":selected.name),12,0,dp(140)),L+dp(16)+ui.measure("Actions",15,1)+dp(8),T+dp(28),12,Ui.TEXT_3);
+        r.set(R-dp(44),T+dp(6),R-dp(8),T+dp(40));ui.button(c,r,Icons.CANCEL,null,Ui.GHOST);ui.hit(r,H_BROWSER_CLOSE);
+        float sw=Math.min(dp(260),(R-L)*.38f);r.set(R-dp(52)-sw,T+dp(6),R-dp(52),T+dp(40));ui.round(c,r,dp(8),Ui.BG);ui.outline(c,r,dp(8),Ui.BORDER,dp(1));
+        ui.icon(c,Icons.SEARCH,r.left+dp(16),r.centerY(),14,Ui.TEXT_3);ui.textMid(c,ui.ellipsize(browserQuery.isEmpty()?"Search "+Actions.visibleCount()+" actions":browserQuery,12.5f,0,sw-dp(40)),r.left+dp(30),r.centerY(),12.5f,browserQuery.isEmpty()?Ui.TEXT_3:Ui.TEXT,browserQuery.isEmpty()?0:1,-1);ui.hit(r,H_BROWSER_SEARCH);
+        ui.hline(c,L,R,T+hh,Ui.BORDER);
+        // categories: a column of its own that scrolls
+        float cw=Math.max(dp(128),Math.min(dp(176),(R-L)*.24f)),ct=T+hh+dp(6),rowH=dp(32);catBox.set(L,ct,L+cw+dp(8),B-dp(4));
+        catMax=Math.max(0,(Actions.CATEGORIES.length+1)*rowH-(catBox.height()-dp(6)));catScroll=Math.max(0,Math.min(catMax,catScroll));
+        int save=c.save();c.clipRect(catBox);
+        for(int i=-1;i<Actions.CATEGORIES.length;i++){float y=ct+(i+1)*rowH-catScroll;if(y+rowH<ct||y>B)continue;
+            boolean on=browserQuery.isEmpty()&&browserCat==i&&detail==null;r.set(L+dp(8),y,L+cw,y+rowH-dp(3));
             if(on)ui.round(c,r,dp(6),Ui.ACCENT_SOFT);
             String name=i<0?"All actions":Actions.CATEGORIES[i];int count=i<0?Actions.visibleCount():Actions.inCategory(name).size();
             ui.icon(c,i<0?Icons.LIST:Actions.CATEGORY_ICONS[i],r.left+dp(14),r.centerY(),13,on?0xff8fbcff:Ui.TEXT_3);
-            ui.textMid(c,name,r.left+dp(28),r.centerY(),12,on?Ui.TEXT:Ui.TEXT_2,1,-1);ui.textMid(c,String.valueOf(count),r.right-dp(8),r.centerY(),10.5f,Ui.TEXT_3,1,1);
-            ui.hit(r,H_CAT+i+1);}
-        ui.vline(c,L+cw+dp(8),T+dp(48),B,Ui.BORDER);
-        // list
-        float lx=L+cw+dp(18),lr=R-dp(12),lt=T+dp(56),cardH=dp(52);
-        int cols=lr-lx>dp(460)?2:1;float colW=(lr-lx-(cols-1)*dp(8))/cols;
-        int rows=(browserList.size()+cols-1)/cols;float maxScroll=Math.max(0,rows*(cardH+dp(6))-(B-lt)+dp(6));browserScroll=Math.max(0,Math.min(maxScroll,browserScroll));
-        int save=c.save();c.clipRect(lx-dp(2),lt,lr+dp(2),B-dp(2));
-        for(int i=0;i<browserList.size();i++){Actions.Spec s=browserList.get(i);int col=i%cols,row=i/cols;
-            float x=lx+col*(colW+dp(8)),y=lt+row*(cardH+dp(6))-browserScroll;if(y+cardH<lt||y>B)continue;
-            r.set(x,y,x+colW,y+cardH);ui.round(c,r,dp(8),Ui.SURFACE_2);ui.outline(c,r,dp(8),0x14ffffff,dp(1));
-            ui.round(c,x+dp(8),y+dp(10),x+dp(40),y+dp(42),dp(7),Ui.BG);ui.icon(c,s.icon,x+dp(24),y+dp(26),16,0xff8fbcff);
-            ui.text(c,ui.ellipsize(s.name,12.5f,1,colW-dp(110)),x+dp(50),y+dp(22),12.5f,Ui.TEXT,1,-1);
-            ui.textMid(c,s.category,x+colW-dp(10),y+dp(17),9.5f,Ui.TEXT_3,1,1);
-            ui.text(c,ui.ellipsize(s.desc,10.5f,0,colW-dp(60)),x+dp(50),y+dp(39),10.5f,Ui.TEXT_3);
-            float vt=Math.max(lt,y),vb=Math.min(B,y+cardH);if(vb>vt)ui.hit(x,vt,x+colW,vb,H_PICK+i);}
-        if(browserList.isEmpty())ui.text(c,"No actions match \""+browserQuery+"\"",lx,lt+dp(24),12.5f,Ui.TEXT_3);
+            ui.textMid(c,ui.ellipsize(name,12,1,cw-dp(70)),r.left+dp(28),r.centerY(),12,on?Ui.TEXT:Ui.TEXT_2,1,-1);ui.textMid(c,String.valueOf(count),r.right-dp(8),r.centerY(),10.5f,Ui.TEXT_3,1,1);
+            float vt=Math.max(ct,r.top),vb=Math.min(catBox.bottom,r.bottom);if(vb>vt)ui.hit(r.left,vt,r.right,vb,H_CAT+i+1);}
         c.restoreToCount(save);
+        if(catMax>0)scrollFades(c,catBox,catScroll,catMax,Ui.SURFACE);
+        ui.vline(c,L+cw+dp(8),T+hh,B,Ui.BORDER);
+        // the list (or one action's page)
+        float lx=L+cw+dp(18),lr=R-dp(14),lt=T+hh+dp(6);listBox.set(lx-dp(6),lt,R,B-dp(4));
+        save=c.save();c.clipRect(lx-dp(2),lt,lr+dp(10),B-dp(4));
+        float content=detail!=null?drawDetail(c,lx,lr,lt):drawCards(c,lx,lr,lt,B);
+        c.restoreToCount(save);
+        browserMax=Math.max(0,content-(B-dp(4)-lt));if(browserScroll>browserMax||browserScroll<0){browserScroll=Math.max(0,Math.min(browserMax,browserScroll));flingV=0;}
+        if(browserMax>0){scrollFades(c,listBox,browserScroll,browserMax,Ui.SURFACE);
+            float vh=B-dp(4)-lt,bh=Math.max(dp(24),vh*vh/(vh+browserMax)),by=lt+(vh-bh)*browserScroll/browserMax;ui.round(c,lr+dp(5),by,lr+dp(8),by+bh,dp(2),0x80ffffff);}
     }
+    /** Soft edges where a list continues above or below. */
+    private void scrollFades(Canvas c,RectF box,float scroll,float max,int col){
+        int cc=col&0xffffff;
+        if(scroll>1){p.setShader(new android.graphics.LinearGradient(0,box.top,0,box.top+dp(18),0xff000000|cc,cc,android.graphics.Shader.TileMode.CLAMP));c.drawRect(box.left,box.top,box.right-dp(1),box.top+dp(18),p);p.setShader(null);}
+        if(scroll<max-1){p.setShader(new android.graphics.LinearGradient(0,box.bottom-dp(22),0,box.bottom,cc,0xff000000|cc,android.graphics.Shader.TileMode.CLAMP));c.drawRect(box.left,box.bottom-dp(22),box.right-dp(1),box.bottom,p);p.setShader(null);}
+    }
+    /** Category help, then the action cards; returns the content height. */
+    private float drawCards(Canvas c,float lx,float lr,float lt,float B){
+        float y=lt-browserScroll;
+        if(browserQuery.isEmpty()&&browserCat>=0&&browserCat<Actions.CATEGORY_HELP.length){
+            for(String line:wrap(Actions.CATEGORY_HELP[browserCat],11.5f,0,lr-lx)){ui.text(c,line,lx,y+dp(14),11.5f,Ui.TEXT_2);y+=dp(16);}y+=dp(8);}
+        else if(browserQuery.isEmpty()){ui.text(c,"Tap an action to add it, or ⓘ to see how it works.",lx,y+dp(14),11.5f,Ui.TEXT_2);y+=dp(24);}
+        float cardH=dp(56);int cols=lr-lx>dp(460)?2:1;float colW=(lr-lx-(cols-1)*dp(8))/cols;float top=y;
+        for(int i=0;i<browserList.size();i++){Actions.Spec s=browserList.get(i);int col=i%cols,row=i/cols;
+            float x=lx+col*(colW+dp(8)),cy=top+row*(cardH+dp(6));if(cy+cardH<lt||cy>B)continue;
+            r.set(x,cy,x+colW,cy+cardH);ui.round(c,r,dp(8),Ui.SURFACE_2);ui.outline(c,r,dp(8),0x14ffffff,dp(1));
+            ui.round(c,x+dp(8),cy+dp(12),x+dp(40),cy+dp(44),dp(7),Ui.BG);ui.icon(c,s.icon,x+dp(24),cy+dp(28),16,0xff8fbcff);
+            ui.text(c,ui.ellipsize(s.name,12.5f,1,colW-(browserQuery.isEmpty()&&browserCat>=0?dp(96):dp(130))),x+dp(50),cy+dp(23),12.5f,Ui.TEXT,1,-1);
+            if(!browserQuery.isEmpty()||browserCat<0)ui.textMid(c,s.category,x+colW-dp(44),cy+dp(18),9.5f,Ui.TEXT_3,1,1);   // the category only when mixed
+            ui.text(c,ui.ellipsize(s.desc,10.5f,0,colW-dp(96)),x+dp(50),cy+dp(41),10.5f,Ui.TEXT_3);
+            float vt=Math.max(lt,cy),vb=Math.min(B,cy+cardH);
+            if(vb>vt)ui.hit(x,vt,x+colW-dp(42),vb,H_PICK+i);
+            r.set(x+colW-dp(40),cy+dp(10),x+colW-dp(6),cy+cardH-dp(10));ui.button(c,r,Icons.INFO,null,Ui.GHOST);if(vb>vt)ui.hit(r.left,Math.max(vt,r.top),r.right,Math.min(vb,r.bottom),H_INFO+i);}
+        if(browserList.isEmpty())ui.text(c,"No actions match \""+browserQuery+"\"",lx,top+dp(24),12.5f,Ui.TEXT_3);
+        int rows=(browserList.size()+cols-1)/cols;return (top-(lt-browserScroll))+rows*(cardH+dp(6))+dp(8);
+    }
+    /** One action's page: what it does, how it runs, its settings and events. Returns the content height. */
+    private float drawDetail(Canvas c,float lx,float lr,float lt){
+        Actions.Spec s=detail;float y=lt-browserScroll,wd=lr-lx;
+        r.set(lx,y+dp(4),lx+dp(90),y+dp(34));ui.button(c,r,Icons.ARROW_LEFT,"Back",Ui.GHOST);ui.hit(r,H_DETAIL_BACK);
+        r.set(lr-dp(150),y+dp(4),lr,y+dp(34));ui.button(c,r,Icons.PLUS,selected==null?"Add":"Add to "+ui.ellipsize(selected.name,12,1,dp(70)),selected==null?Ui.DISABLED:Ui.PRIMARY);ui.hit(r,H_DETAIL_ADD);y+=dp(44);
+        ui.round(c,lx,y,lx+dp(40),y+dp(40),dp(8),Ui.BG);ui.icon(c,s.icon,lx+dp(20),y+dp(20),20,0xff8fbcff);
+        ui.text(c,s.name,lx+dp(52),y+dp(18),16,Ui.TEXT,1,-1);ui.text(c,s.category,lx+dp(52),y+dp(35),11,Ui.TEXT_3,1,-1);y+=dp(52);
+        for(String line:wrap(s.desc,12.5f,0,wd)){ui.text(c,line,lx,y+dp(15),12.5f,Ui.TEXT);y+=dp(19);}y+=dp(8);
+        ui.caption(c,"How it runs",lx,y+dp(12),Ui.TEXT_3);y+=dp(18);
+        for(String line:wrap(howItRuns(s),11.5f,0,wd)){ui.text(c,line,lx,y+dp(14),11.5f,Ui.TEXT_2);y+=dp(17);}y+=dp(8);
+        java.util.ArrayList<Actions.Param> evs=new java.util.ArrayList<>(),set=new java.util.ArrayList<>();for(Actions.Param pr:s.params)(pr.type==Actions.T_EVENT?evs:set).add(pr);
+        if(!set.isEmpty()){ui.caption(c,"Settings",lx,y+dp(12),Ui.TEXT_3);y+=dp(18);
+            for(Actions.Param pr:set){String def=pr.def.isEmpty()?(pr.key.equals("speed")?"the entity's Speed":"empty"):pr.def;
+                ui.text(c,pr.label,lx,y+dp(14),12,Ui.TEXT,1,-1);ui.text(c,ui.ellipsize((pr.type==Actions.T_CHOICE?"":typeName(pr)+" · ")+"default "+def+(pr.type==Actions.T_CHOICE?"  ("+typeName(pr)+")":""),11,0,wd-dp(130)),lx+dp(130),y+dp(14),11,Ui.TEXT_3);y+=dp(20);}y+=dp(6);}
+        if(!evs.isEmpty()){ui.caption(c,"Events it can send",lx,y+dp(12),Ui.TEXT_3);y+=dp(18);
+            for(Actions.Param pr:evs){ui.text(c,pr.label,lx,y+dp(14),12,Ui.TEXT,1,-1);ui.text(c,pr.def.isEmpty()?"(none until you name one)":pr.def,lx+dp(130),y+dp(14),11,pr.def.isEmpty()?Ui.TEXT_3:0xff8fbcff,1,-1);y+=dp(20);}
+            for(String line:wrap("Give a state a transition on that event to react to it; an event with no transition is ignored and the next actions carry on.",11,0,wd)){ui.text(c,line,lx,y+dp(14),11,Ui.TEXT_3);y+=dp(16);}}
+        return y+browserScroll-lt+dp(12);
+    }
+    private static String typeName(Actions.Param p){switch(p.type){case Actions.T_FLOAT:return "number (or a variable)";case Actions.T_INT:return "whole number";case Actions.T_BOOL:return "on / off";case Actions.T_VAR:return "variable name";
+        case Actions.T_CHOICE:{StringBuilder b=new StringBuilder();for(String o:p.options){if(b.length()>0)b.append(" / ");b.append(o);}return b.toString();}case Actions.T_ENTITY:return "entity type";case Actions.T_ITEM:return "item";case Actions.T_SPELL:return "spell";case Actions.T_SOUND:return "sound";case Actions.T_SONG:return "song";
+        case Actions.T_SECTOR:return "sector";case Actions.T_MAP:return "map";case Actions.T_QUEST:return "quest";case Actions.T_TALK:return "conversation";case Actions.T_LOOT:return "loot table";case Actions.T_SHOP:return "shop";
+        case Actions.T_CLASS:return "class";case Actions.T_MATERIAL:return "texture";case Actions.T_CLIP:return "animation clip";default:return "text";}}
 
     // ---------------------------------------------------------------- touch
     @Override public boolean onTouchEvent(MotionEvent e){
@@ -495,7 +561,7 @@ public class FSMGraphView extends View {
         if(a==MotionEvent.ACTION_DOWN){
             downX=lastX=x;downY=lastY=y;moved=false;panning=false;dragNode=null;pinchDist=0;scrollZone=0;
             downHit=ui.hitAt(x,y);
-            if(browserOpen){scrollZone=4;return true;}
+            if(browserOpen){scrollZone=catBox.contains(x,y)?5:4;flingV=0;velY=0;lastMoveT=System.nanoTime();return true;}
             if(x<canvasL()&&y>toolbarH){scrollZone=1;return true;}
             if(x>=canvasR()&&y>toolbarH){scrollZone=2;return true;}
             if(downHit>=0||y<toolbarH)return true;
@@ -514,7 +580,9 @@ public class FSMGraphView extends View {
                 camX=wx-(mx-canvasL())/scale();camY=wy-(my-toolbarH)/scale();camX-=(mx-lastX)/scale();camY-=(my-lastY)/scale();lastX=mx;lastY=my;invalidate();return true;}
             if(Math.abs(x-downX)+Math.abs(y-downY)>dp(7))moved=true;
             if(moved){
-                if(scrollZone==1)defScroll-=y-lastY;else if(scrollZone==2)inspScroll-=y-lastY;else if(scrollZone==4)browserScroll-=y-lastY;
+                if(scrollZone==1)defScroll-=y-lastY;else if(scrollZone==2)inspScroll-=y-lastY;
+                else if(scrollZone==4){browserScroll-=y-lastY;long t=System.nanoTime();float dts=Math.max(1e-3f,(t-lastMoveT)*1e-9f);velY=velY*.6f+(-(y-lastY)/dts)*.4f;lastMoveT=t;}
+                else if(scrollZone==5)catScroll-=y-lastY;
                 else if(dragNode!=null){dragNode.x+=(x-lastX)/scale();dragNode.y+=(y-lastY)/scale();}
                 else if(panning){camX-=(x-lastX)/scale();camY-=(y-lastY)/scale();}
                 invalidate();}
@@ -525,14 +593,18 @@ public class FSMGraphView extends View {
             else if(!moved&&browserOpen&&downHit<0){float L=canvasL()+dp(10),T=toolbarH+dp(10);if(x<L||y<T||x>w-dp(10)||y>h-dp(10))browserOpen=false;}
             else if(dragNode!=null&&moved){dragNode.x=Math.round(dragNode.x/8f)*8f;dragNode.y=Math.round(dragNode.y/8f)*8f;}
             else if(panning&&!moved){selected=null;selectedAction=-1;}
+            if(scrollZone==4&&moved&&System.nanoTime()-lastMoveT<120_000_000L){flingV=Math.max(-dp(4000),Math.min(dp(4000),velY));flingAt=System.nanoTime();}   // let the list glide
             dragNode=null;panning=false;downHit=-1;scrollZone=0;undo.commit();invalidate();return true;
         }
         if(a==MotionEvent.ACTION_CANCEL){dragNode=null;panning=false;downHit=-1;scrollZone=0;return true;}
         return true;
     }
     private void action(int id){
-        if(id>=H_PICK){int i=id-H_PICK;if(i<browserList.size()&&selected!=null){selected.actions.add(new FSMGraph.Action(browserList.get(i).id));selectedAction=selected.actions.size()-1;browserOpen=false;inspScroll=0;}return;}
-        if(id>=H_CAT){browserCat=id-H_CAT-1;browserQuery="";browserScroll=0;refreshBrowser();return;}
+        if(id>=H_INFO){int i=id-H_INFO;if(i<browserList.size()){detail=browserList.get(i);detailFrom=browserScroll;browserScroll=0;flingV=0;}return;}
+        if(id==H_DETAIL_BACK){detail=null;browserScroll=detailFrom;return;}
+        if(id==H_DETAIL_ADD){if(detail!=null&&selected!=null){addAction(detail);}return;}
+        if(id>=H_PICK&&id<H_PICK+300){int i=id-H_PICK;if(i<browserList.size()&&selected!=null)addAction(browserList.get(i));return;}
+        if(id>=H_CAT&&id<H_PICK){browserCat=id-H_CAT-1;browserQuery="";browserScroll=0;flingV=0;detail=null;refreshBrowser();return;}
         if(id>=H_DEF){int i=id-H_DEF;if(i<project.defs.size())selectDef(project.defs.get(i));return;}
         if(id>=H_SEND){int i=id-H_SEND;if(i<sendEvents.size()&&simActor!=null&&simActor.fsm!=null)simActor.fsm.send(sendEvents.get(i));return;}
         if(id>=H_PARAM){editParam(id-H_PARAM);return;}
@@ -557,9 +629,9 @@ public class FSMGraphView extends View {
             case H_DELETE:if(selected!=null){FSMGraph.Node node=selected;Runnable go=()->{graph.remove(node);if(linkFrom==node)linkFrom=null;selected=null;selectedAction=-1;invalidate();};
                 if(host!=null&&!node.actions.isEmpty())host.confirm("Delete state "+node.name+"?","Its "+node.actions.size()+" action(s) and transitions will be removed.","Delete",go);else go.run();}break;
             case H_NAME:if(selected!=null&&host!=null){FSMGraph.Node n=selected;host.prompt("Rename state",null,n.name,false,t->{if(!t.trim().isEmpty())n.name=t.trim();});}break;
-            case H_ADD_ACTION:if(selected!=null){browserOpen=true;browserScroll=0;refreshBrowser();}break;
+            case H_ADD_ACTION:if(selected!=null){browserOpen=true;browserScroll=0;detail=null;flingV=0;refreshBrowser();}break;
             case H_BROWSER_CLOSE:browserOpen=false;break;
-            case H_BROWSER_SEARCH:if(host!=null)host.prompt("Search actions","Try: light, door, damage, chase, button…",browserQuery,false,t->{browserQuery=t.trim();browserScroll=0;refreshBrowser();invalidate();});break;
+            case H_BROWSER_SEARCH:if(host!=null)host.prompt("Search actions","Try: light, door, damage, chase, poison, follow…",browserQuery,false,t->{browserQuery=t.trim();browserScroll=0;detail=null;refreshBrowser();invalidate();});break;
             case H_ADD_GLOBAL:if(selected!=null){FSMGraph.Node n=selected;pickEvent("Global event to "+n.name,"",ev->{if(!ev.isEmpty())graph.globals.put(ev,n.id);});}break;
             case H_ACTION_BACK:selectedAction=-1;inspScroll=0;break;
             case H_ANIM:if(selected!=null)chooseStateAnimation(selected);break;

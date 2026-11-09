@@ -15,6 +15,8 @@ final class Hero {
     static final class Stack {final Rpg.Item item;int count;Stack(Rpg.Item i,int c){item=i;count=c;}}
     final ArrayList<Stack> inventory=new ArrayList<>();
     final ArrayList<Rpg.Spell> spells=new ArrayList<>();
+    /** Spells learned outside the class list (Learn Spell action, scrolls of learning): kept through level-ups. */
+    final ArrayList<String> learned=new ArrayList<>();
     int selectedSpell;
     float wardTime;int wardAC;
     int kills;
@@ -74,6 +76,7 @@ final class Hero {
     void refreshSpells(){
         spells.clear();
         for(String id:cls.spells){Rpg.Spell s=Rpg.spell(id);if(s!=null&&level>=Rpg.levelForSpell(s))spells.add(s);}
+        for(String id:learned){Rpg.Spell s=Rpg.spell(id);if(s!=null&&!spells.contains(s))spells.add(s);}
         if(selectedSpell>=spells.size())selectedSpell=0;
     }
     Rpg.Spell currentSpell(){return spells.isEmpty()?null:spells.get(Math.max(0,Math.min(spells.size()-1,selectedSpell)));}

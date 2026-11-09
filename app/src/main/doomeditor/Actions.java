@@ -13,8 +13,29 @@ final class Actions {
     static final int T_FLOAT=0,T_INT=1,T_BOOL=2,T_TEXT=3,T_EVENT=4,T_VAR=5,T_CHOICE=6,T_ENTITY=7,T_MATERIAL=8,T_SECTOR=9,T_CLIP=10,T_SOUND=11,T_SONG=12,T_MAP=13,T_ITEM=14,T_SPELL=15,T_CLASS=16,T_LOOT=17,T_SHOP=18,T_TALK=19,T_QUEST=20;
     static final int DONE=0,RUNNING=1;
     static final String CAM_STYLES="Orbit|Shoulder|Chase";
-    static final String[] CATEGORIES={"Flow","Animation","Variables","Input","Combat","Character","Inventory","Dialogue","Quests","Health","Movement","Camera","AI","World","Entities","Feedback","Audio"};
-    static final int[] CATEGORY_ICONS={Icons.GRAPH,Icons.FILM,Icons.TAG,Icons.MOVE,Icons.SWORD,Icons.PERSON,Icons.PACKAGE,Icons.CHAT,Icons.SCROLL,Icons.HEART,Icons.ARROW_UP,Icons.CAMERA,Icons.SKULL,Icons.LAYERS,Icons.ENTITIES,Icons.INFO,Icons.SPEAKER};
+    static final String[] CATEGORIES={"Flow","Timing","Animation","Variables","Input","Combat","Effects","Character","Inventory","Dialogue","Quests","Health","Movement","AI","Camera","World","Entities","Feedback","Audio"};
+    static final int[] CATEGORY_ICONS={Icons.GRAPH,Icons.CLOCK,Icons.FILM,Icons.TAG,Icons.MOVE,Icons.SWORD,Icons.SPARKLE,Icons.PERSON,Icons.PACKAGE,Icons.CHAT,Icons.SCROLL,Icons.HEART,Icons.ARROW_UP,Icons.SKULL,Icons.CAMERA,Icons.LAYERS,Icons.ENTITIES,Icons.INFO,Icons.SPEAKER};
+    /** What each catalogue is for, shown above its list in the action browser. */
+    static final String[] CATEGORY_HELP={
+        "Move between states: wait, then send an event; pick at random; tell other entities. A state ends when an action sends an event it has a transition for, or sends FINISHED when every action is done.",
+        "Cooldowns, do-once gates, waiting for a flag, slow motion and hit stops.",
+        "Play the entity's clips, wait for them, and react to the frame where a blow lands.",
+        "Numbers and flags. Name a variable to keep it on this entity; start it with g. (g.bossDead) to share it with every entity and keep it across maps.",
+        "The hero's controls: joystick, touch look and the on-screen buttons. These keep running while their state is active.",
+        "d20 combat: the hero's attacks and spells, creature attacks against armour class, dice, checks and saving throws.",
+        "Status effects on the hero or a creature for some seconds: haste, slow, regenerate, poison, burning, stoneskin, invisible.",
+        "The hero's level, XP, abilities, spells and rest.",
+        "Items, gold, keys, loot tables and shops.",
+        "Conversation boxes: Say / Ask for a quick question, Talk for a tree from the Dialogue editor.",
+        "Quests: Begin / Stage / Finish use the quests from the Dialogue editor's Quests tab; the (simple) ones are defined right in the action.",
+        "Hit points: heal, hurt, kill, invulnerability and health checks.",
+        "Walking, chasing, wandering, following, fleeing and patrolling. A speed left empty uses the entity's Speed (and haste, slow and the hero's race).",
+        "Seeing the player, picking targets, distance checks and keeping range. Flat attacks ignore armour class; creatures should use Combat.",
+        "First and third person cameras and screen fades.",
+        "Sector lights, doors, floors and ceilings, textures, maps, weather and level exits.",
+        "Spawning, removing and changing entities.",
+        "Messages, popups, speech bubbles, flashes, shakes, blood and particles.",
+        "Sound effects and music."};
     static final String WEAPONS="Fist|Pistol|Shotgun|Chaingun|Rocket Launcher";
     static final String AMMO="Bullets|Shells|Rockets";
     static final String BUTTONS="Fire|Use|Jump|Weapon|Alt|Spell|Potion|Inventory";
@@ -66,6 +87,8 @@ final class Actions {
         int choice(String k,String options){return indexOf(options,s(k));}
         void send(String k){String e=s(k);if(!e.isEmpty())fsm.send(e);}
         boolean every(){return b("everyFrame");}
+        /** A movement speed: the parameter, or the entity's own Speed when it is left empty; times haste/slow/race. */
+        float speed(String k){float v=s(k).isEmpty()?0:f(k);if(v<=0)v=self.speed;return v*self.speedMul;}
         int doneOrRun(){return every()?RUNNING:DONE;}
         float rnd(float lo,float hi){return lo+w.rng.nextFloat()*(hi-lo);}
         int rndInt(int lo,int hi){return hi<=lo?lo:lo+w.rng.nextInt(hi-lo+1);}
@@ -141,7 +164,7 @@ final class Actions {
 
         // ------------------------------------------------------------------ Input
         def("move_joystick","Move With Joystick","Input",Icons.MOVE,"Walks and strafes using the on-screen joystick, relative to where the entity faces.",c->{
-            float spd=c.f("speed")*(c.w.input.held(Input.ALT)?1.6f:1f);float fw=-c.w.input.moveY,st=c.b("strafe")?c.w.input.moveX:0;
+            float spd=c.speed("speed")*(c.w.input.held(Input.ALT)?1.6f:1f);float fw=-c.w.input.moveY,st=c.b("strafe")?c.w.input.moveX:0;
             if(!c.b("strafe"))c.self.angle+=c.w.input.moveX*2.4f*c.dt;
             float cs=(float)Math.cos(c.self.angle),sn=(float)Math.sin(c.self.angle);
             c.self.wishX=(cs*fw-sn*st)*spd;c.self.wishY=(sn*fw+cs*st)*spd;c.self.wishActive=true;return RUNNING;},"speed:f=6","strafe:b=true");
@@ -156,7 +179,7 @@ final class Actions {
             boolean mv=Math.hypot(c.w.input.moveX,c.w.input.moveY)>c.f("threshold");c.send(mv?"movingEvent":"idleEvent");return RUNNING;},"threshold:f=0.2","movingEvent:e=","idleEvent:e=");
         def("use_on_button","Use On Button","Input",Icons.DOOR,"Opens doors, presses switches and uses entities when the button is pressed.",c->{if(c.w.input.pressed(c.choice("button",BUTTONS)))c.w.use(c.self);return RUNNING;},"button:c("+BUTTONS+")=Use");
         def("weapon_on_button","Switch Weapon On Button","Input",Icons.RESET,"Equips the next weapon in the pack when the button is pressed.",c->{if(c.w.input.pressed(c.choice("button",BUTTONS)))c.w.nextWeapon();return RUNNING;},"button:c("+BUTTONS+")=Weapon");
-        def("set_move_speed","Set Move Speed","Input",Icons.ARROW_UP,"Sets the entity's movement speed used by AI movement.",c->{c.self.speed=c.f("speed");return DONE;},"speed:f=6");
+        def("set_move_speed","Set Move Speed","Movement",Icons.ARROW_UP,"Sets this entity's Speed: movement actions whose speed is left empty use it.",c->{c.self.speed=Math.max(0,c.f("speed"));return DONE;},"speed:f=6");
 
         // ------------------------------------------------------------------ Combat (d20)
         def("attack","Attack With Weapon","Combat",Icons.SWORD,"The hero swings or fires the equipped weapon: d20 + modifier + proficiency against the target's AC. Sends the ready event once the weapon can be used again.",c->{
@@ -219,7 +242,7 @@ final class Actions {
         def("give_key","Give Key","Inventory",Icons.TAG,"Gives the hero a door key.",c->{if(!c.w.giveKey(c.choice("key",KEYS)))c.send("failEvent");return DONE;},"key:c("+KEYS+")=Bronze","failEvent:e=");
         def("has_key","Has Key","Inventory",Icons.VALIDATE,"Checks whether the hero has a key.",c->{if(c.w.hasKey(c.choice("key",KEYS)))c.send("yesEvent");else c.send("noEvent");return DONE;},"key:c("+KEYS+")=Bronze","yesEvent:e=","noEvent:e=");
         def("drink_potion","Drink Healing Potion","Inventory",Icons.HEART,"Drinks the hero's best healing potion.",c->{if(!c.w.quaff())c.send("noneEvent");return DONE;},"noneEvent:e=");
-        def("use_now","Use","Inventory",Icons.DOOR,"Uses whatever is in front of the entity: talk to someone, open a door, pull a lever.",c->{c.w.use(c.self);return DONE;});
+        def("use_now","Use","Input",Icons.DOOR,"Uses whatever is in front of the entity: talk to someone, open a door, pull a lever.",c->{c.w.use(c.self);return DONE;});
 
         // ------------------------------------------------------------------ Dialogue
         def("say","Say / Ask","Dialogue",Icons.CHAT,"Shows a conversation box (the game pauses). Up to three answers; each sends its event to this entity. With no answers it shows Continue and sends the done event.",c->{
@@ -235,16 +258,16 @@ final class Actions {
         def("dialogue_open","Is Talking","Dialogue",Icons.CHAT,"Sends an event while a conversation box is open.",c->{if(c.w.dialogue!=null)c.send("event");return c.doneOrRun();},"event:e=","everyFrame:b=true");
 
         // ------------------------------------------------------------------ Quests
-        def("start_quest","Start Quest","Quests",Icons.SCROLL,"Adds a quest to the hero's journal.",c->{World.Quest q=c.w.quest(c.s("id"));if(q.state==World.Q_INACTIVE){q.state=World.Q_ACTIVE;q.title=c.s("title").isEmpty()?q.id:c.s("title");q.text=c.s("objective");c.w.centerPrint("New quest: "+q.title,3);c.w.sound(SoundFx.SECRET,c.w.player);}return DONE;},
+        def("start_quest","Start Quest (simple)","Quests",Icons.SCROLL,"Adds a quest to the journal with the title and objective written here. For quests with stages and rewards, use Begin Quest with the Quests tab.",c->{World.Quest q=c.w.quest(c.s("id"));if(q.state==World.Q_INACTIVE){q.state=World.Q_ACTIVE;q.title=c.s("title").isEmpty()?q.id:c.s("title");q.text=c.s("objective");c.w.centerPrint("New quest: "+q.title,3);c.w.sound(SoundFx.SECRET,c.w.player);}return DONE;},
             "id:Q=quest1","title:t=The Lost Relic","objective:t=Find the relic in the crypt.");
-        def("update_quest","Update Quest","Quests",Icons.SCROLL,"Changes a quest's current objective.",c->{World.Quest q=c.w.quest(c.s("id"));q.text=c.s("objective");if(q.state==World.Q_ACTIVE)c.w.message("Journal updated: "+q.text,3);return DONE;},"id:Q=quest1","objective:t=Return the relic to the priest.");
-        def("complete_quest","Complete Quest","Quests",Icons.CHECK,"Completes a quest and rewards the hero with XP and gold.",c->{World.Quest q=c.w.quest(c.s("id"));if(q.state!=World.Q_DONE){q.state=World.Q_DONE;c.w.centerPrint("Quest complete: "+q.title,3);c.w.sound(SoundFx.LEVEL_UP,c.w.player);
+        def("update_quest","Update Quest (simple)","Quests",Icons.SCROLL,"Changes a simple quest's objective to the text written here.",c->{World.Quest q=c.w.quest(c.s("id"));q.text=c.s("objective");if(q.state==World.Q_ACTIVE)c.w.message("Journal updated: "+q.text,3);return DONE;},"id:Q=quest1","objective:t=Return the relic to the priest.");
+        def("complete_quest","Complete Quest (simple)","Quests",Icons.CHECK,"Completes a simple quest with the XP and gold written here. Quests from the Quests tab: use Finish Quest (it gives their own rewards).",c->{World.Quest q=c.w.quest(c.s("id"));if(q.state!=World.Q_DONE){q.state=World.Q_DONE;c.w.centerPrint("Quest complete: "+q.title,3);c.w.sound(SoundFx.LEVEL_UP,c.w.player);
                 if(c.i("gold")>0)c.w.giveGold(c.i("gold"));c.w.awardXp(c.i("xp"),c.w.player);}return DONE;},"id:Q=quest1","xp:i=100","gold:i=25");
         def("quest_begin","Begin Quest","Quests",Icons.SCROLL,"Starts a quest from the Dialogue editor's Quests tab: its title and first objective go in the journal.",c->{c.w.questBegin(c.s("quest"));return DONE;},"quest:Q=");
         def("quest_stage","Set Quest Stage","Quests",Icons.SCROLL,"Moves a quest to one of its stages (1 = first objective); starts it if needed.",c->{c.w.questStage(c.s("quest"),c.i("stage"));return DONE;},"quest:Q=","stage:i=2");
         def("quest_finish","Finish Quest","Quests",Icons.CHECK,"Completes a quest and gives the rewards set in the Quests tab (XP, gold, item).",c->{c.w.questFinish(c.s("quest"));return DONE;},"quest:Q=");
-        def("fail_quest","Fail Quest","Quests",Icons.CANCEL,"Marks a quest as failed.",c->{World.Quest q=c.w.quest(c.s("id"));q.state=World.Q_FAILED;c.w.message("Quest failed: "+q.title,3);return DONE;},"id:Q=quest1");
-        def("quest_state","Quest State","Quests",Icons.SCROLL,"Sends an event for a quest's state: not started, active, done or failed.",c->{
+        def("fail_quest","Fail Quest","Quests",Icons.CANCEL,"Marks a quest as failed (either kind).",c->{World.Quest q=c.w.quest(c.s("id"));q.state=World.Q_FAILED;c.w.message("Quest failed: "+q.title,3);return DONE;},"id:Q=quest1");
+        def("quest_state","Quest State","Quests",Icons.SCROLL,"Sends an event for a quest's state (either kind): not started, active, done or failed.",c->{
             int st=c.w.questState(c.s("id"));c.send(st==World.Q_ACTIVE?"activeEvent":st==World.Q_DONE?"doneEvent":st==World.Q_FAILED?"failedEvent":"notStartedEvent");return DONE;},"id:Q=quest1","notStartedEvent:e=","activeEvent:e=","doneEvent:e=","failedEvent:e=");
 
         // ------------------------------------------------------------------ Legacy (older projects; hidden from the browser)
@@ -263,25 +286,26 @@ final class Actions {
         def("give_armor","Give Armor (old)","Legacy",Icons.SHIELD,"Older projects: gives chain mail.",c->{c.w.giveItem(Rpg.item("chainmail"),1);return DONE;},"amount:i=100","max:i=100","failEvent:e=");
 
         // ------------------------------------------------------------------ Health
-        def("give_health","Give Health","Health",Icons.HEART,"Heals up to a maximum. Sends the fail event if already at the maximum.",c->{if(!c.w.giveHealth(c.w.player,c.i("amount"),c.i("max")))c.send("failEvent");return DONE;},"amount:i=25","max:i=100","failEvent:e=");
+        def("give_health","Give Health","Health",Icons.HEART,"Heals the hero, this entity or its target up to a maximum (the hero: up to their max HP). Sends the fail event if already full.",c->{
+            Actor t=c.s("to").isEmpty()?c.w.player:c.who("to");int max=t!=null&&t.isPlayer?c.i("max"):Math.max(c.i("max"),t==null?0:t.maxHealth);if(t==null||!c.w.giveHealth(t,c.i("amount"),max))c.send("failEvent");return DONE;},"amount:i=25","max:i=100","to:c(Player|Self|Target)=Player","failEvent:e=");
         def("damage_self","Damage Self","Health",Icons.MINUS,"Hurts this entity.",c->{c.w.damage(c.self,c.i("amount"),null);return DONE;},"amount:i=10");
         def("damage_target","Damage Entity","Health",Icons.MINUS,"Hurts the target or the player.",c->{Actor t=c.who("to");if(t!=null)c.w.damage(t,c.i("amount"),c.self);return DONE;},"amount:i=10","to:c(Target|Player)=Target");
         def("kill_self","Kill Self","Health",Icons.SKULL,"Kills this entity (sends DIED), even if it is invulnerable.",c->{c.self.invulnerable=false;c.w.damage(c.self,100000,null);return DONE;});
         def("set_health","Set Health","Health",Icons.HEART,"Sets this entity's health.",c->{c.self.health=Math.max(1,c.i("value"));return DONE;},"value:i=100");
         def("health_compare","Health Below","Health",Icons.HEART,"Sends an event when health drops below a value.",c->{if(c.self.health<c.i("below"))c.send("event");return c.doneOrRun();},"below:i=30","event:e=","everyFrame:b=true");
         def("set_invulnerable","Set Invulnerable","Health",Icons.VALIDATE,"Makes this entity ignore damage.",c->{c.self.invulnerable=c.b("value");return DONE;},"value:b=true");
-        def("radius_damage","Explode Damage","Health",Icons.SUN,"Damages everything within a radius of this entity.",c->{c.w.radiusDamage(c.self,c.i("damage"),c.f("radius"));return DONE;},"damage:i=80","radius:f=3");
+        def("radius_damage","Explode Damage (Flat)","Health",Icons.SUN,"Flat damage to everything within a radius, less at the edge, no saving throw. Area Damage (Save) in Combat is the d20 version.",c->{c.w.radiusDamage(c.self,c.i("damage"),c.f("radius"));return DONE;},"damage:i=80","radius:f=3");
 
         // ------------------------------------------------------------------ Movement
-        def("move_forward","Move Forward","Movement",Icons.ARROW_UP,"Moves in the facing direction.",c->{c.w.walk(c.self,c.self.angle,c.f("speed"));return c.doneOrRun();},"speed:f=2","everyFrame:b=true");
+        def("move_forward","Move Forward","Movement",Icons.ARROW_UP,"Moves in the facing direction (empty speed: the entity's Speed).",c->{c.w.walk(c.self,c.self.angle,c.speed("speed"));return c.doneOrRun();},"speed:f=","everyFrame:b=true");
         def("move_towards","Move Towards","Movement",Icons.ARROW_UP,"Walks straight towards the target or player; sends an event on arrival.",c->{
             Actor t=c.who("to");if(t==null)return DONE;if(c.w.dist(c.self,t)<=c.f("arriveDistance")){c.self.stop();c.send("arriveEvent");return DONE;}
-            c.self.angle=c.w.angleTo(c.self,t);c.w.walk(c.self,c.self.angle,c.f("speed"));return RUNNING;},"to:c(Target|Player)=Target","speed:f=3","arriveDistance:f=1","arriveEvent:e=");
+            c.self.angle=c.w.angleTo(c.self,t);c.w.walk(c.self,c.self.angle,c.speed("speed"));return RUNNING;},"to:c(Target|Player)=Target","speed:f=","arriveDistance:f=1","arriveEvent:e=");
         def("chase_target","Chase Target","Movement",Icons.SKULL,"Classic chase: moves towards the target and steers around walls.",c->{
-            if(c.self.target==null||!c.self.target.alive){c.send("noTargetEvent");return RUNNING;}c.w.chase(c.self,c.f("speed"),c.dt);return RUNNING;},"speed:f=2.5","noTargetEvent:e=");
+            if(c.self.target==null||!c.self.target.alive){c.send("noTargetEvent");return RUNNING;}c.w.chase(c.self,c.speed("speed"),c.dt);return RUNNING;},"speed:f=","noTargetEvent:e=");
         def("wander","Wander","Movement",Icons.MOVE,"Wanders around, changing direction now and then.",c->{
             if(c.enter)c.m[0]=0;c.m[0]-=c.dt;if(c.m[0]<=0||c.self.blocked){c.m[0]=c.f("turnInterval")*(0.5f+c.w.rng.nextFloat());c.self.angle=(float)(c.w.rng.nextInt(8)*Math.PI/4);}
-            c.w.walk(c.self,c.self.angle,c.f("speed"));return RUNNING;},"speed:f=1.5","turnInterval:f=1.5");
+            c.w.walk(c.self,c.self.angle,c.speed("speed")*(c.s("speed").isEmpty()?.5f:1));return RUNNING;},"speed:f=","turnInterval:f=1.5");
         def("turn","Turn","Movement",Icons.RESET,"Rotates continuously.",c->{c.self.angle+=(float)Math.toRadians(c.f("degreesPerSecond"))*c.dt;return RUNNING;},"degreesPerSecond:f=90");
         def("face_target","Face Entity","Movement",Icons.CROSSHAIR,"Turns to face the target or player.",c->{Actor t=c.who("to");if(t!=null)c.self.angle=c.w.angleTo(c.self,t);return c.doneOrRun();},"to:c(Target|Player)=Target","everyFrame:b=false");
         def("set_angle","Set Angle","Movement",Icons.RESET,"Faces a fixed direction in degrees (0 = east, 90 = south).",c->{c.self.angle=(float)Math.toRadians(c.f("degrees"));return DONE;},"degrees:f=0");
@@ -381,7 +405,7 @@ final class Actions {
             else{c.self.angle+=w.input.lookX*.0065f*sens;c.self.pitch=Math.max(-.55f,Math.min(.55f,c.self.pitch-w.input.lookY*.0045f*sens*inv));}
             return RUNNING;},"sensitivity:f=1","invertY:b=false");
         def("move_camera_relative","Move Relative To Camera","Camera",Icons.PERSON,"Third-person movement: the joystick moves the player relative to the camera, and the player turns to face where they run (Orbit). In Shoulder/Chase it walks and strafes like the first-person controls.",c->{
-            World w=c.w;float spd=c.f("speed")*(w.input.held(Input.ALT)?1.6f:1f);float fw=-w.input.moveY,st=w.input.moveX;
+            World w=c.w;float spd=c.speed("speed")*(w.input.held(Input.ALT)?1.6f:1f);float fw=-w.input.moveY,st=w.input.moveX;
             boolean orbit=w.thirdPerson()&&w.camStyle==World.CS_ORBIT&&c.self==w.player;
             if(!orbit&&w.camStyle==World.CS_CHASE&&w.thirdPerson()){c.self.angle+=st*2.4f*c.dt;st=0;}
             float yaw=orbit?w.camYaw:c.self.angle;float cs=(float)Math.cos(yaw),sn=(float)Math.sin(yaw);
@@ -432,7 +456,90 @@ final class Actions {
         def("music_beat","On Music Beat","Audio",Icons.MUSIC,"Sends an event in time with the music: every 4 steps is one beat, 16 is one bar.",c->{
             long t=c.w.musicTicks();if(c.enter)c.m[0]=t<=0?-1:(t-1)/Math.max(1,c.i("every"));
             if(t>0){float beat=(t-1)/Math.max(1,c.i("every"));if(beat!=c.m[0]){c.m[0]=beat;c.send("event");}}return RUNNING;},"every:i=4","event:e=BEAT");
+        newActions();
         def("music_playing","Is Music Playing?","Audio",Icons.MUSIC,"Sends one event if music is playing, another if it is silent.",c->{c.send(c.w.musicPlaying()?"yesEvent":"noEvent");return c.doneOrRun();},"yesEvent:e=","noEvent:e=","everyFrame:b=false");
+    }
+    private static void newActions(){
+        // ------------------------------------------------------------------ Timing
+        def("cooldown_event","Cooldown","Timing",Icons.CLOCK,"Sends the event only if at least the cooldown has passed since this entity last sent it; otherwise the blocked event. Good for abilities and taunts.",c->{
+            String key="_cd_"+c.s("event");Float last=c.fsm.vars.get(key);
+            if(last==null||c.w.time-last>=c.f("seconds")){c.fsm.vars.put(key,c.w.time);c.send("event");}else c.send("blockedEvent");return DONE;},"event:e=","seconds:f=3","blockedEvent:e=");
+        def("do_once","Do Once","Timing",Icons.CHECK,"Sends the event the first time only; afterwards the already event. Use a g. variable to make it once per game (a boss intro).",c->{
+            if(c.getVar("var")==0){c.setVar("var",1);c.send("event");}else c.send("alreadyEvent");return DONE;},"var:v=done_once","event:e=","alreadyEvent:e=");
+        def("wait_for_flag","Wait For Variable","Timing",Icons.CLOCK,"Waits until a variable becomes true (not 0), then sends the event. Another entity can set it with a g. variable.",c->{
+            if(c.getVar("var")!=0){c.send("event");return DONE;}return RUNNING;},"var:v=g.ready","event:e=FINISHED");
+        def("time_limit","Time Limit","Timing",Icons.CLOCK,"Sends the event if the state is still active after some seconds (a timer that runs out). Leaves the other actions running meanwhile.",c->{
+            if(c.timer(0,c.f("seconds"))){c.send("event");return DONE;}return RUNNING;},"seconds:f=10","event:e=TIMEOUT");
+        def("hit_stop","Hit Stop","Timing",Icons.STOP,"Freezes the whole game for a split second, so a big hit feels heavy.",c->{c.w.hitStop=Math.max(c.w.hitStop,Math.min(.5f,c.f("seconds")));return DONE;},"seconds:f=0.08");
+        def("set_game_speed","Slow Motion","Timing",Icons.CLOCK,"Changes the game speed (0.3 = slow motion, 1 = normal) for some seconds; 0 seconds keeps it until changed again.",c->{
+            c.w.timeScale=Math.max(.05f,Math.min(3,c.f("speed")));c.w.timeScaleT=c.f("seconds")>0?c.f("seconds"):0;return DONE;},"speed:f=0.4","seconds:f=1.5");
+        // ------------------------------------------------------------------ Effects
+        def("apply_effect","Apply Effect","Effects",Icons.SPARKLE,"Gives a status effect for some seconds. Haste: 50% faster. Slow: half speed. Regenerate, Poison, Burning: that many HP per second. Stoneskin: halves damage. Invisible (hero): monsters can't spot them.",c->{
+            c.w.applyEffect(c.who("to"),c.choice("effect",World.FX_NAMES),c.f("seconds"),c.f("strength"));return DONE;},"to:c("+WHO+")=Player","effect:c("+World.FX_NAMES+")=Haste","seconds:f=10","strength:f=2");
+        def("clear_effects","Clear Effects","Effects",Icons.CANCEL,"Ends every status effect (a cure, a shrine).",c->{c.w.clearEffects(c.who("to"));return DONE;},"to:c("+WHO+")=Player");
+        def("has_effect","Has Effect","Effects",Icons.VALIDATE,"Sends one event if the entity has the effect, another if not.",c->{Actor a=c.who("who");int fx=c.choice("effect",World.FX_NAMES);c.send(a!=null&&a.has(fx)?"yesEvent":"noEvent");return c.doneOrRun();},
+            "who:c("+WHO+")=Player","effect:c("+World.FX_NAMES+")=Poison","yesEvent:e=","noEvent:e=","everyFrame:b=false");
+        // ------------------------------------------------------------------ Character
+        def("learn_spell","Learn Spell","Character",Icons.SPARKLE,"Teaches the hero a spell (even one outside their class; a hero with no spell points gets a few). Sends the fail event if they already know it.",c->{
+            Hero h=c.w.hero;Rpg.Spell sp=Rpg.spell(c.s("spell"));if(h==null||sp==null||h.spells.contains(sp)){c.send("failEvent");return DONE;}
+            h.learned.add(sp.id);h.refreshSpells();if(h.maxSp<Rpg.spellCost(sp.level)*2){h.maxSp=Rpg.spellCost(sp.level)*2;h.sp=Math.max(h.sp,h.maxSp);}
+            c.w.centerPrint("Learned "+sp.name,2.5f);c.w.sound(SoundFx.LEVEL_UP,c.w.player);return DONE;},"spell:W=Magic Missile","failEvent:e=");
+        def("change_ability","Change Ability Score","Character",Icons.PLUS,"Raises (or lowers) one of the hero's ability scores for good, e.g. a tome or a curse. Constitution changes max HP too.",c->{
+            Hero h=c.w.hero;if(h==null)return DONE;int ab=c.choice("ability",ABIL),old=h.mod(Rpg.CON),d=c.i("amount");h.scores[ab]=Math.max(1,Math.min(30,h.scores[ab]+d));
+            if(ab==Rpg.CON){int gain=(h.mod(Rpg.CON)-old)*h.level;h.maxHp=Math.max(1,h.maxHp+gain);c.w.player.health=Math.max(1,Math.min(h.maxHp,c.w.player.health+Math.max(0,gain)));}
+            c.w.floater(c.w.player,(d>=0?"+":"")+d+" "+Rpg.ABILITY_NAMES[ab],0xffffd040);return DONE;},"ability:c("+ABIL+")=STR","amount:i=1");
+        def("raise_max_hp","Raise Max HP","Character",Icons.HEART,"Raises the hero's maximum hit points for good (and heals that much).",c->{Hero h=c.w.hero;if(h==null)return DONE;int a=c.i("amount");h.maxHp=Math.max(1,h.maxHp+a);if(a>0)c.w.player.health+=a;c.w.player.health=Math.min(c.w.player.health,h.maxHp);return DONE;},"amount:i=5");
+        // ------------------------------------------------------------------ Inventory
+        def("count_item","Count Item","Inventory",Icons.TAG,"Stores how many of an item the hero carries.",c->{Rpg.Item it=Rpg.itemByName(c.s("item"));c.setVar("store",c.w.hero==null||it==null?0:c.w.hero.count(it));return c.doneOrRun();},"item:I=Gemstone","store:v=count","everyFrame:b=false");
+        // ------------------------------------------------------------------ Movement
+        def("follow_player","Follow Player","Movement",Icons.PERSON,"A companion: walks after the hero, stops near them, and catches up by teleporting behind them if left far behind.",c->{
+            Actor p=c.w.player;if(p==null)return RUNNING;float d=c.w.dist(c.self,p);
+            if(d>c.f("teleportDistance")&&c.f("teleportDistance")>0){c.w.teleport(c.self,p.x-(float)Math.cos(p.angle)*1.5f,p.y-(float)Math.sin(p.angle)*1.5f);return RUNNING;}
+            if(d>c.f("distance")){c.self.target=p;c.w.chase(c.self,c.speed("speed")*(d>c.f("distance")*2?1.4f:1),c.dt);}else{c.self.stop();c.w.turnToward(c.self,c.w.angleTo(c.self,p),6,c.dt);}return RUNNING;},
+            "distance:f=2","speed:f=","teleportDistance:f=20");
+        def("flee","Flee","Movement",Icons.ARROW_UP,"Runs away from the target or player; sends the safe event once far enough.",c->{
+            Actor t=c.who("from");if(t==null)return DONE;if(c.w.dist(c.self,t)>=c.f("safeDistance")){c.self.stop();c.send("safeEvent");return DONE;}
+            float away=c.w.angleTo(t,c.self);if(c.self.blocked)away+=(c.w.rng.nextBoolean()?1:-1)*(float)Math.PI/2;c.self.angle=away;c.w.walk(c.self,away,c.speed("speed"));return RUNNING;},"from:c(Target|Player)=Player","speed:f=","safeDistance:f=10","safeEvent:e=");
+        def("move_to_position","Move To Position","Movement",Icons.FLAG,"Walks to a map position (x, y from the map editor); sends the arrive event there.",c->{
+            float dx=c.f("x")-c.self.x,dy=c.f("y")-c.self.y,d=(float)Math.hypot(dx,dy);if(d<=c.f("arriveDistance")){c.self.stop();c.send("arriveEvent");return DONE;}
+            float a=(float)Math.atan2(dy,dx);if(c.self.blocked)a+=(c.w.rng.nextFloat()-.5f)*2f;c.self.angle=a;c.w.walk(c.self,a,c.speed("speed"));return RUNNING;},"x:f=0","y:f=0","speed:f=","arriveDistance:f=0.6","arriveEvent:e=");
+        def("patrol","Patrol","Movement",Icons.RESET,"Walks back and forth between where it started and a map position (x, y), pausing at each end.",c->{
+            boolean out=c.m[1]==0;float tx=out?c.f("x"):c.self.spawnX,ty=out?c.f("y"):c.self.spawnY;
+            if(c.m[2]>0){c.m[2]-=c.dt;c.self.stop();return RUNNING;}
+            float dx=tx-c.self.x,dy=ty-c.self.y;if(Math.hypot(dx,dy)<.6f){c.m[1]=out?1:0;c.m[2]=c.f("pause");return RUNNING;}
+            float a=(float)Math.atan2(dy,dx);c.self.angle=a;c.w.walk(c.self,a,c.speed("speed")*(c.s("speed").isEmpty()?.6f:1));return RUNNING;},"x:f=0","y:f=0","speed:f=","pause:f=1.5");
+        // ------------------------------------------------------------------ AI
+        def("target_nearest","Target Nearest","AI",Icons.CROSSHAIR,"Targets the nearest living entity of a type (empty: any monster) within range and in sight. Guards and companions use it to fight monsters.",c->{
+            Actor best=null;float bd=c.f("range");String type=c.s("entity");
+            for(Actor a:c.w.actors){if(a==c.self||!a.alive||a.removed||a.def==null||a.projectileType>=0||a.isPlayer)continue;
+                if(type.isEmpty()?a.def.kind!=EntityDef.MONSTER:!a.def.id.equals(type))continue;float d=c.w.dist(c.self,a);if(d<bd&&c.w.lineOfSight(c.self,a)){bd=d;best=a;}}
+            if(best!=null){c.self.target=best;c.send("foundEvent");}else c.send("noneEvent");return c.doneOrRun();},"entity:E=","range:f=15","foundEvent:e=","noneEvent:e=","everyFrame:b=false");
+        def("keep_distance","Keep Distance","AI",Icons.MOVE,"Stays between a minimum and maximum distance from the target, backing off and closing in, and circling while in range (archers, casters).",c->{
+            Actor t=c.self.target;if(t==null||!t.alive){c.send("noTargetEvent");return RUNNING;}float d=c.w.dist(c.self,t),to=c.w.angleTo(c.self,t);
+            if(c.enter)c.m[0]=c.w.rng.nextBoolean()?1:-1;if(c.self.blocked)c.m[0]=-c.m[0];
+            float a=d<c.f("min")?to+(float)Math.PI:d>c.f("max")?to:to+c.m[0]*(float)Math.PI/2;c.w.walk(c.self,a,c.speed("speed")*(d<c.f("min")||d>c.f("max")?1:.5f));c.self.angle=to;return RUNNING;},
+            "min:f=4","max:f=8","speed:f=","noTargetEvent:e=");
+        def("circle_target","Circle Target","AI",Icons.RESET,"Strafes around the target at its current distance (duellists, wolves).",c->{
+            Actor t=c.self.target;if(t==null||!t.alive)return DONE;if(c.enter)c.m[0]=c.w.rng.nextBoolean()?1:-1;if(c.self.blocked)c.m[0]=-c.m[0];
+            float to=c.w.angleTo(c.self,t);c.self.angle=to;c.w.walk(c.self,to+c.m[0]*(float)Math.PI/2,c.speed("speed"));return RUNNING;},"speed:f=");
+        // ------------------------------------------------------------------ Entities
+        def("spawn_at","Spawn At Position","Entities",Icons.PLUS_SQUARE,"Creates an entity at a map position (x, y). Sends the fail event if the spot is blocked or outside the map.",c->{
+            Actor a=c.w.spawn(c.s("entity"),c.f("x"),c.f("y"),c.self.angle);if(a==null)c.send("failEvent");else if(c.b("storeAsTarget"))c.self.target=a;return DONE;},"entity:E=skeleton","x:f=0","y:f=0","storeAsTarget:b=false","failEvent:e=");
+        def("spawn_around","Spawn Around","Entities",Icons.PLUS_SQUARE,"Creates several entities in a ring around this one (an ambush, a summoning).",c->{
+            int n=Math.max(1,Math.min(16,c.i("count")));float r=c.f("radius"),off=c.w.rng.nextFloat()*6.283f;
+            for(int k=0;k<n;k++){float a=off+k*6.283f/n;c.w.spawn(c.s("entity"),c.self.x+(float)Math.cos(a)*r,c.self.y+(float)Math.sin(a)*r,a+(float)Math.PI);}
+            if(c.b("withEffect"))c.w.effect(Sprites.FX_TELEPORT,c.self.x,c.self.y,c.self.z+.5f);return DONE;},"entity:E=skeleton","count:i=3","radius:f=2.5","withEffect:b=true");
+        def("remove_entities","Remove Entities","Entities",Icons.TRASH,"Removes (or kills) every entity of a type, e.g. the guards vanish, all the slimes die when the boss does.",c->{
+            boolean kill=c.b("kill");for(Actor a:new java.util.ArrayList<>(c.w.actors))if(a!=c.self&&!a.isPlayer&&!a.removed&&a.def!=null&&a.def.id.equals(c.s("entity"))){if(kill){a.invulnerable=false;c.w.damage(a,100000,null);}else c.w.remove(a);}return DONE;},"entity:E=skeleton","kill:b=false");
+        // ------------------------------------------------------------------ Feedback
+        def("say_overhead","Say Over Head","Feedback",Icons.CHAT,"Shows a speech bubble above this entity for some seconds, without pausing (barks, taunts, villagers chatting).",c->{c.w.bubble(c.self,c.s("text"),c.f("seconds"));return DONE;},"text:t=Over here!","seconds:f=2.5");
+        def("floating_text","Floating Text","Feedback",Icons.INFO,"Floats a short coloured word up from this entity (\"Locked\", \"+1 key\").",c->{
+            int[] cols={0xffffffff,0xffffd040,0xffff5a4a,0xff60e070,0xff70b0ff};c.w.floaters.add(new World.Floater(c.self.x,c.self.y,c.self.z+c.self.height+.1f,c.s("text"),cols[c.choice("color","White|Gold|Red|Green|Blue")]));return DONE;},
+            "text:t=Locked","color:c(White|Gold|Red|Green|Blue)=Gold");
+        // ------------------------------------------------------------------ Camera
+        def("fade_screen","Fade Screen","Camera",Icons.SUN_DIM,"Fades the view to black or back, over some seconds; sends the done event when the fade ends (scene changes, cutscenes).",c->{
+            if(c.enter){c.w.fadeTarget=c.choice("to","Black|Clear")==0?1:0;c.w.fadeSpeed=1f/Math.max(.05f,c.f("seconds"));}
+            if(c.w.fade==c.w.fadeTarget){c.send("doneEvent");return DONE;}return RUNNING;},"to:c(Black|Clear)=Black","seconds:f=1","doneEvent:e=");
     }
     /** Playback speed from an action's pitch and random pitch (semitones). */
     private static float pitchRate(Ctx c){float st=c.f("pitch");float rp=c.f("randomPitch");if(rp>0)st+=c.rnd(-rp,rp);return (float)Math.pow(2,st/12f);}
