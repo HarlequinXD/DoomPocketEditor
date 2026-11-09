@@ -24,7 +24,7 @@ final class Renderer {
         /** 3D model to draw instead of the sprite (built-in sprite id, -1 = sprite): frames fa → fb blended by lerp, facing angle. */
         int model=-1,fa,fb;float lerp,angle;
         SpriteDraw set(float x,float y,float z,Sprites.Sprite s,int pickId,boolean bright){this.x=x;this.y=y;this.z=z;this.spr=s;this.pickId=pickId;this.bright=bright;model=-1;return this;}
-        SpriteDraw model(int id,int fa,int fb,float lerp,float angle){model=id;this.fa=fa;this.fb=fb;this.lerp=lerp;this.angle=angle;return this;}}
+        SpriteDraw model(int id,int fa,int fb,float lerp,float angle){if(Puppet.enabled&&BoxMesh.has(id))return this;   /* characters are puppet sprites */model=id;this.fa=fa;this.fb=fb;this.lerp=lerp;this.angle=angle;return this;}}
 
     private static final float NEAR=.06f;
     int W,H;

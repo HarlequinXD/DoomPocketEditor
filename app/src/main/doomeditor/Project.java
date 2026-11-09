@@ -111,6 +111,8 @@ final class Project {
      * Custom sprites with 4 or 8 angles and the built-in characters (8 angles) pick the matching view.
      */
     Sprites.Sprite actorSprite(Actor a,int autoFrame,float worldTime,float viewDelta){
+        if(Puppet.enabled&&BoxMesh.has(a.sprite)&&builtinLook(a.def,a.sprite)){   // built-in characters: a puppet in the pose of the moment
+            int[] p=new int[2];float t=pose(a,p);Sprites.Sprite s=Puppet.sprite(a.sprite,p[0],p[1],t,viewDelta);if(s!=null)return s;}
         CustomSprite cs=a.def!=null&&a.sprite==a.def.sprite?sprite(a.def.customSprite):null;
         int view=cs==null?CustomSprite.viewIndex(viewDelta,Sprites.VIEWS):CustomSprite.viewIndex(viewDelta,cs.angles);
         float walkT=a.walkPhase/WALK_PACE;   // walking frames follow the distance covered, so faster movement = faster steps
@@ -140,7 +142,9 @@ final class Project {
      * death, a hit, the wind-up / strike / follow-through of an attack, jumping, falling and landing, a walk or run
      * cycle that follows the distance covered (so feet don't slide), or a breathing idle.
      */
-    private void animate(Renderer.SpriteDraw sd,Actor a,int autoFrame){
+    private void animate(Renderer.SpriteDraw sd,Actor a,int autoFrame){int[] p=new int[2];float t=pose(a,p);sd.model(a.sprite,p[0],p[1],t,a.angle);}
+    /** The two animation poses (BoxMesh frames) to blend for what the actor is doing; returns the blend 0..1. */
+    float pose(Actor a,int[] out){
         float speed=(float)Math.hypot(a.vx,a.vy);boolean moving=speed>.25f;
         int fa,fb;float t=0;int[] ab=new int[2];
         if(!a.alive){if(a.deadTime<.22f){fa=Sprites.F_PAIN;fb=Sprites.F_DEAD;t=a.deadTime/.22f;}else fa=fb=Sprites.F_DEAD;}
@@ -155,7 +159,7 @@ final class Project {
             else fa=fb=BoxMesh.A_FALL;}
         else if(a.landTimer>0&&a.landLen>0){float p=1-a.landTimer/a.landLen;base(a,speed,ab);fa=BoxMesh.A_LAND;fb=ab[0];t=p*p;}
         else{base(a,speed,ab);fa=ab[0];fb=ab[1];t=ab.length>1?baseT:0;}
-        sd.model(a.sprite,fa,fb,Math.max(0,Math.min(1,t)),a.angle);
+        out[0]=fa;out[1]=fb;return Math.max(0,Math.min(1,t));
     }
     private float baseT;
     /** The pose under everything else: walk or run cycle (two neighbouring poses + blend in baseT) or breathing idle. */
