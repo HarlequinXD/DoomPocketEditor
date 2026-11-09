@@ -30,9 +30,11 @@ final class PropMesh {
     static MeshModels.Mesh build(int id){synchronized(BoxMesh.class){return make(id);}}
     private static MeshModels.Mesh make(int id){
         SpriteModels.Model m=new SpriteModels.Model();mats(id,m);
-        MeshModels.Mesh out=new MeshModels.Mesh();out.atlas=4;
+        MeshModels.Mesh out=new MeshModels.Mesh();out.atlas=BoxMesh.atlasFor(m);
         for(int f=0;f<Sprites.FRAMES;f++){BoxMesh.begin(m);shape(id,f);out.frames[f]=BoxMesh.end();}
-        MeshModels.paint(out,m,4);paint(id,out);MeshModels.pack(out);
+        int Sz=out.atlas*MeshModels.TILE;int[] done=TexBake.load("prop_"+id,Sz*Sz);
+        if(done!=null)out.color=done;else{MeshModels.paint(out,m,out.atlas);paint(id,out);TexBake.bake(out,m,false);TexBake.save("prop_"+id,out.color);}
+        MeshModels.pack(out);
         return out;
     }
 
@@ -262,7 +264,8 @@ final class PropMesh {
     interface Painter{int px(int c,int x,int y,int T);}
     private static void tile(MeshModels.Mesh m,int tile,Painter p){
         int T=MeshModels.TILE,S=m.atlas*T,ox=(tile%m.atlas)*T,oy=(tile/m.atlas)*T;
-        for(int y=0;y<T;y++)for(int x=0;x<T;x++){int o=(oy+y)*S+ox+x;m.color[o]=p.px(m.color[o],x,y,T);}
+        int k=T/64;   // the patterns are drawn on a 64 x 64 grid over the full-resolution texture
+        for(int y=0;y<T;y++)for(int x=0;x<T;x++){int o=(oy+y)*S+ox+x;m.color[o]=p.px(m.color[o],x/k,y/k,64);}
     }
     /** Horizontal planks with dark seams and nail heads. */
     private static final Painter PLANKS=(c,x,y,T)->{int band=y/(T/4);float f=.9f+hash(band,0,7)*.2f;if(y%(T/4)==0)return sc(c,.45f);if((x==3||x==T-4)&&y%(T/4)==T/8)return rgb(40,38,36);return sc(c,f);};

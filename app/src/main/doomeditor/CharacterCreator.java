@@ -18,7 +18,7 @@ final class CharacterCreator {
 
     private final Ui ui;private final Paint p;private final Project project;private final Listener listener;
     CharLook look;private int tab;private float yaw=-.5f,spin=.35f,scroll,maxScroll,time;
-    private MeshModels.Mesh mesh;private String meshKey;private Bitmap bmp;private int[] bmpPx;
+    private MeshModels.Mesh mesh;private String meshKey;private volatile MeshModels.Mesh built;private volatile String builtKey;private volatile boolean building;private Bitmap bmp;private int[] bmpPx;
     private final RectF r=new RectF(),content=new RectF(),preview=new RectF();
     private float downX,downY,lastX,lastY;private boolean dragging;private int dragKind;   // 1 = turning the model, 2 = scrolling
     private final java.util.Random rng=new java.util.Random();
@@ -63,7 +63,10 @@ final class CharacterCreator {
     private void drawPreview(Canvas c,float pw,float h){
         UiTheme th=th();
         String key=look.key();
-        if(mesh==null||!key.equals(meshKey)){mesh=BoxMesh.buildLook(look);meshKey=key;}
+        if(mesh==null||!key.equals(meshKey)){   // a new look: build it in the background (256-texel textures take a moment) and keep showing the last one
+            MeshModels.Mesh ready=built;if(ready!=null&&key.equals(builtKey)){mesh=ready;meshKey=key;}
+            else if(!building){building=true;final CharLook lk=look.copy();final String k=key;
+                Thread t=new Thread(()->{MeshModels.Mesh m=null;try{m=BoxMesh.buildLook(lk);}catch(Throwable ignored){}builtKey=k;built=m;building=false;},"hero-preview");t.setPriority(Thread.NORM_PRIORITY-1);t.start();}}
         // chunky PS1 pixels: render small, scale up 3x without smoothing
         float avail=h*.62f,heroH=1.45f*scaleOf();int K=3;float ppu=avail/K/Math.max(.8f,heroH);
         Sprites.Sprite s=mesh==null?null:MeshModels.raster(mesh,0,yaw,.12f,ppu,false);
