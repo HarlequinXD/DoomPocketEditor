@@ -17,7 +17,9 @@ sourceSets {
     main {
         java {
             srcDirs = ['src/main/java', '../app/src/main/doomeditor']
-            exclude '**/*Activity.java', '**/DoomApp.java', '**/Diag.java', '**/PerfDisplay.java', '**/ShareProvider.java', '**/AudioDecode.java'
+            // the Android-only files of the app (the desktop folder has its own DoomApp, Diag and AudioDecode)
+            def androidOnly = ['DoomApp.java', 'Diag.java', 'PerfDisplay.java', 'ShareProvider.java', 'AudioDecode.java']
+            exclude { e -> def p = e.file.path.replace('\\', '/'); p.contains('/app/src/main/doomeditor/') && (e.name.endsWith('Activity.java') || androidOnly.contains(e.name)) }
         }
         resources { srcDirs = ['src/main/resources'] }
     }
