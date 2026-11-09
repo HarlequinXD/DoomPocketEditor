@@ -27,6 +27,18 @@ final class FacePaint {
     private static float ell(float u,float v,float cu,float cv,float ru,float rv,float px){float dx=(u-cu)/ru,dy=(v-cv)/rv;float d=(float)Math.sqrt(dx*dx+dy*dy);return 1-sst(1-px/Math.min(ru,rv),1+px/Math.min(ru,rv),d);}
     private static float mix(float a,float b,float t){return a+(b-a)*t;}
 
+    /**
+     * Reptile scales: rounded plates (the nearest of a jittered grid of centres), each lit on its upper side and
+     * dark in the cracks between them. {@code size} in 64ths of the texture. Returns a brightness factor.
+     */
+    static float scales(int x,int y,int T,float size){
+        float X=x*64f/T/size,Y=y*64f/T/size;int cx=(int)Math.floor(X),cy=(int)Math.floor(Y);float best=9,second=9,bdy=0;
+        for(int j=-1;j<=1;j++)for(int i=-1;i<=1;i++){int gx=cx+i,gy=cy+j;float px=gx+.5f+(hash(gx,gy,71)-.5f)*.6f+((gy&1)*.5f),py=gy+.5f+(hash(gx,gy,72)-.5f)*.4f;
+            float dx=X-px,dy=(Y-py)*1.25f;float d=(float)Math.sqrt(dx*dx+dy*dy);if(d<best){second=best;best=d;bdy=dy;}else if(d<second)second=d;}
+        float edge=second-best;float crack=sst(.0f,.12f,edge);
+        return (.72f+.28f*crack)*(1+.14f*(-bdy))*(.94f+.08f*hash(cx,cy,73));
+    }
+
     /** Hair texture: strands running down (v), clumps, and a sheen band. */
     static float hairShade(int x,int y,int T,int seed){
         float X=x*64f/T,Y=y*64f/T;
@@ -227,15 +239,19 @@ final class FacePaint {
         c[0]=r;c[1]=g;c[2]=b;
     }
 
-    /** Dragonborn: the face pushed out into a snout; scales, nostrils at the tip, a long jaw line with teeth. */
+    /** Dragonborn: scales over a long snout, a brow ridge over each eye, nostrils at the tip, a lipless jaw line with teeth, pale belly scales under the jaw. */
     private static void dragon(float[] c,float u,float v,float cu,int x,int y,int T,float p,BoxMesh.Spec sp){
         float r=c[0],g=c[1],b=c[2];float k=1-.15f*sst(.3f,.5f,cu);
-        float sx=x*64f/T,sy=y*64f/T;int row=(int)(sy/4);float scx=((sx+(row&1)*2.5f)%5)/5f,scy=(sy%4)/4f;
-        float scale=.82f+.25f*(1-scy)-.12f*(float)Math.pow(Math.abs(scx-.5f)*2,3);k*=scale;
+        // overlapping scales, larger on the crown, small on the snout
+        k*=scales(x,y,T,v<.45f?5.5f:4f);
+        // pale belly scales under the jaw
+        float belly=sst(.8f,.86f,v);if(belly>0){float bs=((y*64f/T)%3/3f)>.85f?.8f:1;r=mix(r,236*bs,belly*.55f);g=mix(g,206*bs,belly*.55f);b=mix(b,150*bs,belly*.55f);}
+        // brow ridges and deep sockets
+        k*=1+.14f*ell(cu,v,EYE_U+.01f,EYE_V-.05f,.07f,.02f,.01f);k*=1-.4f*ell(cu,v,EYE_U,EYE_V,.04f,.028f,.01f);
         r*=k;g*=k;b*=k;
-        for(int s=-1;s<=1;s+=2){float nos=ell(u,v,.5f+s*.05f,.42f,.02f,.012f,p);r=mix(r,20,nos);g=mix(g,14,nos);b=mix(b,10,nos);}
-        float ml=(1-sst(.004f,.007f,Math.abs(v-.74f-cu*cu*.3f)))*(1-sst(.38f,.42f,cu));r=mix(r,30,ml);g=mix(g,12,ml);b=mix(b,10,ml);
-        if(v>.745f&&v<.77f&&cu<.36f){float tw=.03f,tu=((u-.5f)%tw+tw)%tw/tw;if(tu>.3f&&tu<.8f){r=232;g=226;b=200;}}
+        for(int s=-1;s<=1;s+=2){float nos=ell(u,v,.5f+s*.04f,NOSE_V-.02f,.016f,.009f,p);r=mix(r,22,nos);g=mix(g,14,nos);b=mix(b,10,nos);}
+        float line=MOUTH_V+.04f+cu*cu*.4f;float ml=(1-sst(.004f,.008f,Math.abs(v-line)))*(1-sst(.36f,.4f,cu));r=mix(r,30,ml);g=mix(g,12,ml);b=mix(b,10,ml);
+        if(cu<.34f&&v<line&&v>line-.018f){float tw=.028f,tu=((u-.5f)%tw+tw)%tw/tw;if(tu>.25f&&tu<.75f){float t=1-sst(line-.018f,line-.004f,v)*.0f;r=mix(r,236,t*(v>line-.004f-(.5f-Math.abs(tu-.5f))*.03f?1:0));g=mix(g,228,t*(v>line-.004f-(.5f-Math.abs(tu-.5f))*.03f?1:0));b=mix(b,200,t*(v>line-.004f-(.5f-Math.abs(tu-.5f))*.03f?1:0));}}
         c[0]=r;c[1]=g;c[2]=b;
     }
 }
