@@ -21,7 +21,7 @@ final class SpriteModels {
         final float[] alb=new float[3];   // linear albedo
         float spec,shin=30,sss,nScale=34,nAmp,bump,metal;boolean glow;final float[] emit=new float[3];int kind;
     }
-    static final int K_PLAIN=0,K_CLOTH=1,K_SKIN=2,K_HIDE=3,K_METAL=4,K_WOOD=5;
+    static final int K_PLAIN=0,K_CLOTH=1,K_SKIN=2,K_HIDE=3,K_METAL=4,K_WOOD=5,K_LEATHER=6;
     private static void lin(float[] d,int c){d[0]=(float)Math.pow(((c>>16)&255)/255f,2.2);d[1]=(float)Math.pow(((c>>8)&255)/255f,2.2);d[2]=(float)Math.pow((c&255)/255f,2.2);}
 
     // ------------------------------------------------------------------ primitives
@@ -46,7 +46,7 @@ final class SpriteModels {
         /** Generic material (kept for item models): spec 0..1, grit = surface noise. */
         int mat(int base,float spec,float grit){Mat m=newMat(base);m.spec=spec*.55f;m.shin=16+spec*70;m.nAmp=grit*.9f;m.bump=grit*.5f;m.metal=spec>.6f?.5f:0;m.kind=spec>.6f?K_METAL:K_PLAIN;return mats.size()-1;}
         int cloth(int base){Mat m=newMat(base);m.spec=.04f;m.shin=8;m.nAmp=.14f;m.bump=.35f;m.nScale=60;m.kind=K_CLOTH;return mats.size()-1;}
-        int leather(int base){Mat m=newMat(base);m.spec=.22f;m.shin=22;m.nAmp=.08f;m.bump=.2f;m.nScale=50;return mats.size()-1;}
+        int leather(int base){Mat m=newMat(base);m.spec=.22f;m.shin=22;m.nAmp=.08f;m.bump=.2f;m.nScale=50;m.kind=K_LEATHER;return mats.size()-1;}
         int plastic(int base,float spec){Mat m=newMat(base);m.spec=spec;m.shin=40;m.nAmp=.04f;m.bump=.05f;return mats.size()-1;}
         int metal(int base){Mat m=newMat(base);m.spec=.75f;m.shin=60;m.nAmp=.05f;m.bump=.04f;m.metal=.8f;m.kind=K_METAL;return mats.size()-1;}
         int wood(int base){Mat m=newMat(base);m.spec=.15f;m.shin=20;m.nAmp=.22f;m.bump=.1f;m.nScale=90;m.kind=K_WOOD;return mats.size()-1;}

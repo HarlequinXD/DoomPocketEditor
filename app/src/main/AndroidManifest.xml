@@ -5,6 +5,7 @@
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@android:style/Theme.Material.NoActionBar"
+        android:largeHeap="true"
         android:usesCleartextTraffic="false">
         <activity android:name="com.retro.doomeditor.MainActivity"
             android:launchMode="singleTask"

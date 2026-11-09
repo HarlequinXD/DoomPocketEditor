@@ -420,7 +420,11 @@ final class GpuRenderer {
     private static int[] modelTextures(int id,MeshModels.Mesh m){
         if(modelTex[id]!=null&&modelTexOf[id]!=m){GLES20.glDeleteTextures(1,modelTex[id],0);modelTex[id]=null;}   // rebuilt mesh (created hero changed)
         modelTexOf[id]=m;
-        if(modelTex[id]==null){int S=m.atlas*MeshModels.TILE;modelTex[id]=new int[]{texture(m.color,S,S,false,true)};}
+        if(modelTex[id]==null){int S=m.atlas*MeshModels.TILE;int t=texture(m.color,S,S,false,true);
+            // 256-texel materials: mipmapped (nearest within a level, so close up it stays crisp PS1 texels) so distant models don't shimmer
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,t);GLES20.glGenerateMipmap(GLES20.GL_TEXTURE_2D);
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_MIN_FILTER,GLES20.GL_NEAREST_MIPMAP_NEAREST);
+            modelTex[id]=new int[]{t};}
         return modelTex[id];
     }
     private boolean model(Level level,Renderer.SpriteDraw d){

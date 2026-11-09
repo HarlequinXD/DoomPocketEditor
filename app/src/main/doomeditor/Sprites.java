@@ -46,7 +46,7 @@ final class Sprites {
     private static final Object lock=new Object();
 
     /** Bump when the models or renderer change so stale disk-cached sprites are ignored. */
-    static final int MODEL_VERSION=7;
+    static final int MODEL_VERSION=9;
     private static java.io.File diskRoot,diskDir;
     /** Pixel-art style (default): built-in sprites are rendered in HD, then reduced 3x keeping each block's main colour,
      *  exactly like copying a built-in sprite into the sprite editor. Off = the smooth HD render. */
@@ -56,10 +56,12 @@ final class Sprites {
     static void setCacheDir(java.io.File dir){
         diskRoot=dir;
         try{String keep="sprites_v"+MODEL_VERSION;
-            java.io.File[] old=dir.listFiles();if(old!=null)for(java.io.File o:old)if(o.isDirectory()&&o.getName().startsWith("sprites_v")&&!o.getName().startsWith(keep+"_")){java.io.File[] fs=o.listFiles();if(fs!=null)for(java.io.File f:fs)f.delete();o.delete();}
+            java.io.File[] old=dir.listFiles();if(old!=null)for(java.io.File o:old)if(o.isDirectory()&&((o.getName().startsWith("sprites_v")&&!o.getName().startsWith(keep+"_"))||(o.getName().startsWith("modeltex_v")&&!o.getName().equals("modeltex_v"+MODEL_VERSION)))){java.io.File[] fs=o.listFiles();if(fs!=null)for(java.io.File f:fs)f.delete();o.delete();}
         }catch(Throwable ignored){}
         useDiskDir();
     }
+    /** Where finished model textures are kept between runs (null when there's no storage, e.g. tests). */
+    static java.io.File textureDir(){if(diskRoot==null)return null;java.io.File d=new java.io.File(diskRoot,"modeltex_v"+MODEL_VERSION);d.mkdirs();return d;}
     private static void useDiskDir(){
         if(diskRoot==null)return;
         try{java.io.File d=new java.io.File(diskRoot,"sprites_v"+MODEL_VERSION+(pixel?"_px":"_hd"));d.mkdirs();diskDir=d;}catch(Throwable ignored){}

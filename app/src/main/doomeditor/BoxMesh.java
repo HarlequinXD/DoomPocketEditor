@@ -58,23 +58,27 @@ final class BoxMesh {
     /** Tiles whose material glows (fire, magic): drawn full-bright. */
     static boolean[] glowTile=new boolean[16];
     /** Starts a frame for a model whose materials are {@code m} (atlas 4 x 4). */
-    static void begin(SpriteModels.Model m){G=4;buf=new float[9*3*600];nv=0;glowTile=new boolean[16];for(int i=0;i<Math.min(16,m.mats.size());i++)glowTile[i]=m.mats.get(i).glow;}
+    static void begin(SpriteModels.Model m){G=atlasFor(m);buf=new float[9*3*600];nv=0;quads=0;glowTile=new boolean[16];for(int i=0;i<Math.min(16,m.mats.size());i++)glowTile[i]=m.mats.get(i).glow;}
+    /** Smallest square grid of 256-texel tiles that holds all of a model's materials (props: 2 x 2 is common, 1 MB instead of 4). */
+    static int atlasFor(SpriteModels.Model m){int g=1;while(g*g<m.mats.size())g++;return g;}
     static MeshModels.Frame end(){MeshModels.Frame fr=new MeshModels.Frame();fr.v=java.util.Arrays.copyOf(buf,nv*9);fr.count=nv;return fr;}
     private static Spec S;
 
     /** A model for any look (the creation screen preview), without touching the shared Created Character model. */
-    static synchronized MeshModels.Mesh buildLook(CharLook l){return make(specFor(l),outfitFor(Rpg.heroClass(l.cls)));}
+    static synchronized MeshModels.Mesh buildLook(CharLook l){return make(specFor(l),outfitFor(Rpg.heroClass(l.cls)),"look_"+l.key(),false);}   // previews: not kept on disk
     static synchronized MeshModels.Mesh build(int id){
         Spec sp=id==Sprites.CREATED?specFor(CharLook.current):spec(id);if(sp==null)return null;
-        return make(sp,id==Sprites.CREATED?outfitFor(Rpg.heroClass(CharLook.current.cls)):id);
+        return make(sp,id==Sprites.CREATED?outfitFor(Rpg.heroClass(CharLook.current.cls)):id,id==Sprites.CREATED?"look_"+CharLook.current.key():"char_"+id,true);
     }
-    private static MeshModels.Mesh make(Spec sp,int paintId){
+    private static MeshModels.Mesh make(Spec sp,int paintId,String texKey,boolean keep){
         S=sp;G=4;for(int i=0;i<16;i++)glowTile[i]=i<sp.m.mats.size()&&sp.m.mats.get(i).glow;
         MeshModels.Mesh out=new MeshModels.Mesh();out.atlas=G;
         out.frames=new MeshModels.Frame[ANIM_FRAMES];
         for(int f=0;f<ANIM_FRAMES;f++)out.frames[f]=frame(f);
-        MeshModels.paint(out,sp.m,G);
-        paintFace(out);paintExtra(out,paintId);MeshModels.pack(out);
+        int Sz=G*MeshModels.TILE;int[] done=TexBake.load(texKey,Sz*Sz);
+        if(done!=null)out.color=done;   // painted and lit on an earlier run
+        else{MeshModels.paint(out,sp.m,G);paintFace(out);paintExtra(out,paintId);TexBake.bake(out,sp.m,true,FACE);if(keep)TexBake.save(texKey,out.color);}
+        MeshModels.pack(out);
         S=null;buf=null;
         return out;
     }
@@ -260,7 +264,7 @@ final class BoxMesh {
     /** Turns a point about the vertical axis through the body (positive = the right shoulder goes back). */
     private static float[] tz(float[] p,float a){float c=(float)Math.cos(a),s=(float)Math.sin(a);return v(p[0]*c-p[1]*s,p[0]*s+p[1]*c,p[2]);}
     private static MeshModels.Frame frame(int f){
-        buf=new float[9*3*560];nv=0;
+        buf=new float[9*3*1000];nv=0;quads=0;
         Spec sp=S;float k=sp.bulk;
         SpriteModels.Body b=new SpriteModels.Body();b.chestW*=sp.chestW;b.shoulderW*=sp.shoulderW;
         Anim A=anim(f,sp,b);
@@ -276,7 +280,9 @@ final class BoxMesh {
             float[] ankle=add(knee,norm(sub(target,knee)),b.shin);
             if(!sp.robe){
                 if(sp.bones){cyl5(hip,knee,.026f,.02f,.012f,.016f,LEGS);cyl5(knee,ankle,.02f,.016f,.016f,.01f,LEGS);}
-                else{cyl5(hip,knee,.072f*k,.052f*k,.018f*k,.016f*k,LEGS);cyl5(knee,ankle,.052f*k,.036f*k,.014f*k,.012f*k,LEGS);}}
+                else{float[] fw=v(1,0,0);
+                    limb(hip,knee,fw,6,.072f*k,.072f*k,.3f,.075f*k,.077f*k,.05f*k,.052f*k,-1,.02f*k,LEGS);          // thigh: full at the top, slim above the knee, a kneecap
+                    limb(add(knee,norm(sub(ankle,knee)),-.02f),ankle,fw,6,.05f*k,.05f*k,.3f,.054f*k,.058f*k,.036f*k,.038f*k,-1,-1,LEGS);}}   // shin with the calf swelling behind
             foot(ankle,sp.bones?.6f:Math.max(.85f,k),BOOTS,pitch);}
         // ---- body (leans about the hips, twists through the chest)
         float[] waist=B.apply(v(0,0,b.waistZ),0f),chest=B.apply(v(0,0,b.chestZ),.5f),shTop=B.apply(v(0,0,b.shoulderZ+.035f),1f);
@@ -296,7 +302,7 @@ final class BoxMesh {
             chain(new float[][]{t0,t1,t3},new float[]{.03f*t,.02f*t,sp.snout?.004f:.012f},sp.snout?.02f:.035f,SKIN,v(0,0,1));}
         float[] neckB=add(shTop,up,-.005f),neckT=add(shTop,up,.07f*Math.min(1.1f,sp.headS));
         if(sp.bones)seg(neckB,neckT,.018f,.018f,.016f,.016f,0,0,TORSO,v(1,0,0));
-        else box(neckB,neckT,.04f*k,.042f*k,SKIN);
+        else limb(add(neckB,up,-.02f),neckT,v(1,0,0),6,.046f*k,.045f*k,.5f,.042f*k,.042f*k,.04f*k,.041f*k,-1,-1,SKIN);
         float[] hc=add(neckT,up,.085f*sp.headS);
         HYAW=tw*.3f+A.headYaw;head(hc,lean*1.4f+A.headPitch,sp);HYAW=0;
         // ---- arms (two-bone IK to the hands, elbows bend back and out)
@@ -319,7 +325,7 @@ final class BoxMesh {
             octa(add(q1,v(-.005f,0,.045f)),.028f,X2);}
         if(sp.cape){float[] back=norm(v((float)-Math.cos(lean),0,(float)Math.sin(lean)));
             cape(add(B.apply(v(0,0,b.shoulderZ),1f),back,sp.quiver?.15f:.11f),b,A.trail);}
-        MeshModels.Frame fr=new MeshModels.Frame();fr.v=java.util.Arrays.copyOf(buf,nv*9);fr.count=nv;
+        MeshModels.Frame fr=new MeshModels.Frame();fr.v=java.util.Arrays.copyOf(buf,nv*9);fr.count=nv;lastPolys=polys();
         if(A.dead)layDown(fr);
         if(sp.scale!=1)for(int i=0;i<fr.count;i++){int o=i*9;fr.v[o]*=sp.scale;fr.v[o+1]*=sp.scale;fr.v[o+2]*=sp.scale;}
         return fr;
@@ -388,13 +394,13 @@ final class BoxMesh {
     // ------------------------------------------------------------------ vertex output
     static void put(float[] p,float[] n,int tile,float u,float vv){
         if((nv+1)*9>buf.length)buf=java.util.Arrays.copyOf(buf,buf.length*2);
-        float in=2f/MeshModels.TILE;u=in+Math.max(0,Math.min(1,u))*(1-2*in);vv=in+Math.max(0,Math.min(1,vv))*(1-2*in);
+        float in=4f/MeshModels.TILE;u=in+Math.max(0,Math.min(1,u))*(1-2*in);vv=in+Math.max(0,Math.min(1,vv))*(1-2*in);
         float[] nn=norm(n);int o=nv*9;buf[o]=p[0];buf[o+1]=p[1];buf[o+2]=p[2];buf[o+3]=nn[0];buf[o+4]=nn[1];buf[o+5]=nn[2];
         buf[o+6]=((tile%G)+u)/G;buf[o+7]=((tile/G)+vv)/G;buf[o+8]=glowTile[tile]?1:0;nv++;
     }
     static void tri(float[] a,float[] b,float[] c,float[] na,float[] nb,float[] nc,int tile,float[] uv){put(a,na,tile,uv[0],uv[1]);put(b,nb,tile,uv[2],uv[3]);put(c,nc,tile,uv[4],uv[5]);}
     static void quad(float[] a,float[] b,float[] c,float[] d,float[] na,float[] nb,float[] nc,float[] nd,int tile,float u0,float v0,float u1,float v1){
-        tri(a,b,c,na,nb,nc,tile,new float[]{u0,v0,u1,v0,u1,v1});tri(a,c,d,na,nc,nd,tile,new float[]{u0,v0,u1,v1,u0,v1});}
+        tri(a,b,c,na,nb,nc,tile,new float[]{u0,v0,u1,v0,u1,v1});tri(a,c,d,na,nc,nd,tile,new float[]{u0,v0,u1,v1,u0,v1});quads++;}
     /** Two axes across a segment: s (sideways) and f (front), preferring the hint for f. */
     static float[][] across(float[] ax,float[] fwdHint){float[] f=sub(fwdHint,mul(ax,SpriteModels.dot(fwdHint,ax)));if(len(f)<1e-3f)f=sub(v(0,0,1),mul(ax,ax[2]));if(len(f)<1e-3f)f=v(1,0,0);f=norm(f);float[] s=norm(cross(ax,f));return new float[][]{s,f};}
 
@@ -409,11 +415,11 @@ final class BoxMesh {
         int[][] cc={{1,1},{-1,1},{-1,-1},{1,-1}};
         for(int i=0;i<4;i++){float cs=cc[i][0],cf=cc[i][1];A[i]=add(add(a,s,cs*wa),f,cf*da);B[i]=add(add(b,s,cs*wb),f,cf*db);N[i]=add(mul(s,cs),f,cf);}
         for(int i=0;i<4;i++){int j=(i+1)%4;quad(A[i],A[j],B[j],B[i],N[i],N[j],N[j],N[i],tile,i/4f,0,(i+1)/4f,1);}
-        cap(A,a,mul(ax,-1),domeA,tile,true);cap(B,b,ax,domeB,tile,false);
+        if(domeA>=0)cap(A,a,mul(ax,-1),domeA,tile,true);if(domeB>=0)cap(B,b,ax,domeB,tile,false);   // negative: open (hidden inside the next part)
     }
     static void cap(float[][] ring,float[] c,float[] out,float dome,int tile,boolean flip){
         int n=ring.length;
-        if(dome<=0&&n==4){float[] nn=out;if(flip){tri(ring[0],ring[2],ring[1],nn,nn,nn,tile,new float[]{0,0,1,1,1,0});tri(ring[0],ring[3],ring[2],nn,nn,nn,tile,new float[]{0,0,0,1,1,1});}
+        if(dome<=0&&n==4){float[] nn=out;quads++;if(flip){tri(ring[0],ring[2],ring[1],nn,nn,nn,tile,new float[]{0,0,1,1,1,0});tri(ring[0],ring[3],ring[2],nn,nn,nn,tile,new float[]{0,0,0,1,1,1});}
             else{tri(ring[0],ring[1],ring[2],nn,nn,nn,tile,new float[]{0,0,1,0,1,1});tri(ring[0],ring[2],ring[3],nn,nn,nn,tile,new float[]{0,0,1,1,0,1});}return;}
         float[] tip=add(c,out,dome);
         for(int i=0;i<n;i++){int j=(i+1)%n;float a0=(float)(i*2*Math.PI/n),a1=(float)(j*2*Math.PI/n);
@@ -456,6 +462,46 @@ final class BoxMesh {
         for(int i=0;i<4;i++){int j=(i+1)%4;float[] n1=sub(P[i],c),n2=sub(P[j],c);
             tri(P[i],P[j],t,n1,n2,v(0,0,1),tile,new float[]{0,1,1,1,.5f,0});tri(P[j],P[i],bt,n2,n1,v(0,0,-1),tile,new float[]{1,0,0,0,.5f,1});}
     }
+
+    // ------------------------------------------------------------------ the artist's kit: shaped loops
+    /** Quads made so far in this frame: the PS1 drew quads as one polygon, so polygons = triangles - quads. */
+    static int quads;
+    /** Polygons in the last frame built (for checks: at most 500 per character). */
+    static int lastPolys;
+    static int polys(){return nv/3-quads;}
+    /** A quad with its own texture coordinates per corner. */
+    static void quadUV(float[] a,float[] b,float[] c,float[] d,float[] na,float[] nb,float[] nc,float[] nd,int tile,float[] ta,float[] tb,float[] tc,float[] td){
+        tri(a,b,c,na,nb,nc,tile,new float[]{ta[0],ta[1],tb[0],tb[1],tc[0],tc[1]});tri(a,c,d,na,nc,nd,tile,new float[]{ta[0],ta[1],tc[0],tc[1],td[0],td[1]});quads++;}
+    /**
+     * A loop of n points around {@code c}: angle 0 faces {@code f}, positive turns toward {@code s}. {@code w} = half
+     * width (along s), {@code d} = depth to the front, {@code db} = depth to the back; {@code e} below 1 squares the
+     * loop off like a chamfered box. {@code a0}: angle of the first point. out[0] = points, out[1] = normals.
+     */
+    static float[][][] loop(float[] c,float[] s,float[] f,int n,float a0,float w,float d,float db,float e){
+        float[][] P=new float[n][],N=new float[n][];
+        for(int i=0;i<n;i++){double a=a0-i*2*Math.PI/n;float cs=(float)Math.cos(a),sn=(float)Math.sin(a);
+            float cx=Math.signum(cs)*(float)Math.pow(Math.abs(cs),e),sy=Math.signum(sn)*(float)Math.pow(Math.abs(sn),e);float dd=cs>=0?d:db;
+            P[i]=add(add(c,f,cx*dd),s,sy*w);N[i]=norm(add(mul(f,cx/Math.max(.01f,dd)),s,sy/Math.max(.01f,w)));}
+        return new float[][][]{P,N};
+    }
+    /** Joins two loops with quads; texture u goes around (i/n), v from va to vb. */
+    static void band(float[][][] A,float[][][] B,int tile,float va,float vb){
+        int n=A[0].length;
+        for(int i=0;i<n;i++){int j=(i+1)%n;quad(A[0][i],A[0][j],B[0][j],B[0][i],A[1][i],A[1][j],B[1][j],B[1][i],tile,i/(float)n,va,(i+1)/(float)n,vb);}
+    }
+    /** Closes a loop with a fan to a centre point pushed out by {@code dome} (flip = facing the other way). */
+    static void fan(float[][][] L,float[] c,float[] out,float dome,int tile,boolean flip){cap(L[0],c,out,Math.max(1e-4f,dome),tile,flip);}
+    /**
+     * A limb the way an artist blocks one in: an n-sided tube a → b with one loop in the middle (at {@code tm}) for
+     * the muscle (bicep, forearm, thigh, calf), each loop its own width and depth; the hidden end is left open (it sits
+     * inside the next part), the visible end gets a low domed cap ({@code capB} &lt; 0 = open).
+     */
+    static void limb(float[] a,float[] b,float[] fwd,int n,float wa,float da,float tm,float wm,float dm,float wb,float db,float capA,float capB,int tile){
+        float[] ax=norm(sub(b,a));float[][] sf=across(ax,fwd);float[] s=sf[0],f=sf[1];float a0=(float)(Math.PI/n);
+        float[][][] A=loop(a,s,f,n,a0,wa,da,da,1),M=loop(SpriteModels.lerp(a,b,tm),s,f,n,a0,wm,dm,dm,1),B=loop(b,s,f,n,a0,wb,db,db,1);
+        band(A,M,tile,0,tm);band(M,B,tile,tm,1);
+        if(capA>=0)fan(A,a,mul(ax,-1),capA,tile,true);if(capB>=0)fan(B,b,ax,capB,tile,false);
+    }
     /** Arm: bicep box and forearm box with pyramid ends that overlap at the elbow, and a fist (or a wide sleeve and a hand). */
     private static void arm(float[] sh,float[] el,float[] hand,Spec sp){
         float[] fw=v(1,0,0);float k=sp.bulk;
@@ -466,17 +512,29 @@ final class BoxMesh {
             seg(wrist,add(wrist,dir,.07f),.024f,.03f,.02f,.026f,.01f,0,HANDS,fw);
             return;
         }
-        // bicep: thick in the middle of the upper arm, shaped box with rounded (pyramid) ends at the shoulder and elbow
-        seg(add(sh,norm(sub(el,sh)),-.01f),el,.05f*k,.052f*k,.04f*k,.042f*k,.03f*k,.022f*k,UPPER,fw);
+        // upper arm: the deltoid cap at the shoulder, a bicep loop, narrowing into a rounded elbow
+        float[] ud=norm(sub(el,sh));
+        limb(add(sh,ud,-.02f),el,fw,6,.05f*k,.05f*k,.38f,.057f*k,.054f*k,.039f*k,.04f*k,.025f*k,.02f*k,UPPER);
         if(sp.sleeves){   // wide sleeve flaring open past the elbow, the bare hand coming out of it
-            seg(add(el,dir,-.02f),add(wrist,dir,-.01f),.045f,.047f,.075f,.075f,.02f,0,CLOAK,fw);
-            seg(wrist,add(wrist,dir,.08f),.03f,.036f,.027f,.034f,.016f,0,HANDS,fw);
+            limb(add(el,dir,-.03f),add(wrist,dir,-.005f),fw,6,.046f,.048f,.55f,.062f,.062f,.08f,.08f,-1,-1,CLOAK);
+            hand(wrist,dir,Math.max(.85f,k*.85f));
             return;
         }
-        // forearm: wider below the elbow, narrowing to the wrist, rounded both ends
-        seg(add(el,dir,-.012f),wrist,.042f*k,.044f*k,.031f*k,.033f*k,.02f*k,.016f*k,HANDS,fw);
-        // fist: a box, pyramid end where it meets the forearm, flat knuckles
-        seg(wrist,add(wrist,dir,.085f*Math.max(.9f,k)),.032f*k,.04f*k,.03f*k,.038f*k,.018f*k,0,HANDS,fw);
+        // forearm: the muscle swells just below the elbow, then tapers to a slim wrist
+        limb(add(el,dir,-.015f),wrist,fw,6,.04f*k,.041f*k,.28f,.047f*k,.044f*k,.029f*k,.03f*k,-1,-1,HANDS);
+        hand(wrist,dir,Math.max(.9f,k));
+    }
+    /**
+     * Hand: a palm block from the wrist to the knuckles, the curled fingers as a second block bent down, and a thumb
+     * wrapped over the front, all with flat ends (a held weapon runs through the fist along {@code dir}).
+     */
+    private static void hand(float[] wrist,float[] dir,float k){
+        float[][] sf=across(dir,v(0,0,1));float[] s=sf[0],f=sf[1];   // f: back of the hand (up when the arm hangs forward)
+        float[] kn=add(wrist,dir,.052f*k),tip=add(add(kn,dir,.026f*k),f,-.012f*k);
+        seg(wrist,kn,.03f*k,.019f*k,.034f*k,.021f*k,-1,-1,HANDS,f);                  // palm and back of the hand
+        seg(kn,tip,.033f*k,.02f*k,.029f*k,.017f*k,-1,.004f,HANDS,f);               // curled fingers
+        float[] t0=add(add(wrist,dir,.02f*k),f,-.016f*k),t1=add(add(kn,f,-.022f*k),s,.008f*k);
+        seg(t0,t1,.011f*k,.009f*k,.008f*k,.007f*k,-1,.006f,HANDS,s);                 // thumb over the front
     }
     /** Foot: box loop-cut halfway, stretched forward from the heel; the toe end narrowed for a mild point. */
     /** pitch: + lifts the toes (heel strike), - lifts the heel (toe-off, pointed toes in the air). */
@@ -487,29 +545,49 @@ final class BoxMesh {
                 float nx=buf[o+3],nz=buf[o+5];buf[o+3]=nx*c+nz*sn;buf[o+5]=-nx*sn+nz*c;}}
     }
     private static void foot(float[] ankle,float k,int tile){
-        float sole=ankle[2]-.07f;float[] heel=v(ankle[0]-.045f*k,ankle[1],sole),mid=v(ankle[0]+.05f*k,ankle[1],sole),toe=v(ankle[0]+.15f*k,ankle[1],sole);
-        float[][] R0=ring(heel,.042f*k,.075f*Math.min(1,k)),R1=ring(mid,.048f*k,.065f*Math.min(1,k)),R2=ring(toe,.032f*k,.035f*Math.min(1,k));
-        float[][] N={v(0,1,0),v(0,0,1),v(0,-1,0),v(0,0,-1)};
-        for(int i=0;i<4;i++){int j=(i+1)%4;quad(R0[i],R0[j],R1[j],R1[i],N[i],N[j],N[j],N[i],tile,i/4f,0,(i+1)/4f,.5f);quad(R1[i],R1[j],R2[j],R2[i],N[i],N[j],N[j],N[i],tile,i/4f,.5f,(i+1)/4f,1);}
-        cap(R0,heel,v(-1,0,0),0,tile,true);cap(R2,toe,v(1,0,0),0,tile,false);
+        float kk=Math.min(1,k);float sole=ankle[2]-.07f;
+        // boot shaft: from the ankle up the shin, with a turned-over cuff (the shin goes into it)
+        if(!S.bones){float[] top=v(ankle[0]-.006f,ankle[1],ankle[2]+.13f*kk);
+            limb(v(ankle[0],ankle[1],sole+.035f),top,v(1,0,0),6,.047f*k,.054f*k,.72f,.043f*k,.047f*k,.05f*k,.053f*k,-1,-1,tile);}
+        // foot: heel, instep, ball and toe loops, the sole flat on the ground and the toe rounded
+        float[] heel=v(ankle[0]-.05f*k,ankle[1],sole),inst=v(ankle[0]+.035f*k,ankle[1],sole),ball=v(ankle[0]+.11f*k,ankle[1],sole),toe=v(ankle[0]+.16f*k,ankle[1],sole);
+        float[][] R0=ring(heel,.04f*k,.07f*kk),R1=ring(inst,.046f*k,.074f*kk),R2=ring(ball,.047f*k,.045f*kk),R3=ring(toe,.034f*k,.03f*kk);
+        R1[1]=add(R1[1],v(-.012f,0,0));R1[2]=add(R1[2],v(-.012f,0,0));   // the instep slopes up into the shaft
+        float[][] N={norm(v(0,1,.2f)),norm(v(.2f,0,1)),norm(v(0,-1,.2f)),v(0,0,-1)};
+        float[][][] L={R0,R1,R2,R3};float[] vv={0,.35f,.75f,1};
+        for(int r=0;r<3;r++)for(int i=0;i<4;i++){int j=(i+1)%4;quad(L[r][i],L[r][j],L[r+1][j],L[r+1][i],N[i],N[j],N[j],N[i],tile,i/4f,vv[r],(i+1)/4f,vv[r+1]);}
+        cap(R0,heel,v(-1,0,0),0,tile,true);cap(R3,toe,v(1,0,0),.018f*k,tile,false);
     }
     private static float[][] ring(float[] c,float halfW,float h){return new float[][]{v(c[0],c[1]+halfW,c[2]),v(c[0],c[1]+halfW,c[2]+h),v(c[0],c[1]-halfW,c[2]+h),v(c[0],c[1]-halfW,c[2])};}
+    /** Hips: three 8-sided loops (crotch, hips, waist), chamfered like a box, closed underneath. */
     private static void pelvisBox(float[] bottom,float[] top,SpriteModels.Body b,float[] up,float k){
-        float hip=S.female?1.14f:1;seg(bottom,top,b.hipW*1.75f*Math.max(1,k*.9f)*hip,.085f*k,b.chestW*.82f*(S.female?.86f:1),.09f*k,.012f,0,PELVIS,v(1,0,0));
+        float hip=S.female?1.14f:1;float[][] sf=across(up,v(1,0,0));float[] s=sf[0],f=sf[1];float a0=(float)(Math.PI/4);
+        float[] crotch=add(bottom,up,-.035f),hipC=SpriteModels.lerp(bottom,top,.35f);
+        float hw=b.hipW*1.75f*Math.max(1,k*.9f)*hip;
+        float[][][] L0=loop(crotch,s,f,8,a0,hw*.62f,.07f*k,.075f*k,.8f),L1=loop(hipC,s,f,8,a0,hw*1.02f,.088f*k,.1f*k,.75f),
+            L2=loop(top,s,f,8,a0,b.chestW*.84f*(S.female?.86f:1),.088f*k,.088f*k,.75f);
+        band(L0,L1,PELVIS,0,.4f);band(L1,L2,PELVIS,.4f,1);fan(L0,add(crotch,up,-.02f),mul(up,-1),.02f,PELVIS,true);
     }
     /** Side and front axes turned about `up` (positive = the right side goes back, like tz). */
     private static float[][] turn(float[] s,float[] f,float[] up,float a){float c=(float)Math.cos(a),sn=(float)Math.sin(a);return new float[][]{add(mul(s,c),f,-sn),add(mul(f,c),s,sn)};}
     /** Torso: waist → chest → shoulders, a box with one loop cut at the chest, shaped wider across the chest. */
     /** twist: the chest ring turns half as far as the shoulders (the loop cut takes the twist, like a real spine). */
     private static void torso(float[] waist,float[] chest,float[] top,SpriteModels.Body b,float[] up,float k,int tile,float twist){
-        float[][] sf=across(up,v(1,0,0));float[] s=sf[0],f=sf[1];float dk=Math.max(.8f,k);
+        // four 8-sided loops: waist, chest (with the pecs or bust pushed forward), the shoulder line (as wide as the
+        // deltoids) and a narrow neck base above it, so the trapezius slopes up to the neck; the spine and breastbone
+        // are vertices down the middle of the front and back
+        float[][] sf=across(up,v(1,0,0));float[] s=sf[0],f=sf[1];float dk=Math.max(.8f,k);float a0=(float)(Math.PI/4);
         float[][] s1=turn(s,f,up,twist*.5f),s2=turn(s,f,up,twist);
-        float[][] R0=new float[4][],R1=new float[4][],R2=new float[4][],N=new float[4][];int[][] cc={{1,1},{-1,1},{-1,-1},{1,-1}};
-        for(int i=0;i<4;i++){float cs=cc[i][0],cf=cc[i][1];
-            float waistW=S.female?.7f:.82f,bust=S.female&&!S.bones?.135f:.115f;
-            R0[i]=add(add(waist,s,cs*b.chestW*waistW),f,cf*.09f*dk);R1[i]=add(add(chest,s1[0],cs*b.chestW*1.05f),s1[1],cf*(cf>0?bust:.095f)*dk);R2[i]=add(add(top,s2[0],cs*b.shoulderW*1.1f),s2[1],cf*.085f*dk);N[i]=add(mul(s1[0],cs),s1[1],cf);}
-        for(int i=0;i<4;i++){int j=(i+1)%4;quad(R0[i],R0[j],R1[j],R1[i],N[i],N[j],N[j],N[i],tile,i/4f,0,(i+1)/4f,.5f);quad(R1[i],R1[j],R2[j],R2[i],N[i],N[j],N[j],N[i],tile,i/4f,.5f,(i+1)/4f,1);}
-        cap(R0,waist,mul(up,-1),0,tile,true);cap(R2,top,up,.025f,tile,false);
+        float waistW=S.female?.7f:.8f,bust=S.female&&!S.bones?.13f:.112f;
+        float[] shl=add(top,up,-.05f),nk=add(top,up,.012f);
+        float[][][] L0=loop(waist,s,f,8,a0,b.chestW*waistW,.088f*dk,.085f*dk,.8f),
+            L1=loop(chest,s1[0],s1[1],8,a0,b.chestW*1.05f,bust*dk,.1f*dk,.72f),
+            L2=loop(shl,s2[0],s2[1],8,a0,b.shoulderW*1.12f,.088f*dk,.09f*dk,.7f),
+            L3=loop(nk,s2[0],s2[1],8,a0,.07f*dk,.05f*dk,.055f*dk,1);
+        if(!S.bones){L1[0][1]=add(L1[0][1],s1[1],-.012f*dk);   // the breastbone dips between the pecs
+            if(S.female){L1[0][0]=add(L1[0][0],s1[1],.008f);L1[0][2]=add(L1[0][2],s1[1],.008f);}}
+        band(L0,L1,tile,0,.45f);band(L1,L2,tile,.45f,.85f);band(L2,L3,tile,.85f,1);
+        fan(L0,waist,mul(up,-1),0,tile,true);fan(L3,add(nk,up,.01f),up,.01f,tile,false);
     }
 
     // ------------------------------------------------------------------ heads
@@ -550,15 +628,7 @@ final class BoxMesh {
             if(sp.snout){if(i==2){x+=k==2?.3f:k==1?.95f:.9f;if(k==0)z*=.75f;y*=k==2?.85f:.7f;}else if(i==1&&k==0)z*=.9f;}   // dragonborn: the face pushed out into a snout
             P[i][j][k]=place(c,pitch,v(x*hx,y*hy,z*hz));}
         HP=P;
-        int frontTile=FACE;
-        for(int a=0;a<2;a++)for(int d=0;d<2;d++){
-            faceQuad(P[2][a][d+1],P[2][a+1][d+1],P[2][a+1][d],P[2][a][d],frontTile,a/2f,1-(d+1)/2f,(a+1)/2f,1-d/2f);                  // front: the face
-            faceQuad(P[0][a+1][d+1],P[0][a][d+1],P[0][a][d],P[0][a+1][d],back,a/2f,1-(d+1)/2f,(a+1)/2f,1-d/2f);                      // back of the head
-            faceQuad(P[a][2][d+1],P[a+1][2][d+1],P[a+1][2][d],P[a][2][d],d==1?sideUp:sideLow,a/2f,1-(d+1)/2f,(a+1)/2f,1-d/2f);       // right side
-            faceQuad(P[a+1][0][d+1],P[a][0][d+1],P[a][0][d],P[a+1][0][d],d==1?sideUp:sideLow,a/2f,1-(d+1)/2f,(a+1)/2f,1-d/2f);       // left side
-            faceQuad(P[a][d][2],P[a][d+1][2],P[a+1][d+1][2],P[a+1][d][2],top,a/2f,d/2f,(a+1)/2f,(d+1)/2f);                           // top
-            faceQuad(P[a+1][d][0],P[a+1][d+1][0],P[a][d+1][0],P[a][d][0],under,a/2f,d/2f,(a+1)/2f,(d+1)/2f);                         // under the jaw
-        }
+        sculptHead(c,pitch,sp,hx,hy,hz,top,back,sideUp,sideLow);
         float[] fwd=norm(sub(hp(2,1,1),hp(0,1,1))),upH=norm(sub(hp(1,1,2),hp(1,1,0)));
         // ---- extra pieces, each a box pulled to a point or a diamond
         if(sp.head==H_GOBLIN){
@@ -574,6 +644,10 @@ final class BoxMesh {
         if(sp.ears>0&&!hooded){float len=sp.ears==2?.12f:sp.ears==1?.055f:.07f,upk=sp.ears==2?.08f:sp.ears==1?.035f:.02f;
             for(int s=-1;s<=1;s+=2){float[] e=hp(1.05f,s<0?0:2,1.2f);float[] tip=add(add(add(e,v(0,s,0),len*hs),fwd,-.05f),upH,upk);
                 seg(e,tip,.01f,.028f*hs,.003f,.005f,0,0,SKIN,fwd);}}
+        if(sp.ears==0&&!hooded&&!sp.snout&&(sp.head==H_HAIR||sp.head==H_HAT)){   // ears: a thin slab on each side, its top leaning out a little
+            for(int s=-1;s<=1;s+=2){float[] e=add(hp(.98f,s<0?0:2,1.0f),v(0,s,0),-.006f*hs);   // set into the side of the head, behind the jaw
+                float[] e0=add(e,upH,-.022f*hs),e1=add(add(add(e,upH,.02f*hs),v(0,s,0),.007f*hs),fwd,-.005f*hs);
+                seg(e0,e1,.013f*hs,.006f*hs,.016f*hs,.007f*hs,.004f,.006f,SKIN,v(0,s,0));}}
         if(sp.nose>0){float[] n=hp(2,1,.95f);seg(add(n,fwd,-.01f),add(add(n,fwd,sp.nose*hs),upH,-.015f),.016f,.014f,.006f,.006f,0,.006f,SKIN,upH);}
         if(sp.tusks)for(int s=-1;s<=1;s+=2){float[] t0=hp(2,s<0?.6f:1.4f,.25f);seg(add(t0,fwd,-.01f),add(add(t0,upH,.04f),fwd,.01f),.007f,.007f,.002f,.002f,0,.003f,X1,fwd);}
         if(sp.horns)for(int s=-1;s<=1;s+=2){float[] h0=hp(1.55f,s<0?.45f:1.55f,1.85f),h1=add(add(add(h0,upH,.08f*hs),fwd,-.02f),v(0,s,0),.015f),h2=add(add(add(h1,upH,.04f*hs),fwd,-.1f*hs),v(0,s,0),.02f);
@@ -584,33 +658,99 @@ final class BoxMesh {
             if(sp.hairStyle==3){float[] t0=hp(.05f,1,1.55f);seg(t0,add(add(t0,fwd,-.1f),upH,-.22f),.03f,.03f,.012f,.014f,.01f,.01f,HAIR,upH);}   // ponytail
             if(sp.hairStyle==4){float[] a0=hp(1.9f,1,2),a1=hp(.15f,1,1.85f);seg(a0,a1,.014f,.035f,.014f,.03f,.01f,.01f,HAIR,upH);}             // mohawk ridge
         }
-        if(sp.beard){float[] ch=hp(2,1,.2f);float[] bot=add(add(ch,upH,-.15f*sp.beardLen*(sp.weapon==W_STAFF?1.4f:1)),fwd,.0f);
-            seg(add(add(ch,upH,.03f),fwd,-.035f),bot,.07f*hs,.04f,.02f,.012f,0,0,HAIR,fwd);}                                           // beard wedge
+        if(sp.beard){float len=.15f*sp.beardLen*(sp.weapon==W_STAFF?1.4f:1);float[] ch=hp(1.9f,1,.25f);float[] bot=add(add(ch,upH,-len),fwd,.012f);   // beard: a tapering 6-sided lock from the jaw to a point
+            limb(add(add(ch,upH,.04f),fwd,-.03f),bot,fwd,6,.082f*hs,.045f*hs,.4f,.07f*hs,.05f*hs,.016f*hs,.016f*hs,-1,.01f,HAIR);}
         if(sp.dragonEyes){for(int s=-1;s<=1;s+=2){float[] e=hp(1.55f,s<0?0:2,1.45f);octa(add(e,v(0,s,0),.004f),.014f,GLOW);}}
         else if(sp.eyeGems){float g=sp.head==H_SKULL?.012f:sp.head==H_DEEP_HOOD?.011f:.012f;
-            for(int s=-1;s<=1;s+=2){float[] e=hp(2,1+s*.42f,sp.head==H_ORC?1.1f:1.18f);octa(add(e,fwd,sp.head==H_SKULL?-.004f:.004f),g,GLOW);}}
+            for(int s=-1;s<=1;s+=2){float[] e=EYES[s<0?0:1];octa(add(e,fwd,sp.head==H_SKULL?-.012f:sp.head==H_DEEP_HOOD?-.004f:-.002f),g,GLOW);}}
         if((sp.head==H_HOOD||sp.head==H_DEEP_HOOD)&&!sp.horns)hood(c,pitch,hx,hy,hz,sp.head==H_DEEP_HOOD,CLOAK);   // horned heroes wear the hood down
         if(sp.head==H_HAT)hat(hp(1,1,2),upH,fwd,hs);
+    }
+
+    /** Angles of the 8 points around every loop of the head: front centre (the nose line), the eyes / cheekbones, the sides, behind the ears, the back. */
+    private static final float[] HEAD_A={0,40,90,140,180,-140,-90,-40};
+    /** Height of each loop of the head (fraction of the half-height): under the chin, mouth, nose, eyes, brow, crown. */
+    static final float[] HEAD_Z={-1.05f,-.62f,-.22f,.18f,.55f,.92f};
+    /** Where those loops fall on the face texture (0 = top of the forehead, 1 = under the chin). */
+    static float faceV(int ring){return (HEAD_Z[5]-HEAD_Z[ring])/(HEAD_Z[5]-HEAD_Z[0]);}
+    /**
+     * The head, sculpted like a PS1 artist's: six 8-point loops (chin, mouth, nose, eyes, brow, crown) closed by fans
+     * at the crown and under the jaw — 40 quads and 16 triangles. The front centre line carries the profile: the
+     * nose tip sticks out, the bridge rises between eye sockets that sit back, the cheekbones push out to the sides,
+     * the mouth sits back under the nose, then the chin comes forward again. The jaw narrows toward the chin, the
+     * skull is widest behind the ears. The face texture wraps the front half (left ear to right ear).
+     */
+    /** Eye positions of the last head built (left, right). */
+    private static final float[][] EYES=new float[2][];
+    private static void sculptHead(float[] c,float pitch,Spec sp,float hx,float hy,float hz,int top,int back,int sideUp,int sideLow){
+        // per loop: half width, front depth, back depth
+        float[][] R={{.44f,.7f,.3f},{.72f,.93f,.72f},{.88f,.96f,.95f},{.95f,.92f,1.02f},{.93f,.88f,1.02f},{.7f,.6f,.78f}};
+        for(int i=0;i<6;i++)R[i]=R[i].clone();
+        float nose=.2f,bridge=.05f,socket=.07f,cheek=.05f,chin=.06f,mouth=-.04f,brow=0;
+        if(sp.female){for(float[] r:R)r[0]*=.97f;R[0][0]*=.86f;R[1][0]*=.93f;nose=.14f;chin=.03f;}
+        if(sp.heavyBrow)brow=.08f;
+        switch(sp.head){
+            case H_SKULL:R[0][0]*=.8f;R[1][0]*=.82f;R[2][0]*=.9f;nose=-.08f;bridge=0;socket=.14f;cheek=.08f;chin=.02f;break;
+            case H_GOBLIN:R[0][0]*=.82f;R[0][1]*=.95f;R[3][0]*=1.08f;R[4][0]*=1.1f;R[5][0]*=1.05f;nose=.1f;socket=.09f;chin=.08f;break;
+            case H_ORC:R[0][0]=.74f;R[0][1]=.86f;R[1][0]=.92f;R[1][1]=1.0f;R[5][1]*=.88f;nose=.08f;brow=.12f;socket=.1f;chin=.02f;break;
+        }
+        if(sp.snout){R[0][1]+=.62f;R[1][1]+=.92f;R[2][1]+=.95f;R[3][1]+=.3f;R[0][0]*=.8f;R[1][0]*=.75f;R[2][0]*=.72f;nose=.02f;bridge=.06f;socket=.03f;chin=0;mouth=0;}
+        int n=8;float[][] L=new float[6][],dummy;float[][][] P=new float[6][n][],N=new float[6][n][];float[][][] loc=new float[6][n][];
+        for(int r=0;r<6;r++)for(int i=0;i<n;i++){
+            double a=Math.toRadians(HEAD_A[i]);float cs=(float)Math.cos(a),sn=(float)Math.sin(a);
+            float cx=Math.signum(cs)*(float)Math.pow(Math.abs(cs),.8f),sy=Math.signum(sn)*(float)Math.pow(Math.abs(sn),.8f);
+            float x=cx*(cs>=0?R[r][1]:R[r][2]),y=sy*R[r][0],z=HEAD_Z[r];
+            if(i==0){if(r==2)x+=nose;if(r==3)x+=bridge;if(r==1)x+=mouth;if(r==0)x+=chin;if(r==4)x+=brow*.6f;}
+            if(i==1||i==7){if(r==3)x-=socket;if(r==2){x+=cheek*.4f;y+=Math.signum(sn)*cheek;}if(r==4)x+=brow;}
+            loc[r][i]=v(x*hx,y*hy,z*hz);
+            float nx=x/(hx*hx),ny=y/(hy*hy),nz=z*.55f/(hz*hz);if(i==0&&r==2){nz-=.3f/(hz*hz);}
+            P[r][i]=place(c,pitch,loc[r][i]);N[r][i]=sub(place(v(0,0,0),pitch,v(nx,ny,nz)),place(v(0,0,0),pitch,v(0,0,0)));}
+        // where the eyes sit (for glowing eyes): in the sockets, between the eye loop's front and socket points
+        for(int e=0;e<2;e++){int i=e==0?7:1;float[] l=SpriteModels.lerp(SpriteModels.lerp(loc[3][i],loc[3][0],.42f),loc[4][i],.1f);EYES[e]=place(c,pitch,add(l,v(.012f*hx/.098f,0,0)));}
+        // texture coordinates: the front half (-90..90 degrees) on the face tile, by angle across and height down;
+        // behind the ears: hair above the ear line, skin (the nape) below
+        for(int r=0;r<5;r++)for(int i=0;i<n;i++){int j=(i+1)%n;
+            float aI=HEAD_A[i],aJ=HEAD_A[j];boolean front=Math.abs(aI)<=90&&Math.abs(aJ)<=90&&!(Math.abs(aI)==90&&Math.abs(aJ)==90);
+            float[] A0=P[r][i],A1=P[r][j],B1=P[r+1][j],B0=P[r+1][i];
+            if(front){float uI=.5f+aI/180f,uJ=.5f+aJ/180f;
+                quadUV(A0,A1,B1,B0,N[r][i],N[r][j],N[r+1][j],N[r+1][i],FACE,new float[]{uI,faceV(r)},new float[]{uJ,faceV(r)},new float[]{uJ,faceV(r+1)},new float[]{uI,faceV(r+1)});}
+            else{float ua=((aI<0?aI+360:aI)-90)/180f,ub=((aJ<0?aJ+360:aJ)-90)/180f;if(ub<ua)ub+=1;
+                int t=r>=3?(r==4?back:sideUp):sideLow;
+                quadUV(A0,A1,B1,B0,N[r][i],N[r][j],N[r+1][j],N[r+1][i],t,new float[]{ua,1-r/5f},new float[]{ub,1-r/5f},new float[]{ub,1-(r+1)/5f},new float[]{ua,1-(r+1)/5f});}
+        }
+        float[] crown=place(c,pitch,v(-.06f*hx,0,1.06f*hz)),under=place(c,pitch,v(-.1f*hx,0,-.8f*hz));
+        float[] upN=sub(place(v(0,0,0),pitch,v(0,0,1)),place(v(0,0,0),pitch,v(0,0,0))),dnN=mul(upN,-1);
+        for(int i=0;i<n;i++){int j=(i+1)%n;
+            tri(P[5][j],P[5][i],crown,N[5][j],N[5][i],upN,top,new float[]{.5f+.45f*(float)Math.sin(Math.toRadians(HEAD_A[j])),.5f-.45f*(float)Math.cos(Math.toRadians(HEAD_A[j])),.5f+.45f*(float)Math.sin(Math.toRadians(HEAD_A[i])),.5f-.45f*(float)Math.cos(Math.toRadians(HEAD_A[i])),.5f,.5f});
+            boolean fr=Math.abs(HEAD_A[i])<=90&&Math.abs(HEAD_A[j])<=90;
+            tri(P[0][i],P[0][j],under,N[0][i],N[0][j],dnN,fr?FACE:sideLow,fr?new float[]{.5f+HEAD_A[i]/180f,.995f,.5f+HEAD_A[j]/180f,.995f,.5f,.995f}:new float[]{.2f,.9f,.8f,.9f,.5f,.99f});}
     }
     static void faceQuad(float[] a,float[] b,float[] c,float[] d,int tile,float u0,float v0,float u1,float v1){
         float[] n=norm(cross(sub(b,a),sub(d,a)));quad(a,b,c,d,n,n,n,n,tile,u0,v0,u1,v1);
     }
-    /** Hood: a second, larger subdivided cube around the head, open at the front, its bottom reaching the shoulders; a deep hood has a peak at the back. */
+    /**
+     * Hood (or long hair): five loops of the head's 8 points blown up around it — a drape over the shoulders, the
+     * cheeks, the temples, the crown — open at the front (the face looks out of it), closed by a fan at the top. A
+     * deep hood has its tip pulled back into a peak. Long hair ({@code tile} &lt; 0) leaves the whole front half open
+     * and the top to the head's own hair.
+     */
     private static void hood(float[] c,float pitch,float hx,float hy,float hz,boolean peak,int tile){
-        boolean noTop=tile<0;if(noTop)tile=-tile-1;   // long hair: the head's own hair already covers the top
-        float[][][][] P=new float[3][3][3][];
-        for(int i=0;i<3;i++)for(int j=0;j<3;j++)for(int k=0;k<3;k++){float x=i-1,y=j-1,z=k-1;
-            if(k==2){boolean cx=Math.abs(x)==1,cy=Math.abs(y)==1;if(cx&&cy){z=.62f;x*=.88f;y*=.88f;}else if(cx||cy){z=.9f;}else z=1.04f;}
-            if(k==0){z=-1.32f;y*=1.12f;}
-            if(i==2){x=.92f;if(k==1)y*=1.02f;}   // open front sits just ahead of the face
-            float[] p=v(x*hx*1.22f-.012f,y*hy*1.26f,z*hz*1.16f+.006f);
-            if(peak&&i==0&&j==1&&k==2){p=add(p,v(-.08f,0,.06f));}
-            P[i][j][k]=place(c,pitch,p);}
-        for(int a=0;a<2;a++)for(int d=0;d<2;d++){
-            faceQuad(P[0][a+1][d+1],P[0][a][d+1],P[0][a][d],P[0][a+1][d],tile,a/2f,1-(d+1)/2f,(a+1)/2f,1-d/2f);
-            faceQuad(P[a][2][d+1],P[a+1][2][d+1],P[a+1][2][d],P[a][2][d],tile,a/2f,1-(d+1)/2f,(a+1)/2f,1-d/2f);
-            faceQuad(P[a+1][0][d+1],P[a][0][d+1],P[a][0][d],P[a+1][0][d],tile,a/2f,1-(d+1)/2f,(a+1)/2f,1-d/2f);
-            if(!noTop)faceQuad(P[a][d][2],P[a][d+1][2],P[a+1][d+1][2],P[a+1][d][2],tile,a/2f,d/2f,(a+1)/2f,(d+1)/2f);}
+        boolean hair=tile<0;if(hair)tile=-tile-1;
+        float[][] R=hair?new float[][]{{-1.5f,.95f,.2f,.9f},{-.8f,1.04f,.55f,1.06f},{0,1.06f,.85f,1.1f},{.62f,1.02f,.95f,1.08f},{1.0f,.78f,.7f,.85f}}
+                        :new float[][]{{-1.42f,1.38f,.78f,1.05f},{-.72f,1.16f,1.1f,1.15f},{0,1.13f,1.12f,1.18f},{.64f,1.06f,1.04f,1.12f},{1.04f,.76f,.74f,.88f}};
+        int n=8;float[][][] P=new float[R.length][n][],N=new float[R.length][n][];
+        for(int r=0;r<R.length;r++)for(int i=0;i<n;i++){double a=Math.toRadians(HEAD_A[i]);float cs=(float)Math.cos(a),sn=(float)Math.sin(a);
+            float cx=Math.signum(cs)*(float)Math.pow(Math.abs(cs),.8f),sy=Math.signum(sn)*(float)Math.pow(Math.abs(sn),.8f);
+            float x=cx*(cs>=0?R[r][2]:R[r][3]),y=sy*R[r][1],z=R[r][0];
+            if(!hair&&i==0)x+=.06f;   // the front edge stands a little proud of the face
+            float[] l=v(x*hx-.004f,y*hy,z*hz+.008f);P[r][i]=place(c,pitch,l);
+            N[r][i]=sub(place(v(0,0,0),pitch,v(x/hx,y/hy,z*.5f/hz)),place(v(0,0,0),pitch,v(0,0,0)));}
+        float open=hair?90:40;
+        for(int r=0;r+1<R.length;r++)for(int i=0;i<n;i++){int j=(i+1)%n;
+            if(Math.abs(HEAD_A[i])<=open&&Math.abs(HEAD_A[j])<=open&&!(hair&&r==R.length-2))continue;   // the opening
+            quad(P[r][i],P[r][j],P[r+1][j],P[r+1][i],N[r][i],N[r][j],N[r+1][j],N[r+1][i],tile,i/(float)n,1-r/4f,(i+1)/(float)n,1-(r+1)/4f);}
+        if(!hair){float[] tip=place(c,pitch,peak?v(-.95f*hx,0,1.32f*hz):v(-.1f*hx,0,1.16f*hz));float[] tn=sub(place(v(0,0,0),pitch,peak?v(-.5f,0,1):v(0,0,1)),place(v(0,0,0),pitch,v(0,0,0)));
+            int L=R.length-1;for(int i=0;i<n;i++){int j=(i+1)%n;tri(P[L][j],P[L][i],tip,N[L][j],N[L][i],tn,tile,new float[]{(i+1)/(float)n,0,i/(float)n,0,(i+.5f)/n,0});}}
     }
     /** Wizard hat: a flat 8-sided brim and a 6-sided cone with one loop cut, bent back toward the tip. */
     private static void hat(float[] crown,float[] up,float[] fwd,float hs){
@@ -737,68 +877,21 @@ final class BoxMesh {
     // ------------------------------------------------------------------ painting
     private static int rgb(int r,int g,int b){return 0xff000000|(Math.max(0,Math.min(255,r))<<16)|(Math.max(0,Math.min(255,g))<<8)|Math.max(0,Math.min(255,b));}
     private static float hash(int x,int y){int h=x*374761393+y*668265263;h=(h^(h>>>13))*1274126177;return ((h^(h>>>16))&0xffff)/65535f;}
-    /** The face, painted on the flat front of the head. */
+    /** The face, painted on the front of the head (FacePaint), and hair strands on the hair tile. */
     private static void paintFace(MeshModels.Mesh m){
-        Spec sp=S;int Sz=G*MeshModels.TILE,T=MeshModels.TILE,ox=(FACE%G)*T,oy=(FACE/G)*T;int[] px=m.color;
-        for(int y=0;y<T;y++)for(int x=0;x<T;x++){int o=(oy+y)*Sz+ox+x;int c=px[o];int r=(c>>16)&255,g=(c>>8)&255,b=c&255;
-            float u=x/(float)T,v=y/(float)T,cu=Math.abs(u-.5f);float n=hash(x,y);
-            switch(sp.face){
-                case F_SKULL:{   // dark sockets, nose hole, a row of teeth, cracks
-                    for(int s=-1;s<=1;s+=2){float ex=.5f+s*.2f,dx=(u-ex)/.12f,dy=(v-.42f)/.1f;if(dx*dx+dy*dy<1){float e=dx*dx+dy*dy;r=g=b=(int)(18+e*30);}}
-                    if(v>.55f&&v<.68f&&cu<(.68f-v)*.5f+.01f){r=22;g=18;b=14;}
-                    if(v>.76f&&v<.88f&&cu<.17f){boolean gap=((int)(u*24))%2==0;if(gap||Math.abs(v-.82f)<.012f){r=(int)(r*.35f);g=(int)(g*.33f);b=(int)(b*.3f);}}
-                    if(Math.abs(u-.3f-v*.15f)<.012f&&v<.3f){r=(int)(r*.55f);g=(int)(g*.5f);b=(int)(b*.45f);}
-                    break;}
-                case F_SHADOW:{float d=(float)Math.sqrt(cu*cu+(v-.5f)*(v-.5f));int k=(int)(6+d*30+n*6);r=k+2;g=k;b=k;break;}
-                case F_GOBLIN:{
-                    for(int s=-1;s<=1;s+=2){float ex=.5f+s*.2f;
-                        if(Math.abs(v-(.33f+s*0)+(u-ex)*s*.4f)<.03f&&Math.abs(u-ex)<.13f){r=28;g=34;b=14;}                       // angry slanted brows
-                        if(Math.abs(v-.43f)<.045f&&Math.abs(u-ex)<.08f){r=230;g=200;b=40;if(Math.abs(u-ex)<.018f){r=20;g=10;b=0;}}}
-                    if(Math.abs(v-.76f-cu*cu*1.6f)<.035f&&cu<.3f){r=40;g=18;b=12;if(((int)(u*20))%3==0&&v<.77f+cu*cu*1.6f){r=232;g=224;b=192;}}   // wide toothy grin
-                    if(n>.985f){r=(int)(r*.7f);g=(int)(g*.8f);b=(int)(b*.6f);}                                                      // warts
-                    break;}
-                case F_ORC:{
-                    if(v>.26f&&v<.36f&&cu<.42f){r=(int)(r*.55f);g=(int)(g*.55f);b=(int)(b*.5f);}                                 // heavy brow
-                    for(int s=-1;s<=1;s+=2){float ex=.5f+s*.19f;if(Math.abs(v-.43f)<.03f&&Math.abs(u-ex)<.06f){r=255;g=80;b=30;if(Math.abs(u-ex)<.015f){r=40;g=0;b=0;}}
-                        for(int k=0;k<3;k++)if(Math.abs(u-(ex+s*(.04f+k*.05f)))<.014f&&v>.5f&&v<.66f){r=24;g=24;b=28;}}         // war paint stripes
-                    if(u>.42f&&u<.58f&&v>.48f&&v<.64f){r=(int)(r*.75f);g=(int)(g*.75f);b=(int)(b*.7f);}                          // flat nose
-                    if(Math.abs(v-.78f)<.025f&&cu<.22f){r=30;g=14;b=10;}
-                    for(int s=-1;s<=1;s+=2)if(Math.abs(u-(.5f+s*.15f))<.025f&&v>.67f&&v<.79f){r=238;g=230;b=204;}                // tusks drawn on the lip
-                    break;}
-                default:{   // human
-                    if(sp.snout){   // dragonborn snout tip: nostrils, a long mouth line with teeth, scales
-                        if(((x/6+y/5)&1)==0&&(x%6==0||y%5==0)){r=r*7/10;g=g*7/10;b=b*7/10;}
-                        for(int s2=-1;s2<=1;s2+=2)if(Math.abs(u-(.5f+s2*.16f))<.05f&&Math.abs(v-.3f)<.04f){r=20;g=14;b=10;}
-                        if(Math.abs(v-.72f)<.02f&&cu<.42f){r=30;g=12;b=10;}
-                        if(v>.74f&&v<.79f&&cu<.38f&&((int)(u*22))%2==0){r=232;g=226;b=200;}
-                        break;}
-                    int hr=(sp.hairRGB>>16)&255,hg=(sp.hairRGB>>8)&255,hb=sp.hairRGB&255;
-                    if(sp.hairline&&v<.2f){float k=1-n*.15f;r=(int)(hr*k);g=(int)(hg*k);b=(int)(hb*k);}
-                    float eyeY=.43f;int ir=(sp.iris>>16)&255,ig=(sp.iris>>8)&255,ib=sp.iris&255;
-                    for(int s2=-1;s2<=1;s2+=2){float ex=.5f+s2*.19f;
-                        if(Math.abs(v-(eyeY-.075f))<.022f&&Math.abs(u-ex)<.1f){r=(int)(hr*.9f);g=(int)(hg*.9f);b=(int)(hb*.9f);}           // brows
-                        if(sp.heavyBrow&&Math.abs(v-(eyeY-.07f))<.04f&&Math.abs(u-ex)<.13f){r=(int)(r*.6f);g=(int)(g*.6f);b=(int)(b*.6f);}
-                        if(Math.abs(v-eyeY)<.035f&&Math.abs(u-ex)<.075f){
-                            if(sp.solidEyes){r=ir;g=ig;b=ib;if(Math.abs(u-ex)<.008f){r=40;g=10;b=10;}}   // tiefling: solid gold eyes, slit pupils
-                            else{r=235;g=230;b=222;if(Math.abs(u-ex)<.035f){r=ir;g=ig;b=ib;if(Math.abs(u-ex)<.015f){r=12;g=12;b=12;}}}}
-                        if(sp.female&&Math.abs(v-(eyeY-.042f))<.014f&&Math.abs(u-ex)<.085f&&(u-ex)*s2>-.06f){r=22;g=16;b=14;}}   // lashes
-                    if(u>.45f&&u<.55f&&v>.45f&&v<.66f){r=(int)(r*.82f);g=(int)(g*.8f);b=(int)(b*.8f);}                          // nose shadow
-                    if(v>.63f&&v<.67f&&u>.44f&&u<.56f){r=(int)(r*.7f);g=(int)(g*.68f);b=(int)(b*.68f);}
-                    if(Math.abs(v-.77f)<(sp.female?.026f:.018f)&&cu<(sp.female?.1f:.11f)){r=sp.female?150:118;g=sp.female?60:52;b=sp.female?64:48;}           // mouth
-                    if(sp.stubble&&v>.7f&&(u<.2f||u>.8f||v>.86f)){r=(int)(r*.55f);g=(int)(g*.5f);b=(int)(b*.45f);}               // stubble along the jaw
-                    if(sp.beard){int br=(sp.beardRGB>>16)&255,bg=(sp.beardRGB>>8)&255,bb=sp.beardRGB&255;
-                        boolean mouth=Math.abs(v-.77f)<.018f&&cu<.09f;
-                        if(!mouth&&(v>.68f||(v>.6f&&cu>.18f)||(v>.62f&&v<.71f&&cu>.04f&&cu<.16f))){float k=.85f+n*.2f-(((x+y)&3)==0?.12f:0);r=(int)(br*k);g=(int)(bg*k);b=(int)(bb*k);}}
-                    if(sp.mask&&v>.55f){int mr=(sp.maskRGB>>16)&255;r=mr+(int)(n*8);g=r;b=r+3;}
-                }
-            }
-            px[o]=rgb(r,g,b);}
+        int Sz=G*MeshModels.TILE,T=MeshModels.TILE;
+        FacePaint.paint(m.color,Sz,(FACE%G)*T,(FACE/G)*T,T,S);
+        boolean hairTile=!S.bones&&S.head!=H_SKULL;
+        if(hairTile){int ox=(HAIR%G)*T,oy=(HAIR/G)*T;   // hair: strands, clumps and a sheen instead of woven cloth
+            int hr=(S.hairRGB>>16)&255,hg=(S.hairRGB>>8)&255,hb=S.hairRGB&255;
+            if(S.head==H_GOBLIN||S.head==H_ORC){int c=m.color[oy*Sz+ox+T/2];hr=(c>>16)&255;hg=(c>>8)&255;hb=c&255;}
+            for(int y=0;y<T;y++)for(int x=0;x<T;x++){float k=FacePaint.hairShade(x,y,T,13);m.color[(oy+y)*Sz+ox+x]=rgb((int)(hr*k),(int)(hg*k),(int)(hb*k));}}
     }
     /** Detail painted instead of modelled: ribs, a holy sun, belts, dragon scales. */
     private static void paintExtra(MeshModels.Mesh m,int id){
         int Sz=G*MeshModels.TILE,T=MeshModels.TILE;int[] px=m.color;
         if(S.snout)for(int t:new int[]{SKIN,HANDS}){if(t==HANDS&&S.weapon!=W_STAFF)continue;int ox=(t%G)*T,oy=(t/G)*T;
-            for(int y=0;y<T;y++)for(int x=0;x<T;x++){int row=y/5,cx=(x+(row&1)*3)%6,cy=y%5;if(cy==0||cx==0){int o=(oy+y)*Sz+ox+x,c=px[o];px[o]=rgb(((c>>16)&255)*7/10,((c>>8)&255)*7/10,(c&255)*7/10);}}}
+            for(int y=0;y<T;y++)for(int x=0;x<T;x++){int X=x*64/T,Y=y*64/T;int row=Y/5,cx=(X+(row&1)*3)%6,cy=Y%5;if((cy==0&&y%(T/64)==0)||(cx==0&&x%(T/64)==0)){int o=(oy+y)*Sz+ox+x,c=px[o];px[o]=rgb(((c>>16)&255)*7/10,((c>>8)&255)*7/10,(c&255)*7/10);}}}
         if(id==Sprites.SKELETON){int ox=(TORSO%G)*T,oy=(TORSO/G)*T;
             for(int y=0;y<T;y++)for(int x=0;x<T;x++){int o=(oy+y)*Sz+ox+x;int c=px[o];float u=(x%(T/4))/(float)(T/4),v=y/(float)T;
                 boolean rib=((int)(v*9))%2==0,spine=Math.abs(u-.5f)<.08f&&x/(T/4)%2==0;
@@ -808,6 +901,6 @@ final class BoxMesh {
                 boolean ray=d<T*.4f&&Math.abs(Math.sin(a*6))>.82f,sun=d<T*.16f;if(sun||ray)px[o]=rgb(214,172,64);}}
         // a belt across the waist of every tunic/torso (top band of the pelvis tile)
         if(id!=Sprites.SKELETON&&id!=Sprites.CULTIST&&id!=Sprites.HERO_WIZARD){int ox=(PELVIS%G)*T,oy=(PELVIS/G)*T;
-            for(int y=0;y<T;y++)for(int x=0;x<T;x++){float v=y/(float)T;if(v>.82f){int o=(oy+y)*Sz+ox+x;boolean buckle=((x%(T/4))>T/8-3&&(x%(T/4))<T/8+3)&&x/(T/4)==0;px[o]=buckle?rgb(184,154,80):rgb(58,38,22);}}}
+            for(int y=0;y<T;y++)for(int x=0;x<T;x++){float v=y/(float)T;if(v>.82f){int o=(oy+y)*Sz+ox+x;boolean buckle=((x%(T/4))>T/8-3*T/64&&(x%(T/4))<T/8+3*T/64)&&x/(T/4)==0;px[o]=buckle?rgb(184,154,80):rgb(58,38,22);}}}
     }
 }
