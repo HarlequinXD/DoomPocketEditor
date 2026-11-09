@@ -31,9 +31,9 @@ final class GameHud {
     Boolean previewCaster;
     void drawControls(Canvas c,float w,float h,Hero hero,boolean[] down,boolean editing){
         boolean caster=previewCaster!=null?previewCaster:hero!=null&&!hero.spells.isEmpty();
-        java.util.Arrays.fill(drawn,HudLayout.ATTACK,HudLayout.JOYSTICK+1,false);
+        java.util.Arrays.fill(drawn,HudLayout.ATTACK,HudLayout.JOYSTICK+1,false);drawn[HudLayout.SWAP]=drawn[HudLayout.SPRINT]=false;
         int pots=hero==null?0:hero.potionCount();
-        for(int id=HudLayout.ATTACK;id<=HudLayout.MENU;id++){
+        for(int id:HudLayout.BUTTONS){
             HudLayout.Elem el=layout.e[id];
             if(id==HudLayout.CAST&&!caster)continue;   // only spellcasters have a Cast button (the other buttons move to make room for it)
             if(!el.visible&&!editing)continue;
@@ -47,10 +47,12 @@ final class GameHud {
                 case HudLayout.USE:button(c,x,y,rad,0xcc2a3038,Icons.DOOR,"USE",dn,a);break;
                 case HudLayout.POTION:button(c,x,y,rad,pots>0||editing?0xcc8a2030:0x882a3038,Icons.POTION,editing&&pots==0?"x2":pots>0?"x"+pots:"0",dn,a);break;
                 case HudLayout.BAG:theme.button(c,p,x,y,rad,0xcc2a3038,false,ui.dp,a);ui.icon(c,Icons.BACKPACK,x,y,20*el.scale,alpha(0xffffffff,a));break;
+                case HudLayout.SWAP:button(c,x,y,rad,0xcc2a3038,Icons.RESET,"SWAP",dn,a);break;
+                case HudLayout.SPRINT:button(c,x,y,rad,0xcc2a5038,Icons.CHEVRONS,"RUN",dn,a);break;
                 default:theme.button(c,p,x,y,rad,0x99101318,false,ui.dp,a);ui.icon(c,Icons.CANCEL,x,y,18*el.scale,alpha(0xddffffff,a));
             }
             float pad=dp(4);rects[id].set(x-rad-pad,y-rad-pad,x+rad+pad,y+rad+pad);drawn[id]=true;
-            if(hitIds!=null&&el.visible)ui.hit(rects[id],hitIds[id]);
+            if(hitIds!=null&&el.visible&&id<hitIds.length&&hitIds[id]>=0)ui.hit(rects[id],hitIds[id]);
         }
     }
     private void button(Canvas c,float x,float y,float rad,int col,int icon,String label,boolean down,float a){

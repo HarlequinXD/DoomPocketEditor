@@ -47,6 +47,41 @@ final class World {
     private float damageTick;
 
     /** Floating combat text (damage numbers, MISS, CRITICAL, +XP...). */
+    /** A speech bubble over an entity (Say Over Head). */
+    static final class Bubble {final Actor a;final String text;float t;final float life;Bubble(Actor a,String text,float life){this.a=a;this.text=text;this.life=life;}}
+    final ArrayList<Bubble> bubbles=new ArrayList<>();
+    void bubble(Actor a,String text,float secs){if(a==null||text==null||text.isEmpty())return;for(int i=bubbles.size()-1;i>=0;i--)if(bubbles.get(i).a==a)bubbles.remove(i);bubbles.add(new Bubble(a,text,Math.max(.5f,secs)));}
+    // ------------------------------------------------------------------ status effects
+    static final int FX_HASTE=0,FX_SLOW=1,FX_REGEN=2,FX_POISON=3,FX_BURN=4,FX_STONESKIN=5,FX_INVISIBLE=6,FX_COUNT=7;
+    static final String FX_NAMES="Haste|Slow|Regenerate|Poison|Burning|Stoneskin|Invisible";
+    private static final String[] FX_WORDS={"Hasted!","Slowed!","Regenerating","Poisoned!","Burning!","Stoneskin","Invisible"};
+    private static final int[] FX_COLS={0xff70d0ff,0xffa0a0c0,0xff60e070,0xff90e040,0xffff8030,0xffc0b090,0xffd0d0ff};
+    /** Gives an effect for some seconds; strength is HP per second (regenerate, poison, burning) and unused otherwise. */
+    void applyEffect(Actor a,int fx,float secs,float strength){
+        if(a==null||!a.alive||fx<0||fx>=FX_COUNT)return;
+        if(fx==FX_HASTE)a.fxTime[FX_SLOW]=0;if(fx==FX_SLOW)a.fxTime[FX_HASTE]=0;
+        a.fxTime[fx]=Math.max(a.fxTime[fx],secs);a.fxPower[fx]=Math.max(strength,0);floater(a,FX_WORDS[fx],FX_COLS[fx]);
+    }
+    void clearEffects(Actor a){if(a!=null)java.util.Arrays.fill(a.fxTime,0);}
+    private void tickEffects(Actor a,float dt){
+        float mul=a.isPlayer&&hero!=null&&hero.race!=null?hero.race.speed:1;
+        boolean any=false;for(int i=0;i<FX_COUNT;i++)if(a.fxTime[i]>0){any=true;a.fxTime[i]-=dt;}
+        if(any&&a.alive){
+            if(a.has(FX_HASTE))mul*=1.5f;if(a.has(FX_SLOW))mul*=.5f;
+            a.fxTick+=dt;
+            if(a.fxTick>=1){a.fxTick-=1;
+                if(a.has(FX_REGEN))giveHealth(a,Math.max(1,Math.round(a.fxPower[FX_REGEN])),a.isPlayer?Integer.MAX_VALUE:Math.max(a.def.health,a.maxHealth));
+                if(a.has(FX_POISON)){damage(a,Math.max(1,Math.round(a.fxPower[FX_POISON])),null);particles.emit(Atmosphere.particleIndex("Poison bubbles"),a.x,a.y,a.z+a.height*.5f,6);}
+                if(a.has(FX_BURN)){damage(a,Math.max(1,Math.round(a.fxPower[FX_BURN])),null);particles.emit(Atmosphere.particleIndex("Fire embers"),a.x,a.y,a.z+a.height*.5f,8);}
+                if(a.has(FX_REGEN))particles.emit(Atmosphere.particleIndex("Holy light"),a.x,a.y,a.z+a.height*.5f,4);}
+        }else a.fxTick=0;
+        a.speedMul=mul;
+    }
+    // ------------------------------------------------------------------ time and fades
+    /** Game speed (Set Game Speed), its countdown, and the freeze of a hit stop. */
+    float timeScale=1,timeScaleT,hitStop;
+    /** Screen fade to black: 0 clear .. 1 black, moving to fadeTarget at fadeSpeed per second (drawn by the play view). */
+    float fade,fadeTarget,fadeSpeed=1;
     static final class Floater {float x,y,z,t;final String text;final int color;Floater(float x,float y,float z,String text,int color){this.x=x;this.y=y;this.z=z;this.text=text;this.color=color;}}
     final ArrayList<Floater> floaters=new ArrayList<>();
     void floater(Actor a,String text,int color){if(a==null||!GameSettings.combatText)return;floaters.add(new Floater(a.x+(rng.nextFloat()-.5f)*.25f,a.y+(rng.nextFloat()-.5f)*.25f,a.z+a.height+.1f,text,color));if(floaters.size()>40)floaters.remove(0);}
@@ -144,7 +179,7 @@ final class World {
         float sx=level.playerX,sy=level.playerY,sa=level.facing;
         if(arrival!=null&&!arrival.isEmpty())for(Level.Thing t:level.things)if(arrival.equals(t.def)){sx=t.x;sy=t.y;sa=t.angle;break;}
         player=makeActor(pd,sx,sy,sa);player.isPlayer=true;
-        if(from!=null&&from.hero!=null){hero=from.hero;player.sprite=from.player.sprite;player.health=Math.max(1,from.player.health);if(hero.race!=null)player.speed=pd.speed*hero.race.speed;hero.relentlessUsed=false;
+        if(from!=null&&from.hero!=null){hero=from.hero;player.sprite=from.player.sprite;player.health=Math.max(1,from.player.health);player.speed=pd.speed;hero.relentlessUsed=false;
             quests.putAll(from.quests);globals.putAll(from.globals);}
         else{hero=Hero.create(pd);player.sprite=pd.lookSprite();player.health=hero.maxHp;}
         weapon=hero.weaponOrFists().fp;
@@ -229,6 +264,11 @@ final class World {
     // ------------------------------------------------------------------ frame
     void tick(float dt){
         dt=Math.min(dt,.05f);
+        if(fade!=fadeTarget){float st=dt*Math.max(.05f,fadeSpeed);fade=fade<fadeTarget?Math.min(fadeTarget,fade+st):Math.max(fadeTarget,fade-st);}
+        for(int i=bubbles.size()-1;i>=0;i--){Bubble b=bubbles.get(i);if(!paused&&dialogue==null)b.t+=dt;if(b.t>b.life||b.a.removed)bubbles.remove(i);}
+        if(hitStop>0&&!paused&&dialogue==null){hitStop-=dt;return;}   // a hit stop freezes the world for a moment (input waits)
+        if(timeScaleT>0){timeScaleT-=dt;if(timeScaleT<=0)timeScale=1;}
+        dt*=timeScale;
         time+=dt;
         if(levelComplete){completeTime+=dt;input.endFrame();return;}
         for(int i=floaters.size()-1;i>=0;i--){Floater f=floaters.get(i);f.t+=dt;f.z+=dt*.45f;if(f.t>1.1f)floaters.remove(i);}
@@ -239,6 +279,7 @@ final class World {
         if(hero!=null){if(hero.wardTime>0)hero.wardTime-=dt;weapon=hero.weaponOrFists().fp;}
         for(int i=0;i<actors.size();i++){Actor a=actors.get(i);if(a.removed)continue;
             a.wishActive=false;
+            if(a.projectileType<0)tickEffects(a,dt);
             if(a.fsm!=null)a.fsm.tick(this,a,dt);
             physics(a,dt);
             a.clock+=dt;if(a.attackTimer>a.attackPrev+1e-4f)a.attackLen=a.attackTimer;if(a.landTimer>0)a.landTimer-=dt;
@@ -450,7 +491,7 @@ final class World {
         return true;
     }
     boolean canSeePlayer(Actor a,float range,float fov){
-        if(player==null||!player.alive)return false;
+        if(player==null||!player.alive||player.has(FX_INVISIBLE))return false;
         float d=dist(a,player);if(d>range)return false;
         if(d>1.5f&&fov<360){float da=angleDiff(angleTo(a,player),a.angle);if(Math.abs(da)>Math.toRadians(fov)*.5f)return false;}
         return lineOfSight(a,player);
@@ -486,7 +527,7 @@ final class World {
     void applyHeroLook(){
         if(hero==null||hero.look==null||player==null)return;EntityDef pd=project.playerDef();
         if(project.builtinLook(pd,pd.sprite)){CharLook.setCurrent(hero.look);player.sprite=Sprites.CREATED;}
-        if(hero.race!=null)player.speed=pd.speed*hero.race.speed;
+
     }
     void damage(Actor t,int amount,Actor src){damage(t,amount,src,false);}
     /** Applies damage, shows the number, awards XP to the hero for kills and sends DAMAGED / DIED to the FSM. */
@@ -494,6 +535,7 @@ final class World {
         if(t==null||!t.alive||t.invulnerable||amount<=0||t.removed)return;
         if(t.isPlayer&&godMode)return;   // testing: Debug > God mode
         if(t.isPlayer)amount=Math.max(1,Math.round(amount*GameSettings.damageTaken()));   // Options > Difficulty
+        if(t.has(FX_STONESKIN))amount=Math.max(1,amount/2);
         if(t.isPlayer){damageFlash=Math.min(1,damageFlash+.25f+amount*.02f);flashColor=0xffff0000;}
         floater(t,crit?amount+"!":String.valueOf(amount),t.isPlayer?0xffff5a4a:crit?0xffffd040:0xffffffff);
         t.health-=amount;

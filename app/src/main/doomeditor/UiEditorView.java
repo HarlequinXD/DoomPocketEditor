@@ -504,7 +504,7 @@ public class UiEditorView extends View {
     private boolean isCaster(){return previewCaster;}
     /** Topmost element under a point: buttons, joystick, then quest/messages, then the status bar. */
     private int elementAt(float x,float y){
-        int[] order={HudLayout.MENU,HudLayout.BAG,HudLayout.ATTACK,HudLayout.CAST,HudLayout.JUMP,HudLayout.USE,HudLayout.POTION,HudLayout.JOYSTICK,HudLayout.QUEST,HudLayout.MESSAGE,HudLayout.MINIMAP,HudLayout.STATUS};
+        int[] order={HudLayout.MENU,HudLayout.BAG,HudLayout.SWAP,HudLayout.SPRINT,HudLayout.ATTACK,HudLayout.CAST,HudLayout.JUMP,HudLayout.USE,HudLayout.POTION,HudLayout.JOYSTICK,HudLayout.QUEST,HudLayout.MESSAGE,HudLayout.MINIMAP,HudLayout.STATUS};
         for(int id:order){RectF q=hud.rects[id];if((hud.drawn[id]||id==HudLayout.JOYSTICK)&&q.contains(x,y))return id;}
         return -1;
     }

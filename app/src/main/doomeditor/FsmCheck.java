@@ -39,8 +39,6 @@ final class FsmCheck {
             {"is_map","yesEvent","noEvent"},{"is_third_person","thirdEvent","firstEvent"},{"music_playing","yesEvent","noEvent"},{"give_loot","foundEvent","emptyEvent"}};
         for(String[] r:o)OUTCOMES.put(r[0],java.util.Arrays.copyOfRange(r,1,r.length));
     }
-    /** Buttons that have no control in the game (nothing ever presses them). */
-    static final Set<String> NO_BUTTON=new HashSet<>(java.util.Arrays.asList("weapon","alt"));
 
     /** Every issue in the project's entity FSMs, errors first. */
     static ArrayList<Issue> project(Project p){ArrayList<Issue> out=new ArrayList<>();for(EntityDef d:p.defs)out.addAll(check(p,d));sort(out);return out;}
@@ -71,8 +69,9 @@ final class FsmCheck {
                 for(Actions.Param pr:s.params){String v=val(a,pr.key);
                     if(pr.type==Actions.T_EVENT&&v.equals("FINISHED"))sendsFinished=true;
                     references(out,p,d,n,i,a,s,pr,v);
-                    if(pr.type==Actions.T_CHOICE&&pr.key.equals("button")&&NO_BUTTON.contains(v.toLowerCase()))
-                        out.add(new Issue(WARNING,d,n,i,s.name+" waits for the "+v+" button, but the game has no "+v+" button, so it never fires."));}
+                    if(pr.type==Actions.T_CHOICE&&pr.key.equals("button")){int hud=v.equalsIgnoreCase("Weapon")?HudLayout.SWAP:v.equalsIgnoreCase("Alt")?HudLayout.SPRINT:-1;
+                        if(hud>=0&&p.hud!=null&&!p.hud.e[hud].visible&&d.kind==EntityDef.PLAYER&&!a.type.equals("weapon_on_button"))
+                            out.add(new Issue(WARNING,d,n,i,s.name+" waits for the "+v+" button, which is hidden: show "+HudLayout.NAMES[hud]+" on the UI Editor's HUD page."));}}
                 // events this action sends to its own FSM that the state ignores
                 if(!SENDS_ELSEWHERE.contains(a.type))for(Actions.Param pr:s.params){if(pr.type!=Actions.T_EVENT)continue;String v=val(a,pr.key);
                     if(v.isEmpty()||v.equals("FINISHED")||handles(g,n,v))continue;

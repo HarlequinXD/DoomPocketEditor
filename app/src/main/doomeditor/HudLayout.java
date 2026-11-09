@@ -8,11 +8,14 @@ import org.json.JSONObject;
  * phone still fits another. Elements that were never moved use the built-in default spot.
  */
 final class HudLayout {
-    static final int ATTACK=0,CAST=1,JUMP=2,USE=3,POTION=4,BAG=5,MENU=6,JOYSTICK=7,QUEST=8,MESSAGE=9,STATUS=10,MINIMAP=11,N=12;
-    static final String[] NAMES={"Attack","Cast spell","Jump","Use","Potion","Bag","Pause menu","Joystick","Quest tracker","Messages","Status bar","Minimap"};
-    static final String[] KEYS={"attack","cast","jump","use","potion","bag","menu","joystick","quest","message","status","minimap"};
+    static final int ATTACK=0,CAST=1,JUMP=2,USE=3,POTION=4,BAG=5,MENU=6,JOYSTICK=7,QUEST=8,MESSAGE=9,STATUS=10,MINIMAP=11,SWAP=12,SPRINT=13,N=14;
+    static final String[] NAMES={"Attack","Cast spell","Jump","Use","Potion","Bag","Pause menu","Joystick","Quest tracker","Messages","Status bar","Minimap","Switch weapon","Sprint"};
+    static final String[] KEYS={"attack","cast","jump","use","potion","bag","menu","joystick","quest","message","status","minimap","swap","sprint"};
+    /** The buttons an FSM can listen for (Input.*), in HUD order; Switch weapon and Sprint start hidden. */
+    static final int[] BUTTONS={ATTACK,CAST,JUMP,USE,POTION,BAG,MENU,SWAP,SPRINT};
+    static boolean hiddenByDefault(int id){return id==SWAP||id==SPRINT;}
     /** Base radius (dp) of round controls. */
-    static final float[] RADIUS={38,28,24,25,24,22,18,56,0,0,0,0};
+    static final float[] RADIUS={38,28,24,25,24,22,18,56,0,0,0,0,22,24};
     static final float BAR_H=52;
 
     static final class Elem {boolean custom;float ax,ay,ox,oy;float scale=1,alpha=1;boolean visible=true;}
@@ -20,8 +23,8 @@ final class HudLayout {
     /** Joystick: false = appears wherever the thumb lands on its half of the screen, true = fixed spot. */
     boolean joyFixed;
 
-    HudLayout(){for(int i=0;i<N;i++)e[i]=new Elem();}
-    static boolean round(int id){return id<=JOYSTICK;}
+    HudLayout(){for(int i=0;i<N;i++){e[i]=new Elem();e[i].visible=!hiddenByDefault(i);}}
+    static boolean round(int id){return id<=JOYSTICK||id>=SWAP;}
     static boolean movable(int id){return id!=STATUS;}
     float barH(float dp){return e[STATUS].visible?BAR_H*dp:0;}
     float radius(int id,float dp){return RADIUS[id]*dp*e[id].scale;}
@@ -48,6 +51,8 @@ final class HudLayout {
             case QUEST:{float qw=boxW(QUEST,w,dp),right=e[MINIMAP].visible?w-16*dp-boxW(MINIMAP,w,dp)-14*dp:w-70*dp;out[0]=right-qw*.5f;out[1]=14*dp+boxH(QUEST,dp)*.5f;break;}
             case MINIMAP:{float m=boxW(MINIMAP,w,dp);out[0]=w-16*dp-m*.5f;out[1]=16*dp+m*.5f;break;}
             case MESSAGE:out[0]=62*dp+boxW(MESSAGE,w,dp)*.5f;out[1]=13*dp+boxH(MESSAGE,dp)*.5f;break;
+            case SWAP:out[0]=w-(caster?205:190)*dp;out[1]=h-bar-(caster?100:150)*dp;break;
+            case SPRINT:out[0]=215*dp;out[1]=h-bar-50*dp;break;
             default:out[0]=w*.5f;out[1]=h-bar*.5f;
         }
     }
@@ -62,7 +67,7 @@ final class HudLayout {
         el.ox=(cx-el.ax*w)/dp;el.oy=(cy-el.ay*h)/dp;
         if(id==JOYSTICK)joyFixed=true;
     }
-    void resetElem(int id){Elem el=e[id];el.custom=false;el.scale=1;el.alpha=1;el.visible=true;if(id==JOYSTICK)joyFixed=false;}
+    void resetElem(int id){Elem el=e[id];el.custom=false;el.scale=1;el.alpha=1;el.visible=!hiddenByDefault(id);if(id==JOYSTICK)joyFixed=false;}
     void resetAll(){for(int i=0;i<N;i++)resetElem(i);}
 
     static final String[] PRESETS={"Default","Left-handed","Compact","Big buttons","Minimal HUD"};
@@ -95,7 +100,7 @@ final class HudLayout {
         l.joyFixed=o.optBoolean("joyFixed",false);
         for(int i=0;i<N;i++){JSONObject j=o.optJSONObject(KEYS[i]);if(j==null)continue;Elem el=l.e[i];
             el.custom=j.optBoolean("custom",false);el.ax=(float)j.optDouble("ax",0);el.ay=(float)j.optDouble("ay",0);el.ox=(float)j.optDouble("ox",0);el.oy=(float)j.optDouble("oy",0);
-            el.scale=(float)Math.max(.5,Math.min(2,j.optDouble("scale",1)));el.alpha=(float)Math.max(.15,Math.min(1,j.optDouble("alpha",1)));el.visible=j.optBoolean("visible",true);}
+            el.scale=(float)Math.max(.5,Math.min(2,j.optDouble("scale",1)));el.alpha=(float)Math.max(.15,Math.min(1,j.optDouble("alpha",1)));el.visible=j.optBoolean("visible",!hiddenByDefault(i));}
         return l;
     }
 }

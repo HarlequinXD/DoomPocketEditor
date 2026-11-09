@@ -23,6 +23,11 @@ final class Actor {
     // Projectiles
     int projectileType=-1;Actor owner;int dmgMin,dmgMax;
     int maxHealth;
+    /** Movement speed multiplier: the hero's race, haste and slow. Movement actions multiply their speed by it. */
+    float speedMul=1;
+    /** Status effects (World.FX_*): seconds left and strength; fxTick paces the once-a-second ticks. */
+    final float[] fxTime=new float[World.FX_COUNT],fxPower=new float[World.FX_COUNT];float fxTick;
+    boolean has(int fx){return fxTime[fx]>0;}
     /** Projectile attack data: to-hit bonus (or auto-hit), damage dice and type, area radius and save DC. */
     int pAttack,pType,pDC;Rpg.Dice pDice;boolean pAuto;float pRadius;
     Actor(EntityDef d){def=d;}
