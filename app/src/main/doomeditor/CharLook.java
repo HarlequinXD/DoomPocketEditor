@@ -24,7 +24,7 @@ final class CharLook {
     /** Makes {@code l} the hero being shown; rebuilds the Created Character model only if the look changed. */
     static synchronized void setCurrent(CharLook l){
         if(l==null)return;boolean changed=!l.key().equals(current.key());current=l.copy();
-        if(changed){MeshModels.invalidate(Sprites.CREATED);Sprites.invalidate(Sprites.CREATED);}
+        if(changed){MeshModels.invalidate(Sprites.CREATED);Sprites.invalidate(Sprites.CREATED);Puppet.invalidate(Sprites.CREATED);}
     }
     Rpg.Race raceInfo(){return Rpg.race(race);}
     int skinColour(){int[] s=raceInfo().skins;return s[Math.max(0,Math.min(s.length-1,skin))];}

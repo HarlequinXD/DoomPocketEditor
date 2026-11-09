@@ -18,7 +18,7 @@ final class CharacterCreator {
 
     private final Ui ui;private final Paint p;private final Project project;private final Listener listener;
     CharLook look;private int tab;private float yaw=-.5f,spin=.35f,scroll,maxScroll,time;
-    private MeshModels.Mesh mesh;private String meshKey;private volatile MeshModels.Mesh built;private volatile String builtKey;private volatile boolean building;private Bitmap bmp;private int[] bmpPx;
+    private Puppet.Rig mesh;private String meshKey;private volatile Puppet.Rig built;private volatile String builtKey;private volatile boolean building;private Bitmap bmp;private int[] bmpPx;
     private final RectF r=new RectF(),content=new RectF(),preview=new RectF();
     private float downX,downY,lastX,lastY;private boolean dragging;private int dragKind;   // 1 = turning the model, 2 = scrolling
     private final java.util.Random rng=new java.util.Random();
@@ -64,12 +64,13 @@ final class CharacterCreator {
         UiTheme th=th();
         String key=look.key();
         if(mesh==null||!key.equals(meshKey)){   // a new look: build it in the background (256-texel textures take a moment) and keep showing the last one
-            MeshModels.Mesh ready=built;if(ready!=null&&key.equals(builtKey)){mesh=ready;meshKey=key;}
+            Puppet.Rig ready=built;if(ready!=null&&key.equals(builtKey)){mesh=ready;meshKey=key;}
             else if(!building){building=true;final CharLook lk=look.copy();final String k=key;
-                Thread t=new Thread(()->{MeshModels.Mesh m=null;try{m=BoxMesh.buildLook(lk);}catch(Throwable ignored){}builtKey=k;built=m;building=false;},"hero-preview");t.setPriority(Thread.NORM_PRIORITY-1);t.start();}}
-        // chunky PS1 pixels: render small, scale up 3x without smoothing
-        float avail=h*.62f,heroH=1.45f*scaleOf();int K=3;float ppu=avail/K/Math.max(.8f,heroH);
-        Sprites.Sprite s=mesh==null?null:MeshModels.raster(mesh,0,yaw,.12f,ppu,false);
+                Thread t=new Thread(()->{Puppet.Rig m=null;try{m=Puppet.rigForLook(lk);}catch(Throwable ignored){}builtKey=k;built=m;building=false;},"hero-preview");t.setPriority(Thread.NORM_PRIORITY-1);t.start();}}
+        // the puppet, scaled up by whole pixels without smoothing
+        float avail=h*.62f,heroH=1.45f*scaleOf();
+        Sprites.Sprite s=mesh==null?null:Puppet.composed("creator_"+meshKey,mesh,0,Puppet.A_IDLE2_FRAME,.5f+.5f*(float)Math.sin(System.nanoTime()*1.6e-9),yaw);
+        float K=s==null?1:Math.max(1,(float)Math.floor(avail/(Math.max(.8f,heroH)*Puppet.COMP_PPU)));
         float base=h*.8f;
         p.setColor(0x60000000);c.drawOval(pw*.5f-dp(70),base-dp(10),pw*.5f+dp(70),base+dp(10),p);
         if(s!=null){

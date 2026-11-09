@@ -136,6 +136,7 @@ final class Sprites {
      * Never stalls the game: if that angle isn't rendered yet, the closest ready one is shown while it renders in the background.
      */
     static Sprite get(int id,int frame,int view){
+        if(Puppet.enabled&&BoxMesh.has(id)){Sprite p=Puppet.sprite(id,frame,frame,0,(float)(view*Math.PI/4));if(p!=null)return p;}   // characters: 2D puppets
         if(cache==null)init();
         id=Math.max(0,Math.min(COUNT-1,id));frame=Math.max(0,Math.min(FRAMES-1,frame));
         view=hasAngles(id)?((view%VIEWS)+VIEWS)%VIEWS:0;int f=frameSlot(id,frame);

@@ -45,7 +45,7 @@ final class MeshModels {
     /** Forgets a built mesh so it is made again on next use (the created hero's look changed). */
     static void invalidate(int id){if(id<0||id>=Sprites.COUNT)return;synchronized(cache){cache[id]=null;failed[id]=false;}}
     /** Builds the character meshes ahead of time (loading screen), so the first fight doesn't hitch. */
-    static void warm(){for(int id:new int[]{Sprites.HERO,Sprites.SKELETON,Sprites.GOBLIN,Sprites.ORC,Sprites.CULTIST,Sprites.VILLAGER,Sprites.HERO_RANGER,Sprites.HERO_ROGUE,Sprites.HERO_WIZARD,Sprites.HERO_CLERIC})get(id);}
+    static void warm(){if(Puppet.enabled){Puppet.warm();return;}for(int id:new int[]{Sprites.HERO,Sprites.SKELETON,Sprites.GOBLIN,Sprites.ORC,Sprites.CULTIST,Sprites.VILLAGER,Sprites.HERO_RANGER,Sprites.HERO_ROGUE,Sprites.HERO_WIZARD,Sprites.HERO_CLERIC})get(id);}
     // ------------------------------------------------------------------ build
     static final int BUDGET=500;   // triangles per character (items get 320)
     private static int budget=BUDGET;
@@ -206,17 +206,19 @@ final class MeshModels {
      * creases, scuffs and stitching; plate metal with lames (bevelled plate edges), rivets, brushing and dents; wood grain.
      * The height of the detail goes to {@code out.height} so TexBake can light it.
      */
-    static void paint(Mesh out,SpriteModels.Model m,int g){
-        int S=g*TILE;int[] col=new int[S*S];float[] H=new float[S*S];
+    static void paint(Mesh out,SpriteModels.Model m,int g){paint(out,m,g,TILE);}
+    /** As above with tiles of {@code tile} texels (the puppets' parts are only 32 pixels: 128 is plenty). */
+    static void paint(Mesh out,SpriteModels.Model m,int g,int tile){
+        int S=g*tile;int[] col=new int[S*S];float[] H=new float[S*S];
         int nm=Math.max(1,m.mats.size());
-        java.util.stream.IntStream.range(0,nm).parallel().forEach(mi->paintTile(m,mi,g,S,col,H));
+        java.util.stream.IntStream.range(0,nm).parallel().forEach(mi->paintTile(m,mi,g,S,col,H,tile));
         out.color=col;out.height=H;   // PS1: colour texture only (TexBake lights it, then drops the height)
     }
     /**
      * One material's tile. Patterns are laid out in "64ths of the tile" (X, Y) so they keep their size whatever the
      * texture resolution, and the fine detail (threads, pores, grain, scratches) uses the real texels.
      */
-    private static void paintTile(SpriteModels.Model m,int mi,int g,int S,int[] col,float[] H){
+    private static void paintTile(SpriteModels.Model m,int mi,int g,int S,int[] col,float[] H,int TILE){   // TILE: this painting's tile size
         SpriteModels.Mat mt=m.mats.isEmpty()?null:m.mats.get(mi);int ox=(mi%g)*TILE,oy=(mi/g)*TILE;
         float br=mt==null?.6f:(float)Math.pow(mt.alb[0],1/2.2),bg=mt==null?.6f:(float)Math.pow(mt.alb[1],1/2.2),bb=mt==null?.6f:(float)Math.pow(mt.alb[2],1/2.2);
         int kind=mt==null?0:mt.kind;boolean metal=mt!=null&&(mt.metal>.3f||kind==SpriteModels.K_METAL),glow=mt!=null&&mt.glow;int s=mi*101+7;
@@ -252,7 +254,7 @@ final class MeshModels {
                     float sx=Math.abs(((X-24)%32+32)%32-16);if(sx>15.3f){shade*=.66f;h-=.3f;}else if(sx>13.5f&&sx<14.5f&&(Y%4)<2.2f){shade*=1.14f;h+=.12f;}
                     if(Y<1.5f||Y>62.5f){shade*=.78f;h-=.15f;}
                     tr=1+scuff*.05f;tg=1+scuff*.03f;break;}
-                case SpriteModels.K_HIDE:{float c=cell(x,y,6,s),n=fbm(X/5f,Y/5f,s,3,12);shade=.7f+Math.min(1,c*2.2f)*.35f+n*.15f+(fine-.5f)*.05f;h=Math.min(1,c*2.5f)*.8f+n*.2f;break;}
+                case SpriteModels.K_HIDE:{float c=cell(x*(MeshModels.TILE/TILE),y*(MeshModels.TILE/TILE),6,s),n=fbm(X/5f,Y/5f,s,3,12);shade=.7f+Math.min(1,c*2.2f)*.35f+n*.15f+(fine-.5f)*.05f;h=Math.min(1,c*2.5f)*.8f+n*.2f;break;}
                 case SpriteModels.K_METAL:{   // brushed plate in overlapping lames, rivets, dents, scratches, grime in the gaps
                     float brush=fbm(x/40f,y/1.2f,s,3,Math.max(1,TILE/40))*.2f,scr=(hash(x/3,y,s)>.992f)?.2f:0,dirt=Math.max(0,fbm(X/9f,Y/9f,s+5,4,6)-.55f)*1.4f,dent=fbm(X/6f,Y/6f,s+2,2,11);
                     float ly=Y%16;
@@ -260,7 +262,7 @@ final class MeshModels {
                     float rx=((X+((int)(Y/16))*4)%16+16)%16-8,ry=ly-3.6f;boolean rivet=rx*rx+ry*ry<1.1f;float rl=rivet?.35f-(rx+ry)*.12f:0;
                     shade=.86f+brush+scr-dirt*(ly<3?1.5f:1)+lame+(dent-.5f)*.12f+rl+(fine-.5f)*.03f;h=.6f-dirt*.6f+scr*.4f+lame*.5f+dent*.25f+(rivet?.4f:0);
                     tr=1-dirt*.05f;tb=1-dirt*.12f;break;}
-                case SpriteModels.K_WOOD:{float ring=(float)Math.sin(X*.55f+fbm(X/16f,Y/32f,s,3,2)*7)*.5f+.5f,kn=Math.max(0,.18f-cell(x,y,3,s))*3,pore=fbm(x/1.5f,y/12f,s+3,2,TILE)*.1f;
+                case SpriteModels.K_WOOD:{float ring=(float)Math.sin(X*.55f+fbm(X/16f,Y/32f,s,3,2)*7)*.5f+.5f,kn=Math.max(0,.18f-cell(x*(MeshModels.TILE/TILE),y*(MeshModels.TILE/TILE),3,s))*3,pore=fbm(x/1.5f,y/12f,s+3,2,TILE)*.1f;
                     shade=.72f+ring*.3f-kn*.4f+pore+(fine-.5f)*.04f;h=.4f+ring*.4f-kn+pore;break;}
                 default:{float n=fbm(X/8f,Y/8f,s,4,8),grime=Math.max(0,fbm(X/12f,Y/12f,s+9,3,5)-.5f);shade=.82f+n*.3f-grime*.5f+(fine-.5f)*.07f;h=.4f+n*.5f-grime;}
             }

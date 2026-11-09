@@ -70,13 +70,34 @@ final class BoxMesh {
         Spec sp=id==Sprites.CREATED?specFor(CharLook.current):spec(id);if(sp==null)return null;
         return make(sp,id==Sprites.CREATED?outfitFor(Rpg.heroClass(CharLook.current.cls)):id,id==Sprites.CREATED?"look_"+CharLook.current.key():"char_"+id,true);
     }
+    // ------------------------------------------------------------------ puppets
+    /** What Puppet needs to draw a character's parts: the idle pose with part tags, every pose's joints, the painted (unlit) texture. */
+    static synchronized Puppet.Source source(int id,boolean paint){
+        Spec sp=id==Sprites.CREATED?specFor(CharLook.current):spec(id);if(sp==null)return null;
+        return source(sp,id==Sprites.CREATED?outfitFor(Rpg.heroClass(CharLook.current.cls)):id,paint);}
+    static Puppet.Source source(int id){return source(id,true);}
+    static synchronized Puppet.Source sourceLook(CharLook l,boolean paint){return source(specFor(l),outfitFor(Rpg.heroClass(l.cls)),paint);}
+    static Puppet.Source sourceLook(CharLook l){return sourceLook(l,true);}
+    /** {@code paint}: false = poses and joints only (the parts' pictures are already on disk). */
+    private static Puppet.Source source(Spec sp,int paintId,boolean paint){
+        S=sp;G=4;for(int i=0;i<16;i++)glowTile[i]=i<sp.m.mats.size()&&sp.m.mats.get(i).glow;
+        Puppet.Source src=new Puppet.Source();src.joints=new float[ANIM_FRAMES][][];
+        for(int f=0;f<ANIM_FRAMES;f++){MeshModels.Frame fr=frame(f);src.joints[f]=joints;
+            if(f==Sprites.F_IDLE){src.rest=fr.v;src.count=fr.count;src.parts=java.util.Arrays.copyOf(partBuf,fr.count);}}
+        if(paint){MeshModels.Mesh out=new MeshModels.Mesh();out.atlas=G;PT=128;
+            MeshModels.paint(out,sp.m,G,PT);paintFace(out);paintExtra(out,paintId);out.height=null;PT=MeshModels.TILE;   // painted, not lit: the puppet lights each view itself
+            src.color=out.color;src.tile=128;}
+        src.grid=G;src.mats=sp.m;
+        S=null;buf=null;return src;
+    }
+
     private static MeshModels.Mesh make(Spec sp,int paintId,String texKey,boolean keep){
         S=sp;G=4;for(int i=0;i<16;i++)glowTile[i]=i<sp.m.mats.size()&&sp.m.mats.get(i).glow;
         MeshModels.Mesh out=new MeshModels.Mesh();out.atlas=G;
         out.frames=new MeshModels.Frame[ANIM_FRAMES];
         for(int f=0;f<ANIM_FRAMES;f++)out.frames[f]=frame(f);
         if(shapeOnly){MeshModels.pack(out);S=null;buf=null;return out;}   // checks: geometry only
-        int Sz=G*MeshModels.TILE;int[] done=TexBake.load(texKey,Sz*Sz);
+        PT=MeshModels.TILE;int Sz=G*MeshModels.TILE;int[] done=TexBake.load(texKey,Sz*Sz);
         if(done!=null)out.color=done;   // painted and lit on an earlier run
         else{MeshModels.paint(out,sp.m,G);paintFace(out);paintExtra(out,paintId);TexBake.bake(out,sp.m,true,FACE);if(keep)TexBake.save(texKey,out.color);}
         MeshModels.pack(out);
@@ -266,7 +287,7 @@ final class BoxMesh {
     /** Turns a point about the vertical axis through the body (positive = the right shoulder goes back). */
     private static float[] tz(float[] p,float a){float c=(float)Math.cos(a),s=(float)Math.sin(a);return v(p[0]*c-p[1]*s,p[0]*s+p[1]*c,p[2]);}
     private static MeshModels.Frame frame(int f){
-        buf=new float[9*3*1000];nv=0;quads=0;
+        buf=new float[9*3*1000];nv=0;quads=0;curPart=Puppet.P_TORSO;float[][] J=new float[Puppet.JOINTS][];
         Spec sp=S;float k=sp.bulk;
         SpriteModels.Body b=new SpriteModels.Body();b.chestW*=sp.chestW;b.shoulderW*=sp.shoulderW;
         float drop=0;if(sp.legK!=1){drop=(b.thigh+b.shin)*(1-sp.legK);b.thigh*=sp.legK;b.shin*=sp.legK;b.hipZ-=drop;b.pelvisZ-=drop;b.waistZ-=drop;b.chestZ-=drop;b.shoulderZ-=drop;b.headZ-=drop;}   // short legs: the body sits lower
@@ -281,57 +302,72 @@ final class BoxMesh {
             float[] hip=add(v(0,s*b.hipW,b.hipZ),off,1),target=v(ft[0],ft[1],ft[2]+.07f);
             float[] knee=SpriteModels.ik(hip,target,b.thigh,b.shin,v(1,s*.15f,.1f));
             float[] ankle=add(knee,norm(sub(target,knee)),b.shin);
+            {float c=(float)Math.cos(-pitch),sn=(float)Math.sin(-pitch),dx=.04f,dz=-.07f;int o=s>0?0:4;   // the sole under the ankle, turned with the foot
+                J[Puppet.J_HIP_R+o]=hip;J[Puppet.J_KN_R+o]=knee;J[Puppet.J_AN_R+o]=ankle;J[Puppet.J_SOLE_R+o]=v(ankle[0]+dx*c+dz*sn,ankle[1],ankle[2]-dx*sn+dz*c);}
+            curPart=s>0?Puppet.P_THIGH_R:Puppet.P_THIGH_L;
             if(!sp.robe){
-                if(sp.bones){cyl5(hip,knee,.026f,.02f,.012f,.016f,LEGS);cyl5(knee,ankle,.02f,.016f,.016f,.01f,LEGS);}
+                if(sp.bones){cyl5(hip,knee,.026f,.02f,.012f,.016f,LEGS);curPart=s>0?Puppet.P_CALF_R:Puppet.P_CALF_L;cyl5(knee,ankle,.02f,.016f,.016f,.01f,LEGS);}
                 else{float[] fw=v(1,0,0);
-                    limb(hip,knee,fw,5,.072f*k,.072f*k,.3f,.075f*k,.077f*k,.05f*k,.052f*k,-1,.02f*k,LEGS);          // thigh: full at the top, slim above the knee, a kneecap
+                    limb(hip,knee,fw,5,.072f*k,.072f*k,.3f,.075f*k,.077f*k,.05f*k,.052f*k,-1,.02f*k,LEGS);curPart=s>0?Puppet.P_CALF_R:Puppet.P_CALF_L;          // thigh: full at the top, slim above the knee, a kneecap
                     limb(add(knee,norm(sub(ankle,knee)),-.02f),ankle,fw,5,.054f*k,.057f*k,0,0,0,.036f*k,.038f*k,-1,-1,LEGS);}}   // shin with the calf swelling behind
-            foot(ankle,sp.bones?.6f:Math.max(.85f,k),BOOTS,pitch);}
+            curPart=s>0?Puppet.P_FOOT_R:Puppet.P_FOOT_L;foot(ankle,sp.bones?.6f:Math.max(.85f,k),BOOTS,pitch);}
+        curPart=Puppet.P_PELVIS;
         // ---- body (leans about the hips, twists through the chest)
         float[] waist=B.apply(v(0,0,b.waistZ),0f),chest=B.apply(v(0,0,b.chestZ),.5f),shTop=B.apply(v(0,0,b.shoulderZ+.035f),1f);
         float[] up=norm(sub(shTop,waist));
         if(sp.bones){
             seg(add(v(0,0,b.hipZ-.04f),off,1),add(v(0,0,b.hipZ+.05f),off,1),b.hipW*1.4f,.05f,b.hipW*1.1f,.04f,.01f,.01f,PELVIS,v(1,0,0));   // hip bone
-            seg(add(v(0,0,b.hipZ+.03f),off,1),add(waist,up,.06f),.022f,.022f,.02f,.02f,0,0,TORSO,v(1,0,0));                             // spine
+            curPart=Puppet.P_TORSO;seg(add(v(0,0,b.hipZ+.03f),off,1),add(waist,up,.06f),.022f,.022f,.02f,.02f,0,0,TORSO,v(1,0,0));                             // spine
             torso(add(waist,up,.05f),chest,shTop,b,up,.8f,TORSO,tw);                                                                     // ribcage
         }else{
             pelvisBox(add(v(0,0,b.hipZ-.03f),off,1),waist,b,up,k);
-            torso(waist,chest,shTop,b,up,k,TORSO,tw);
+            curPart=Puppet.P_TORSO;torso(waist,chest,shTop,b,up,k,TORSO,tw);
         }
         if(sp.tail){   // tiefling / dragonborn tail: one bent tube swaying with the stride
+            curPart=Puppet.P_PELVIS;
             float sw=A.tailSway;float t=sp.snout?1.3f:.75f;
             float[] t0=B.apply(v(-.07f,0,b.hipZ+.02f),0f),t1=add(t0,v(-.24f,sw*.5f,-.24f)),t3=add(t1,v(-.36f,sw*1.6f,-.13f));
             if(t1[2]<.1f)t1[2]=.1f;if(t3[2]<.06f)t3[2]=.06f;
             chain(new float[][]{t0,t1,t3},new float[]{.03f*t,.02f*t,sp.snout?.004f:.012f},sp.snout?.02f:.035f,SKIN,v(0,0,1),3);}
-        float[] neckB=add(shTop,up,-.005f),neckT=add(shTop,up,.07f*Math.min(1.1f,sp.headS));
+        float[] neckB=add(shTop,up,-.005f),neckT=add(shTop,up,.07f*Math.min(1.1f,sp.headS));curPart=Puppet.P_HEAD;
         if(sp.bones)seg(neckB,neckT,.018f,.018f,.016f,.016f,0,0,TORSO,v(1,0,0));
         else limb(add(neckB,up,-.02f),neckT,v(1,0,0),5,.046f*k,.045f*k,0,0,0,.04f*k,.041f*k,-1,-1,SKIN);
         float[] hc=add(neckT,up,.085f*sp.headS*HEAD_K);
         HYAW=tw*.3f+A.headYaw;head(hc,lean*1.4f+A.headPitch,sp);HYAW=0;
+        J[Puppet.J_NECK]=neckB;J[Puppet.J_WAIST]=waist;J[Puppet.J_CROTCH]=add(v(0,0,b.hipZ-.06f),off,1);
+        {float hp2=lean*1.4f+A.headPitch;J[Puppet.J_CROWN]=place(hc,hp2,v(0,0,.11f*sp.headS*HEAD_K));}
         // ---- arms (two-bone IK to the hands, elbows bend back and out)
         float[] rS=B.apply(v(0,b.shoulderW,b.shoulderZ),1f),lS=B.apply(v(0,-b.shoulderW,b.shoulderZ),1f);
         float[][] h=hands(sp,A,b);float[] rh=h[0]==null?null:add(h[0],v(0,0,-drop)),lh=h[1]==null?null:add(h[1],v(0,0,-drop));
         if(rh==null)rh=limp(rS,A.swR,A.elR,A.spread,1,sp,b);else if(!A.dead)rh=add(rotY(add(rh,v(A.swR*A.handSwing,0,A.handLift+Math.abs(A.swR)*A.handLift)),piv,lean),off,1);
         if(lh==null)lh=limp(lS,A.swL,A.elL,A.spread,-1,sp,b);else if(!A.dead)lh=add(rotY(add(lh,v(A.swL*A.handSwing,0,A.handLift+Math.abs(A.swL)*A.handLift)),piv,lean),off,1);
         float[] rE=SpriteModels.ik(rS,rh,b.upper,b.fore,v(-1,.5f,-.4f)),lE=SpriteModels.ik(lS,lh,b.upper,b.fore,v(-1,-.5f,-.4f));
-        arm(rS,rE,rh,sp);arm(lS,lE,lh,sp);
+        armSide=1;arm(rS,rE,rh,sp);armSide=-1;arm(lS,lE,lh,sp);
         float[] wd=h[2];if(wd!=null&&!A.dead)wd=norm(rotY(add(wd,v(0,0,0)),v(0,0,0),lean));
-        weapon(sp,A,rh,lh,wd);
+        {float[] dR=norm(sub(rh,rE)),dL=norm(sub(lh,lE));
+            J[Puppet.J_SH_R]=rS;J[Puppet.J_EL_R]=rE;J[Puppet.J_WR_R]=add(rh,dR,-.035f);J[Puppet.J_FIST_R]=add(rh,dR,.045f);
+            J[Puppet.J_SH_L]=lS;J[Puppet.J_EL_L]=lE;J[Puppet.J_WR_L]=add(lh,dL,-.035f);J[Puppet.J_FIST_L]=add(lh,dL,.045f);
+            J[Puppet.J_GRIP]=rh;J[Puppet.J_WTIP]=add(rh,wd!=null?wd:dR,.4f);J[Puppet.J_OFF]=lh;J[Puppet.J_OFFB]=add(lh,dL,.3f);}
+        curPart=Puppet.P_WEAPON;weapon(sp,A,rh,lh,wd);curPart=Puppet.P_TORSO;
         if(sp.pauldrons)for(int s=-1;s<=1;s+=2){float[] sh=s>0?rS:lS;float[] side=norm(tz(v(0,s,0),tw));
             seg(add(add(sh,up,-.04f),side,.01f),add(add(sh,up,.04f),side,.02f),.085f*k,.075f*k,.07f*k,.065f*k,-1,.045f*k,TRIM,v(1,0,0));}
         // ---- clothing: flat sheets
+        curPart=Puppet.P_PELVIS;
         if(sp.robe)skirt(waist,b.chestW*.95f,.1f,v(A.robeSway,A.sway,.03f+Math.max(0,bob+.02f)),.25f,.2f,CLOAK,true);
         if(sp.tunic)skirt(waist,b.chestW*.88f,.095f,v(A.robeSway*.5f,A.sway,.52f+bob),.18f,0,PELVIS,false);
         if(sp.tabard)tabard(waist,b,up,bob,k);
+        curPart=Puppet.P_BACK;J[Puppet.J_BACK]=B.apply(v(-.17f,0,b.waistZ+.05f),.6f);   // things worn on the back: their own puppet part
         if(sp.quiver){float[] q0=B.apply(v(-.13f,.06f,b.waistZ+.02f),.3f),q1=B.apply(v(-.16f,-.06f,b.shoulderZ+.12f),1f);
             seg(q0,q1,.04f,.035f,.045f,.04f,0,0,X1,v(-1,0,0));
             octa(add(q1,v(-.005f,0,.045f)),.028f,X2);}
         if(sp.cape){float[] back=norm(v((float)-Math.cos(lean),0,(float)Math.sin(lean)));
             cape(add(B.apply(v(0,0,b.shoulderZ),1f),back,sp.quiver?.15f:.11f),b,A.trail);}
         MeshModels.Frame fr=new MeshModels.Frame();fr.v=java.util.Arrays.copyOf(buf,nv*9);fr.count=nv;lastPolys=polys();
-        if(A.dead)layDown(fr);
+        for(int i=0;i<J.length;i++)if(J[i]==null)J[i]=v(0,0,1);
+        if(A.dead)layDown(fr,J);
         float sc=sp.scale*(drop>0?1.43f/(1.43f-drop):1);   // short-legged races keep their overall height
-        if(sc!=1)for(int i=0;i<fr.count;i++){int o=i*9;fr.v[o]*=sc;fr.v[o+1]*=sc;fr.v[o+2]*=sc;}
+        if(sc!=1){for(int i=0;i<fr.count;i++){int o=i*9;fr.v[o]*=sc;fr.v[o+1]*=sc;fr.v[o+2]*=sc;}for(float[] j:J){j[0]*=sc;j[1]*=sc;j[2]*=sc;}}
+        joints=J;
         return fr;
     }
     /** Hand targets {right, left, weapon direction} in the body's rest space (before lean); null = a free arm. */
@@ -389,10 +425,11 @@ final class BoxMesh {
         return add(sh,norm(v((float)Math.sin(sw),side*(.14f+spread),-(float)Math.cos(sw))),reach);
     }
     /** Death: tip the whole body over backwards onto the floor. */
-    private static void layDown(MeshModels.Frame fr){
+    private static void layDown(MeshModels.Frame fr,float[][] J){
         float a=-1.45f,c=(float)Math.cos(a),s=(float)Math.sin(a);float minZ=9;
         for(int i=0;i<fr.count;i++){int o=i*9;float x=fr.v[o],z=fr.v[o+2];fr.v[o]=x*c+z*s;fr.v[o+2]=-x*s+z*c;float nx=fr.v[o+3],nz=fr.v[o+5];fr.v[o+3]=nx*c+nz*s;fr.v[o+5]=-nx*s+nz*c;minZ=Math.min(minZ,fr.v[o+2]);}
         for(int i=0;i<fr.count;i++)fr.v[i*9+2]-=minZ-.01f;
+        for(int i=0;i<J.length;i++){float x=J[i][0],z=J[i][2];J[i]=v(x*c+z*s,J[i][1],-x*s+z*c-(minZ-.01f));}
     }
 
     // ------------------------------------------------------------------ vertex output
@@ -400,7 +437,8 @@ final class BoxMesh {
         if((nv+1)*9>buf.length)buf=java.util.Arrays.copyOf(buf,buf.length*2);
         float in=4f/MeshModels.TILE;u=in+Math.max(0,Math.min(1,u))*(1-2*in);vv=in+Math.max(0,Math.min(1,vv))*(1-2*in);
         float[] nn=norm(n);int o=nv*9;buf[o]=p[0];buf[o+1]=p[1];buf[o+2]=p[2];buf[o+3]=nn[0];buf[o+4]=nn[1];buf[o+5]=nn[2];
-        buf[o+6]=((tile%G)+u)/G;buf[o+7]=((tile/G)+vv)/G;buf[o+8]=glowTile[tile]?1:0;nv++;
+        buf[o+6]=((tile%G)+u)/G;buf[o+7]=((tile/G)+vv)/G;buf[o+8]=glowTile[tile]?1:0;
+        if(partBuf.length<=nv)partBuf=java.util.Arrays.copyOf(partBuf,Math.max(64,nv*2));partBuf[nv]=curPart;nv++;
     }
     static void tri(float[] a,float[] b,float[] c,float[] na,float[] nb,float[] nc,int tile,float[] uv){put(a,na,tile,uv[0],uv[1]);put(b,nb,tile,uv[2],uv[3]);put(c,nc,tile,uv[4],uv[5]);}
     static void quad(float[] a,float[] b,float[] c,float[] d,float[] na,float[] nb,float[] nc,float[] nd,int tile,float u0,float v0,float u1,float v1){
@@ -471,6 +509,12 @@ final class BoxMesh {
     // ------------------------------------------------------------------ the artist's kit: shaped loops
     /** Quads made so far in this frame: the PS1 drew quads as one polygon, so polygons = triangles - quads. */
     static int quads;
+    /** Tile size of the texture being painted (MeshModels.TILE for models, smaller for puppet parts). */
+    static int PT=MeshModels.TILE;
+    // ---- puppets (Puppet): which body part each vertex belongs to, and where the joints are, for the frame being built
+    static int curPart;static int[] partBuf=new int[0];
+    /** Joints of the last frame built (Puppet.J_*), in model space after death and race scaling. */
+    static float[][] joints;
     /** Heads are drawn a little larger than life, as in most PS1 games, so faces read at a distance. */
     static final float HEAD_K=1.1f;
     /** Build shapes without painting textures (polygon checks). */
@@ -512,26 +556,30 @@ final class BoxMesh {
         if(capA>=0)fan(A,a,mul(ax,-1),capA,tile,true);if(capB>=0)fan(B,b,ax,capB,tile,false);
     }
     /** Arm: bicep box and forearm box with pyramid ends that overlap at the elbow, and a fist (or a wide sleeve and a hand). */
+    /** Which arm arm() is building (1 right, -1 left), for the puppet's part tags. */
+    private static int armSide=1;
     private static void arm(float[] sh,float[] el,float[] hand,Spec sp){
-        float[] fw=v(1,0,0);float k=sp.bulk;
+        float[] fw=v(1,0,0);float k=sp.bulk;boolean R=armSide>0;
         float[] dir=norm(sub(hand,el));float[] wrist=add(hand,dir,-.035f);
+        curPart=R?Puppet.P_UPPER_R:Puppet.P_UPPER_L;
         if(sp.bones){
             seg(sh,el,.02f,.02f,.016f,.016f,.012f,.014f,UPPER,fw);
-            seg(el,wrist,.017f,.017f,.014f,.014f,.014f,.008f,HANDS,fw);
-            seg(wrist,add(wrist,dir,.07f),.024f,.03f,.02f,.026f,.01f,0,HANDS,fw);
+            curPart=R?Puppet.P_FORE_R:Puppet.P_FORE_L;seg(el,wrist,.017f,.017f,.014f,.014f,.014f,.008f,HANDS,fw);
+            curPart=R?Puppet.P_HAND_R:Puppet.P_HAND_L;seg(wrist,add(wrist,dir,.07f),.024f,.03f,.02f,.026f,.01f,0,HANDS,fw);
             return;
         }
         // upper arm: the deltoid cap at the shoulder, a bicep loop, narrowing into a rounded elbow
         float[] ud=norm(sub(el,sh));
         limb(add(sh,ud,-.02f),el,fw,5,.056f*k,.053f*k,0,0,0,.039f*k,.04f*k,-1,.02f*k,UPPER);
+        curPart=R?Puppet.P_FORE_R:Puppet.P_FORE_L;
         if(sp.sleeves){   // wide sleeve flaring open past the elbow, the bare hand coming out of it
             limb(add(el,dir,-.03f),add(wrist,dir,-.005f),fw,5,.046f,.048f,0,0,0,.08f,.08f,-1,-1,CLOAK);
-            hand(wrist,dir,Math.max(.85f,k*.85f));
+            curPart=R?Puppet.P_HAND_R:Puppet.P_HAND_L;hand(wrist,dir,Math.max(.85f,k*.85f));
             return;
         }
         // forearm: the muscle swells just below the elbow, then tapers to a slim wrist
         limb(add(el,dir,-.015f),wrist,fw,5,.044f*k,.043f*k,0,0,0,.029f*k,.03f*k,-1,-1,HANDS);
-        hand(wrist,dir,Math.max(.9f,k));
+        curPart=R?Puppet.P_HAND_R:Puppet.P_HAND_L;hand(wrist,dir,Math.max(.9f,k));
     }
     /**
      * Hand: a palm block from the wrist to the knuckles, the curled fingers as a second block bent down, and a thumb
@@ -772,14 +820,14 @@ final class BoxMesh {
     private static void weapon(Spec sp,Anim A,float[] rh,float[] lh,float[] wd){
         int st=A.atk;
         switch(sp.weapon){
-            case W_SWORD_SHIELD:sword(rh,wd,.6f,true);shield(add(lh,v(.05f,-.03f,.02f)),norm(v(1,-.25f,0)),TRIM,WOOD);break;
-            case W_MACE_SHIELD:mace(rh,wd);shield(add(lh,v(.05f,-.03f,.02f)),norm(v(1,-.25f,0)),TRIM,X1);break;
+            case W_SWORD_SHIELD:sword(rh,wd,.6f,true);curPart=Puppet.P_OFFHAND;shield(add(lh,v(.05f,-.03f,.02f)),norm(v(1,-.25f,0)),TRIM,WOOD);break;
+            case W_MACE_SHIELD:mace(rh,wd);curPart=Puppet.P_OFFHAND;shield(add(lh,v(.05f,-.03f,.02f)),norm(v(1,-.25f,0)),TRIM,X1);break;
             case W_RUSTY:sword(rh,wd,.55f,false);break;
             case W_CRUDE:sword(rh,wd,.42f,false);break;
             case W_DAGGERS:{if(A.dead){sword(rh,wd,.22f,true);sword(lh,norm(v(.1f,-.3f,1)),.22f,true);break;}
                 float[] dr=st==1?norm(v(.95f,-.1f,.1f)):norm(v(.55f,.15f,.8f)),dl=st==2?norm(v(.95f,.1f,.05f)):norm(v(.6f,-.1f,-.75f));
-                sword(rh,dr,.22f,true);sword(lh,dl,.22f,true);break;}
-            case W_BOW:{if(A.dead)bow(rh,v(0,0,1),v(-1,0,0));
+                sword(rh,dr,.22f,true);curPart=Puppet.P_OFFHAND;sword(lh,dl,.22f,true);break;}
+            case W_BOW:{curPart=Puppet.P_OFFHAND;if(A.dead)bow(rh,v(0,0,1),v(-1,0,0));
                 else if(st>=0)bow(lh,v(0,0,1),v(1,0,0));else bow(lh,norm(v(.25f,0,1)),norm(v(1,0,-.25f)));
                 int at=nv;{float[] a0=add(lh,v(1,0,0),.08f),a1=rh;float w=.006f;   // the drawn arrow: two crossed flat strips
                     quad(add(a0,v(0,0,w)),add(a1,v(0,0,w)),add(a1,v(0,0,-w)),add(a0,v(0,0,-w)),v(0,1,0),v(0,1,0),v(0,1,0),v(0,1,0),WOOD,0,0,1,1);
@@ -880,7 +928,7 @@ final class BoxMesh {
     private static float hash(int x,int y){int h=x*374761393+y*668265263;h=(h^(h>>>13))*1274126177;return ((h^(h>>>16))&0xffff)/65535f;}
     /** The face, painted on the front of the head (FacePaint), and hair strands on the hair tile. */
     private static void paintFace(MeshModels.Mesh m){
-        int Sz=G*MeshModels.TILE,T=MeshModels.TILE;
+        int Sz=G*PT,T=PT;
         FacePaint.paint(m.color,Sz,(FACE%G)*T,(FACE/G)*T,T,S);
         boolean hairTile=!S.bones&&S.head!=H_SKULL;
         if(hairTile){int ox=(HAIR%G)*T,oy=(HAIR/G)*T;   // hair: strands, clumps and a sheen instead of woven cloth
@@ -890,7 +938,7 @@ final class BoxMesh {
     }
     /** Detail painted instead of modelled: ribs, a holy sun, belts, dragon scales. */
     private static void paintExtra(MeshModels.Mesh m,int id){
-        int Sz=G*MeshModels.TILE,T=MeshModels.TILE;int[] px=m.color;
+        int Sz=G*PT,T=PT;int[] px=m.color;
         if(S.snout)for(int t:new int[]{SKIN,HANDS}){if(t==HANDS&&S.weapon!=W_STAFF)continue;int ox=(t%G)*T,oy=(t/G)*T;   // dragon scales over the skin
             for(int y=0;y<T;y++)for(int x=0;x<T;x++){int o=(oy+y)*Sz+ox+x,c=px[o];float k=FacePaint.scales(x,y,T,5.5f);px[o]=rgb((int)(((c>>16)&255)*k),(int)(((c>>8)&255)*k),(int)((c&255)*k));}}
         if(id==Sprites.SKELETON){int ox=(TORSO%G)*T,oy=(TORSO/G)*T;
