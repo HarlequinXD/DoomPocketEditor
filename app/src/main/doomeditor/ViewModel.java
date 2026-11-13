@@ -322,7 +322,7 @@ final class ViewModel {
     void build(int weapon,float attack,float cast,float bobX,float bobY,float raise,float time){
         count=0;
         float sway=(float)Math.sin(time*1.3f)*.004f,breathe=(float)Math.sin(time*2.1f)*.003f;
-        float[] off=v3(bobX*.035f+sway,-Math.abs(bobY)*.4f-raise*.42f+breathe,0);
+        float[] off=v3(bobX*.02f+sway,-Math.abs(bobY)*.025f-raise*.42f+breathe,0);
         boolean staff=weapon==Rpg.FP_STAFF;
         // ---- right hand (weapon hand)
         Pose rp;Grip rg=HOLD;
