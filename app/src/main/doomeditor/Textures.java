@@ -69,6 +69,25 @@ final class Textures {
             out[i]=0xff000000|(Math.round(Math.min(1,sm)*255)<<16)|(Math.round(me*255)<<8)|Math.round(ao*255);}
         return out;
     }
+    /** Textures with glowing parts (lava cracks, runes, crystals, fungus, flames, stained glass...). */
+    static boolean glows(int t){
+        if(BRIGHT[t]&&t!=SKY)return true;String n=NAMES[t].toLowerCase(java.util.Locale.US);
+        return n.contains("torch")||n.contains("rune panel")||n.contains("forge")||n.contains("brimstone")||n.contains("hellrock")||n.contains("lantern");
+    }
+    /**
+     * Emissive map: the light a material gives off by itself (RGB, black = none). Only glowing materials have one,
+     * and only their bright, saturated texels glow (the lava's cracks, not its crust; a sconce's flame, not the wall).
+     */
+    static int[] emissive(int t){
+        int[] src=base[t],out=new int[src.length];if(!glows(t)){java.util.Arrays.fill(out,0xff000000);return out;}
+        String n=NAMES[t].toLowerCase(java.util.Locale.US);
+        float lo=n.contains("lava")||n.contains("lantern")?.45f:n.contains("water")||n.contains("bog")||n.contains("blood")?.62f:.55f;
+        float k=n.contains("lava")?1f:n.contains("stained glass")?.85f:.9f;
+        for(int i=0;i<src.length;i++){int c=src[i];float r=((c>>16)&255)/255f,g=((c>>8)&255)/255f,b=(c&255)/255f,mx=Math.max(r,Math.max(g,b)),mn=Math.min(r,Math.min(g,b));
+            float sat=mx<1e-3f?0:(mx-mn)/mx,e=sat(((mx-lo)/(1-lo)))*(.35f+.65f*sat)*k;e=e*e*(3-2*e);
+            out[i]=0xff000000|(Math.round(r*e*255)<<16)|(Math.round(g*e*255)<<8)|Math.round(b*e*255);}
+        return out;
+    }
     static int[] relief(int t){
         int[] src=base[t];int S=SIZE,n=S*S;float[] h=new float[n],b=new float[n];
         for(int i=0;i<n;i++){int c=src[i];h[i]=(((c>>16)&255)*.3f+((c>>8)&255)*.59f+(c&255)*.11f)/255f;}
