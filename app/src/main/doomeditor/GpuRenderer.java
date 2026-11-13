@@ -29,16 +29,17 @@ final class GpuRenderer {
     private static EGLDisplay dpy=EGL14.EGL_NO_DISPLAY;private static EGLContext ctx=EGL14.EGL_NO_CONTEXT;private static EGLSurface surf=EGL14.EGL_NO_SURFACE;
     private static boolean failed,depth24;
     private static int progScene,progColor,progSky,progScreen,progId,progSplat;
-    private static final int[] wallTex=new int[Textures.COUNT];private static int skyTex;
+    private static final int[] wallTex=new int[Textures.COUNT],normTex=new int[Textures.COUNT],matTex=new int[Textures.COUNT],emitTex=new int[Textures.COUNT];private static int skyTex;
+    private static final float[][] emitAvg=new float[Textures.COUNT][];
     private static final float[][] avg=new float[Textures.COUNT][];private static float[] skyAvg={.5f,.6f,.75f};
     /** Physically based shading, and sky light + bounce lighting between sectors (settings). */
     static boolean pbr=true,gi=true;
-    /** PS1 look: vertex wobble, warped (affine) textures, 15-bit dithered colour. 3D models for built-in entities. */
-    static boolean ps1=true,models3d=true;
+    /** 15-bit colour with ordered dithering (the retro touch kept on top of the PBR renderer). 3D models for built-in entities. */
+    static boolean dither=true,models3d=true;
     /** Dynamic shadows from coloured lights (setting). */
     static boolean shadows=true;
     private static int shadowTex;private static final int SB=256;   // angle bins per light
-    /** Normal + parallax mapping on textured surfaces (setting). */
+    /** Silhouette parallax occlusion mapping from the height maps, and the normal maps (setting). */
     static boolean relief=true;
     /** False when the GPU path can't be used on this device (the software renderer takes over). */
     static synchronized boolean available(){
@@ -57,7 +58,14 @@ final class GpuRenderer {
             String ext=GLES20.glGetString(GLES20.GL_EXTENSIONS);depth24=ext!=null&&ext.contains("GL_OES_depth24");
             progScene=program(VS_SCENE,FS_SCENE);progColor=program(VS_COLOR,FS_COLOR);progSky=program(VS_SCREEN,FS_SKY);progScreen=program(VS_SCREEN,FS_SCREEN);progId=program(VS_SCENE,FS_ID);progSplat=program(VS_SCENE,FS_SPLAT);
             Textures.init();
-            for(int t=0;t<Textures.COUNT;t++){wallTex[t]=texture(Textures.base[t],Textures.SIZE,Textures.SIZE,true,true);avg[t]=Textures.average(t);}   // colour textures only
+            // full material per texture: colour, normal + height, smoothness / metalness / AO, emissive
+            int S=Textures.SIZE;
+            for(int t=0;t<Textures.COUNT;t++){
+                wallTex[t]=texture(Textures.base[t],S,S,true,true);mip(wallTex[t],false);
+                normTex[t]=texture(Textures.relief(t),S,S,true,false);mip(normTex[t],true);
+                matTex[t]=texture(Textures.material(t),S,S,true,true);mip(matTex[t],true);
+                int[] em=Textures.emissive(t);emitTex[t]=texture(em,S,S,true,true);mip(emitTex[t],true);
+                avg[t]=Textures.average(t);float er=0,eg=0,eb=0;for(int c:em){er+=(c>>16)&255;eg+=(c>>8)&255;eb+=c&255;}float en=em.length*255f;emitAvg[t]=new float[]{er/en,eg/en,eb/en};}
             {int[] t=new int[1];GLES20.glGenTextures(1,t,0);shadowTex=t[0];GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,shadowTex);
                 GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_MIN_FILTER,GLES20.GL_NEAREST);GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_MAG_FILTER,GLES20.GL_NEAREST);
                 GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_WRAP_S,GLES20.GL_REPEAT);GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_WRAP_T,GLES20.GL_CLAMP_TO_EDGE);
@@ -79,6 +87,12 @@ final class GpuRenderer {
     private static int shader(int type,String src){
         int s=GLES20.glCreateShader(type);GLES20.glShaderSource(s,src);GLES20.glCompileShader(s);int[] ok=new int[1];GLES20.glGetShaderiv(s,GLES20.GL_COMPILE_STATUS,ok,0);
         if(ok[0]==0)throw new RuntimeException("shader: "+GLES20.glGetShaderInfoLog(s));return s;
+    }
+    /** Mipmaps a texture: linear (height, normal and material maps need smooth gradients) or nearest within a level (colour stays crisp). */
+    private static void mip(int t,boolean linear){
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,t);GLES20.glGenerateMipmap(GLES20.GL_TEXTURE_2D);
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_MIN_FILTER,linear?GLES20.GL_LINEAR_MIPMAP_LINEAR:0x2702/*GL_NEAREST_MIPMAP_LINEAR*/);
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_MAG_FILTER,linear?GLES20.GL_LINEAR:GLES20.GL_NEAREST);
     }
     /** Uploads ARGB pixels as an RGBA texture (nearest filtering; repeat or clamp). */
     private static int texture(int[] argb,int w,int h,boolean repeat){return texture(argb,w,h,repeat,false);}
@@ -102,30 +116,34 @@ final class GpuRenderer {
     // ------------------------------------------------------------------ shaders
     // scene vertex: world position, texture coords, (sector light, bright flag), pick id bytes
     private static final String VS_SCENE=
-        "uniform vec3 uCam;uniform vec2 uCS;uniform vec3 uProj;uniform vec2 uSnap;\n"+
+        "uniform vec3 uCam;uniform vec2 uCS;uniform vec3 uProj;\n"+
         "attribute vec3 aPos;attribute vec2 aUv;attribute vec2 aLight;attribute vec4 aId;attribute vec3 aTan;attribute float aKind;attribute vec3 aGi;attribute vec3 aEdge;\n"+
-        "varying vec3 vUvA;varying vec3 vEdge;varying vec2 vUv;varying vec2 vLight;varying vec3 vWorld;varying float vZ;varying vec4 vId;varying vec3 vTan;varying float vKind;varying vec3 vGi;\n"+
+        "varying vec3 vEdge;varying vec2 vUv;varying vec2 vLight;varying vec3 vWorld;varying float vZ;varying vec4 vId;varying vec3 vTan;varying float vKind;varying vec3 vGi;\n"+
         "void main(){vec2 d=aPos.xy-uCam.xy;float x=-d.x*uCS.y+d.y*uCS.x;float z=d.x*uCS.x+d.y*uCS.y;float y=aPos.z-uCam.z;\n"+
         " vUv=aUv;vLight=aLight;vWorld=aPos;vZ=z;vId=aId;vTan=aTan;vKind=aKind;vGi=aGi;vEdge=aEdge;\n"+
         " vec4 cp=vec4(x,uProj.y*z-y*uProj.x,(z*uProj.z-2.0*0.06*120.0/(120.0-0.06)),z);\n"+
-        // PS1: vertices snap to a coarse screen grid (the wobble), and texture coordinates are kept for affine mapping
-        " if(uSnap.x>0.0&&cp.w>0.01){cp.xy=floor(cp.xy/cp.w*uSnap+0.5)/uSnap*cp.w;}\n"+
-        " vUvA=vec3(aUv*cp.w,cp.w);gl_Position=cp;}\n";
+        // perspective-correct texturing (the GPU's normal interpolation), vertices exactly where they belong
+        " gl_Position=cp;}\n";
     private static final String FS_HEAD=
         "#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\nprecision mediump float;\n#endif\n";
-    // vKind: 0 floor/ceiling, 1 wall, 2 sprite/decal (no relief). Tangent frame: walls T = along the wall,
-    // B = down (texture v grows downward), N = facing the camera; floors T = +x, B = +y, N = up or down.
-    // vKind: 0 floor/ceiling, 1 wall, 2 sprite/decal, 3 3D model (vTan = its normal). Shading is PS1-style
-    // (not physically based): Lambert diffuse plus a Blinn-Phong highlight from the smoothness map, then 15-bit colour
-    // with ordered dithering. Normal maps, parallax, shadows, sky light and fog all still apply.
-    // PS1 shading: colour textures only (no normal, height, specular or AO maps). Surfaces are lit per pixel by the
-    // sector light, sky light and up to 8 point lights (Lambert on the polygon's own normal) with dynamic shadows.
+    // vKind: 0 floor/ceiling, 1 wall, 2 sprite/decal, 3 3D model (vTan = its normal). Tangent frame: walls T = along
+    // the wall, B = down (texture v grows downward), N = facing the camera; floors T = +x, B = +y, N = up or down.
+    //
+    // Physically based: GGX specular, Smith geometry, Schlick Fresnel, metalness workflow. Each surface material is
+    // colour + normal/height + smoothness/metalness/AO + emissive. Ambient light is the sector light plus the global
+    // illumination (sky light and light bounced between sectors) with a Fresnel-weighted specular share, so smooth
+    // floors pick up the sky and the room's colour. Then 15-bit colour with a 4x4 ordered dither.
+    //
+    // Relief is silhouette parallax occlusion mapping (as in Crimson Desert): a ray march through the height map with
+    // a per-pixel dithered start and a step count from the view angle and distance, a linear contact refinement, a
+    // second march toward each strong light for self-shadowing, and on open edges (step tops, door lintels) pixels
+    // whose ray leaves the face are cut away, so bricks stand proud of the edge instead of ending in a flat line.
     private static final String FS_SCENE=FS_HEAD+
-        "uniform sampler2D uTex;uniform vec3 uCamPos;\n"+
+        "uniform sampler2D uTex;uniform sampler2D uNorm;uniform sampler2D uMat;uniform sampler2D uEmit;uniform float uHeight;uniform vec3 uCamPos;\n"+
         "uniform float uFade;uniform int uCount;uniform vec4 uL[8];uniform vec3 uLC[8];uniform int uShadowN;uniform float uDark;\n"+
-        "uniform vec4 uFog;uniform vec3 uFogC;uniform vec4 uTint;uniform vec4 uHi;uniform float uAlphaCut;uniform float uAffine;uniform float uDither;\n"+
+        "uniform vec4 uFog;uniform vec3 uFogC;uniform vec4 uTint;uniform vec4 uHi;uniform float uAlphaCut;uniform float uDither;uniform vec3 uSkyC;\n"+
         "uniform sampler2D uShadow;uniform float uShadowOn;\n"+
-        "varying vec3 vUvA;varying vec2 vUv;varying vec2 vLight;varying vec3 vWorld;varying float vZ;varying vec4 vId;varying vec3 vTan;varying float vKind;varying vec3 vGi;varying vec3 vEdge;\n"+
+        "varying vec2 vUv;varying vec2 vLight;varying vec3 vWorld;varying float vZ;varying vec4 vId;varying vec3 vTan;varying float vKind;varying vec3 vGi;varying vec3 vEdge;\n"+
         "float shadowAt(float row,vec3 lp,float actors){vec2 d=vWorld.xy-lp.xy;float dist=length(d);if(dist<0.05)return 1.0;\n"+
         " float u=atan(d.y,d.x)/6.2831853+0.5;float v=(row+0.5)/16.0;float s=0.0;\n"+
         " for(int k=-1;k<=1;k++){vec4 t=texture2D(uShadow,vec2(u+float(k)/256.0,v));float wd=(t.r*65280.0+t.g*255.0)/65535.0*32.0;\n"+
@@ -135,29 +153,59 @@ final class GpuRenderer {
         " return s/3.0;}\n"+
         "float bayer2(vec2 a){a=floor(a);return fract(dot(a,vec2(0.5,a.y*0.75)));}\n"+
         "float bayer4(vec2 a){return bayer2(0.5*a)*0.25+bayer2(a);}\n"+
-        "void main(){vec2 uv=mix(vUv,vUvA.xy/vUvA.z,uAffine);vec3 V=uCamPos-vWorld;\n"+
-        " bool model=vKind>2.5;bool surf=vKind<1.5||model;vec3 N;\n"+
+        // relief self-shadow: march from the hit point toward the light; soft by how far the height map pokes above the ray
+        "float pomShadow(vec2 uv,vec3 Lt,float amt,float h0){if(Lt.z<=0.02)return 0.3;vec2 dir=Lt.xy/max(Lt.z,0.18)*amt*(1.0-h0);float occ=0.0;\n"+
+        " for(int j=1;j<=6;j++){float s=float(j)/6.0;float hh=texture2D(uNorm,uv+dir*s).a;occ=max(occ,(hh-(h0+(1.0-h0)*s))*(1.0-s*0.6));}\n"+
+        " return 1.0-clamp(occ*6.0,0.0,0.8);}\n"+
+        "void main(){vec2 uv=vUv;vec3 V=uCamPos-vWorld;vec3 Vw=normalize(V);\n"+
+        " bool model=vKind>2.5;bool wall=vKind>0.5&&vKind<1.5;bool surf=vKind<1.5;\n"+
+        " vec3 T=vec3(1.0,0.0,0.0);vec3 B=vec3(0.0,1.0,0.0);vec3 N=vec3(0.0,0.0,1.0);\n"+
         " if(model){N=normalize(vTan);if(dot(N,V)<0.0)N=-N;}\n"+
-        " else if(vKind>0.5&&vKind<1.5){vec2 T=normalize(vTan.xy);N=vec3(T.y,-T.x,0.0);if(dot(N,V)<0.0)N=-N;}\n"+
+        " else if(wall){T=normalize(vec3(vTan.xy,0.0));N=vec3(T.y,-T.x,0.0);if(dot(N,V)<0.0)N=-N;B=vec3(0.0,0.0,-1.0);}\n"+
         " else if(surf)N=vec3(0.0,0.0,V.z>0.0?1.0:-1.0);\n"+
         " else N=normalize(vec3(V.xy,0.0001));\n"+
+        " vec3 Nw=N;float amt=0.0;float h0=1.0;\n"+
+        " if(surf){vec3 Vt=normalize(vec3(dot(V,T),dot(V,B),dot(V,N)));\n"+
+        "  float lod=clamp(1.0-(vZ-6.0)/8.0,0.0,1.0);amt=uHeight*lod;\n"+
+        "  if(amt>0.002){float steps=floor(mix(16.0,4.0,Vt.z)*(0.35+0.65*lod)+1.0);vec2 delta=Vt.xy/max(Vt.z,0.2)*amt/steps;float ls=1.0/steps;\n"+
+        "   float j=bayer4(gl_FragCoord.xy)-0.5;vec2 cur=uv-delta*j*0.5;float layer=ls*j*0.5;\n"+   // dithered start: no step banding
+        "   float depth=1.0-texture2D(uNorm,cur).a;vec2 pUv=cur;float pD=depth;float pL=layer;\n"+
+        "   for(int i=0;i<16;i++){if(float(i)>=steps||layer>=depth)break;pUv=cur;pD=depth;pL=layer;cur-=delta;layer+=ls;depth=1.0-texture2D(uNorm,cur).a;}\n"+
+        "   float a1=depth-layer;float b1=pD-pL;uv=mix(cur,pUv,clamp(a1/(a1-b1+1e-5),0.0,1.0));\n"+
+        // silhouettes: the ray left the face through an open edge before it hit anything
+        "   if(wall){if(vEdge.z>0.5&&vEdge.z<1.5&&uv.y<vEdge.x)discard;if(vEdge.z>1.5&&uv.y>vEdge.y)discard;}}\n"+
+        "  vec4 nh=texture2D(uNorm,uv);h0=nh.a;vec3 nm=nh.rgb*2.0-1.0;Nw=normalize(T*nm.x+B*nm.y+N*nm.z);}\n"+
         " vec4 t=texture2D(uTex,uv);if(t.a<uAlphaCut)discard;vec3 alb=t.rgb;\n"+
+        " vec3 m=surf?texture2D(uMat,uv).rgb:vec3(model?0.3:0.15,0.0,1.0);float smo=m.r;float metal=m.g;float ao=m.b;\n"+
+        " vec3 emit=surf?texture2D(uEmit,uv).rgb:vec3(0.0);\n"+
         " float L=vLight.x;float li;if(vLight.y>0.5)li=31.0;else{li=floor(L+3.0-vZ*uFade);li=clamp(li,max(1.0,floor(L/4.0)),31.0);}\n"+
         " li=max(li,uDark*clamp(15.0-vZ*1.4,0.0,13.0));\n"+   // darkvision: nearby darkness seen as dim grey light
         " float k=pow(li/31.0,1.25)*1.06;\n"+
-        " float hemi=0.55+0.45*N.z;vec3 amb=vec3(k)+vGi*hemi;\n"+
-        " if(model)amb*=0.75+0.25*max(0.0,dot(N,normalize(vec3(-0.4,-0.3,0.85))))+0.1;\n"+
-        " vec3 c=alb*amb;\n"+
+        // ambient: sector light + global illumination (sky and bounce), more from above, darkened in cavities
+        " float hemi=0.55+0.45*Nw.z;vec3 amb=(vec3(k)+vGi*hemi)*ao;\n"+
+        " if(model)amb*=0.75+0.25*max(0.0,dot(Nw,normalize(vec3(-0.4,-0.3,0.85))))+0.1;\n"+
+        " float rough=max(0.06,1.0-smo);float a2=rough*rough*rough*rough;float NdV=max(dot(Nw,Vw),0.001);\n"+
+        " vec3 F0=mix(vec3(0.04),alb,metal);vec3 Fa=F0+(max(vec3(1.0-rough),F0)-F0)*pow(1.0-NdV,5.0);\n"+
+        // reflected environment: up-facing reflections see the sky colour, the rest the room's bounce light
+        " vec3 Rw=reflect(-Vw,Nw);vec3 env=mix(vGi+vec3(k*0.6),uSkyC*(0.4+0.6*length(vGi)),clamp(Rw.z,0.0,1.0)*step(0.02,length(vGi)));\n"+
+        " vec3 c=alb*(1.0-metal)*(1.0-Fa)*amb+Fa*env*ao*(0.25+0.75*smo);\n"+
+        " float kk=(rough+1.0)*(rough+1.0)/8.0;int budget=2;\n"+
         " for(int i=0;i<8;i++){if(i>=uCount)break;vec3 dd=uL[i].xyz-vWorld;float d2=dot(dd,dd);if(d2<uL[i].w){float f=1.0-d2/uL[i].w;\n"+
         "  float sh=uShadowOn>0.5&&i<uShadowN?shadowAt(float(i),uL[i].xyz,(surf&&!model)?1.0:0.0):1.0;if(sh<=0.0)continue;\n"+
+        "  vec3 Ld=dd*inversesqrt(max(d2,1e-4));\n"+
+        "  if(surf&&amt>0.002&&budget>0&&f*f*sh>0.08){budget--;sh*=pomShadow(uv,vec3(dot(Ld,T),dot(Ld,B),dot(Ld,N)),amt,h0);}\n"+
         "  vec3 rad=uLC[i]*(f*f*1.35*sh);\n"+
-        "  if(!surf){c+=alb*rad;continue;}\n"+
-        "  float NdL=max(dot(N,dd*inversesqrt(max(d2,1e-4))),0.0);c+=alb*(0.15+0.85*NdL)*rad;}}\n"+
-        " c=min(c,vec3(1.7));\n"+
+        "  if(!surf&&!model){c+=alb*rad;continue;}\n"+
+        "  float NdL=max(dot(Nw,Ld),0.0);vec3 H=normalize(Ld+Vw);float NdH=max(dot(Nw,H),0.0);float dn=NdH*NdH*(a2-1.0)+1.0;float D=a2/(3.14159*dn*dn);\n"+
+        "  float G=(NdV/(NdV*(1.0-kk)+kk))*(NdL/(NdL*(1.0-kk)+kk));vec3 F=F0+(1.0-F0)*pow(1.0-max(dot(H,Vw),0.0),5.0);\n"+
+        "  vec3 spec=min(D*G*F/(4.0*NdV*NdL+0.001),vec3(8.0));vec3 kd=(1.0-F)*(1.0-metal);\n"+
+        "  c+=(kd*alb*(0.12+0.88*NdL)+spec*NdL)*rad;}}\n"+
+        " c+=emit*1.4;\n"+
+        " c=min(c,vec3(1.8));\n"+
         " if(uFog.z>0.0&&vZ>uFog.x){float f=min(1.0,(vZ-uFog.x)*uFog.y)*uFog.z;c=mix(c,uFogC,f);}\n"+
         " c*=uTint.rgb;\n"+
         " if(uHi.a>=0.0&&all(lessThan(abs(vId-uHi),vec4(0.002))))c=c*0.625+vec3(30.0,96.0,60.0)/255.0;\n"+
-        // PS1 colour: 15-bit (31 levels per channel) with a 4x4 ordered dither
+        // 15-bit colour (31 levels per channel) with a 4x4 ordered dither
         " c=clamp(c,0.0,1.0);if(uDither>0.5)c=floor(c*31.0+bayer4(gl_FragCoord.xy))/31.0;\n"+
         " gl_FragColor=vec4(c,t.a);}\n";
     /**
@@ -332,7 +380,7 @@ final class GpuRenderer {
         if(sky)drawSky();
         vb=upload();
         GLES20.glEnable(GLES20.GL_DEPTH_TEST);GLES20.glDepthFunc(GLES20.GL_LEQUAL);
-        GLES20.glUseProgram(progScene);sceneUniforms(progScene);
+        GLES20.glUseProgram(progScene);sceneUniforms(progScene);int uHeightLoc=GLES20.glGetUniformLocation(progScene,"uHeight");
         bindScene(progScene,vb);
         for(int[] b:batches){
             if(b[3]==4){GLES20.glUseProgram(progSplat);camUniforms(progSplat);atmosUniforms(progSplat);
@@ -346,6 +394,12 @@ final class GpuRenderer {
             else if(b[3]==1){GLES20.glEnable(GLES20.GL_BLEND);GLES20.glBlendFuncSeparate(GLES20.GL_SRC_ALPHA,GLES20.GL_ONE_MINUS_SRC_ALPHA,GLES20.GL_ZERO,GLES20.GL_ONE);
                 GLES20.glDepthMask(true);GLES20.glDisable(GLES20.GL_POLYGON_OFFSET_FILL);GLES20.glUniform1f(GLES20.glGetUniformLocation(progScene,"uAlphaCut"),.5f);}
             else{GLES20.glDisable(GLES20.GL_BLEND);GLES20.glDepthMask(true);GLES20.glDisable(GLES20.GL_POLYGON_OFFSET_FILL);GLES20.glUniform1f(GLES20.glGetUniformLocation(progScene,"uAlphaCut"),-1f);}
+            if(b[3]==0&&b.length>4){int m=b[4];   // a surface: its whole material
+                GLES20.glActiveTexture(GLES20.GL_TEXTURE1);GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,normTex[m]);
+                GLES20.glActiveTexture(GLES20.GL_TEXTURE2);GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,matTex[m]);
+                GLES20.glActiveTexture(GLES20.GL_TEXTURE4);GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,emitTex[m]);
+                GLES20.glUniform1f(uHeightLoc,relief?Textures.RELIEF[m]*.075f:0);}
+            else GLES20.glUniform1f(uHeightLoc,0);
             GLES20.glActiveTexture(GLES20.GL_TEXTURE0);GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,b[0]);GLES20.glDrawArrays(GLES20.GL_TRIANGLES,b[1],b[2]);
         }
         GLES20.glDisable(GLES20.GL_POLYGON_OFFSET_FILL);GLES20.glDepthMask(true);
@@ -394,14 +448,14 @@ final class GpuRenderer {
         got=java.util.Arrays.copyOf(out,on);tess[si][n]=got;return got;
     }
     private void plane(float[] sub,int a,int b,int c,float h,int mat,int L,int pid){
-        int m=clampMat(mat);float br=Textures.BRIGHT[m]?1:0;
+        int m=clampMat(mat);float br=0;   // glowing materials shine through their emissive maps
         for(int o=0;o+4<sub.length;o+=5){float x=sub[o],y=sub[o+1],w0=sub[o+2],w1=sub[o+3],w2=sub[o+4];
             put(m,x,y,h,x*.5f,y*.5f,L,br,pid,1,0,0,gv(a,0)*w0+gv(b,0)*w1+gv(c,0)*w2,gv(a,1)*w0+gv(b,1)*w1+gv(c,1)*w2,gv(a,2)*w0+gv(b,2)*w1+gv(c,2)*w2,0,0,0);}
     }
     private void wall(Object lists,Level.Vertex a,Level.Vertex b,float len,float lo,float hi,int mat,int L,int pid,float peg,int ia,int ib){wall(lists,a,b,len,lo,hi,mat,L,pid,peg,ia,ib,0);}
     /** {@code edge}: 1 = top edge is open (a step), 2 = bottom edge is open (a lintel); used for relief silhouettes. */
     private void wall(Object lists,Level.Vertex a,Level.Vertex b,float len,float lo,float hi,int mat,int L,int pid,float peg,int ia,int ib,int edge){
-        if(hi-lo<.001f)return;int m=clampMat(mat);float B=Textures.BRIGHT[m]?1:0;
+        if(hi-lo<.001f)return;int m=clampMat(mat);float B=0;
         float u1=len*.5f,vt=-(hi-peg)*.5f,vb2=-(lo-peg)*.5f,tx=len<1e-6f?1:(b.x-a.x)/len,ty=len<1e-6f?0:(b.y-a.y)/len;
         float ar=gv(ia,0),ag=gv(ia,1),ab=gv(ia,2),br2=gv(ib,0),bg=gv(ib,1),bb=gv(ib,2);
         // meta tiles: columns every 2 units along the wall, rows on 2-unit heights
@@ -502,9 +556,14 @@ final class GpuRenderer {
             float[] fa=avg[clampMat(s.floorMaterial)],wa=avg[clampMat(s.wallMaterial)];
             for(int ch=0;ch<3;ch++)rho[si*3+ch]=Math.min(.85f,(fa[ch]*.5f+wa[ch]*.5f)*1.1f);
             if(s.ceilingMaterial==Textures.SKY)for(int ch=0;ch<3;ch++)E[si*3+ch]+=skyAvg[ch]*.55f;
-            if(Textures.BRIGHT[clampMat(s.floorMaterial)])for(int ch=0;ch<3;ch++)E[si*3+ch]+=fa[ch]*.45f;
-            if(s.ceilingMaterial!=Textures.SKY&&Textures.BRIGHT[clampMat(s.ceilingMaterial)]){float[] ca=avg[clampMat(s.ceilingMaterial)];for(int ch=0;ch<3;ch++)E[si*3+ch]+=ca[ch]*.3f;}
+            // glowing materials light the room through their emissive maps (lava floors, rune walls, crystal ceilings)
+            float[] ef=emitAvg[clampMat(s.floorMaterial)],ew=emitAvg[clampMat(s.wallMaterial)],ec=s.ceilingMaterial==Textures.SKY?new float[3]:emitAvg[clampMat(s.ceilingMaterial)];
+            for(int ch=0;ch<3;ch++)E[si*3+ch]+=ef[ch]*1.1f+ew[ch]*.9f+ec[ch]*.7f;
         }
+        // lights bounce: what a torch or spell lights in a room comes back off its floor and walls, tinted by them
+        for(int i=0;i<Math.min(16,r.lightCount);i++){int si=level.sectorAt(r.lx[i],r.ly[i]);if(si<0||si>=ns)continue;
+            float reach=Math.min(1f,r.lr2[i]/Math.max(1f,surfA[si]*.25f));
+            E[si*3]+=r.lcr[i]*reach*.22f;E[si*3+1]+=r.lcg[i]*reach*.22f;E[si*3+2]+=r.lcb[i]*reach*.22f;}
         // openings between sectors
         ArrayList<float[]> links=new ArrayList<>();   // {from, to, transfer}
         for(Level.LineDef l:r.lines){if(l.back<0||l.front<0||l.back>=ns||l.front>=ns||l.from>=nv||l.to>=nv)continue;
@@ -620,7 +679,6 @@ final class GpuRenderer {
         // clip y = (2*horizon/H-1)*z - y*2*focal/H  (image top at row 0 after read-back)
         float n=.06f,f=120f;
         GLES20.glUniform3f(GLES20.glGetUniformLocation(p,"uProj"),2*focal/H,2*horizon/H-1,(f+n)/(f-n));
-        int us=GLES20.glGetUniformLocation(p,"uSnap");if(us>=0)GLES20.glUniform2f(us,ps1?W*.5f:0,ps1?H*.5f:0);
     }
     private void atmosUniforms(int p){
         float fa=r.fogAmt;GLES20.glUniform4f(GLES20.glGetUniformLocation(p,"uFog"),r.fogStart,1f/Math.max(.01f,r.fogEnd-r.fogStart),fa,H);
@@ -639,8 +697,9 @@ final class GpuRenderer {
     }
     private void sceneUniforms(int p){
         camUniforms(p);atmosUniforms(p);
-        GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uAffine"),ps1?1f:0f);GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uDither"),ps1?1:0);
-        GLES20.glUniform1i(GLES20.glGetUniformLocation(p,"uTex"),0);GLES20.glUniform1i(GLES20.glGetUniformLocation(p,"uShadow"),3);
+        GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uDither"),dither?1:0);
+        GLES20.glUniform1i(GLES20.glGetUniformLocation(p,"uTex"),0);GLES20.glUniform1i(GLES20.glGetUniformLocation(p,"uNorm"),1);GLES20.glUniform1i(GLES20.glGetUniformLocation(p,"uMat"),2);GLES20.glUniform1i(GLES20.glGetUniformLocation(p,"uEmit"),4);
+        GLES20.glUniform3f(GLES20.glGetUniformLocation(p,"uSkyC"),skyAvg[0],skyAvg[1],skyAvg[2]);GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uHeight"),0);GLES20.glUniform1i(GLES20.glGetUniformLocation(p,"uShadow"),3);
         GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uShadowOn"),shadows&&nl>0?1:0);GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
         GLES20.glUniform3f(GLES20.glGetUniformLocation(p,"uCamPos"),cx,cy,eye);
         GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uFade"),r.fadeK);GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uDark"),r.darkvision?1f:0f);GLES20.glUniform1f(GLES20.glGetUniformLocation(p,"uAlphaCut"),-1f);
@@ -655,7 +714,7 @@ final class GpuRenderer {
     private void drawSky(){
         GLES20.glUseProgram(progSky);atmosUniforms(progSky);
         GLES20.glUniform2f(GLES20.glGetUniformLocation(progSky,"uSize"),W,H);
-        GLES20.glUniform4f(GLES20.glGetUniformLocation(progSky,"uSky"),angle,focal,horizon,W);GLES20.glUniform1f(GLES20.glGetUniformLocation(progSky,"uDither"),ps1?1:0);
+        GLES20.glUniform4f(GLES20.glGetUniformLocation(progSky,"uSky"),angle,focal,horizon,W);GLES20.glUniform1f(GLES20.glGetUniformLocation(progSky,"uDither"),dither?1:0);
         GLES20.glUniform1i(GLES20.glGetUniformLocation(progSky,"uTex"),0);GLES20.glActiveTexture(GLES20.GL_TEXTURE0);GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,skyTex);
         quad(0,0,W,H,0,0,1,1);
     }

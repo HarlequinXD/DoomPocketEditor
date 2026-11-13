@@ -343,14 +343,16 @@ public class EditorView extends View implements Pointer.Aware {
     private String rendererLabel(){if(!Renderer.useGpu)return "Software";if(!renderer.onGpu()&&GpuRenderer.available()==false)return "Software (GPU not available)";return "GPU, "+Renderer.gpuLines+" lines";}
     private void chooseRenderer(){
         int cur=4;if(Renderer.useGpu)for(int i=0;i<RENDER_LINES.length;i++)if(RENDER_LINES[i]==Renderer.gpuLines)cur=i;
-        String[] items=java.util.Arrays.copyOf(RENDERERS,RENDERERS.length+4);
-        items[RENDERERS.length]="PS1 look (wobble, warped textures, dithering): "+(GpuRenderer.ps1?"ON":"off");
-        items[RENDERERS.length+1]="Sky light + bounce lighting: "+(GpuRenderer.gi?"ON":"off");
+        String[] items=java.util.Arrays.copyOf(RENDERERS,RENDERERS.length+5);
+        items[RENDERERS.length]="Dithered 15-bit colour: "+(GpuRenderer.dither?"ON":"off");
+        items[RENDERERS.length+4]="Parallax relief (height maps, silhouettes): "+(GpuRenderer.relief?"ON":"off");
+        items[RENDERERS.length+1]="Global illumination (sky + bounce light): "+(GpuRenderer.gi?"ON":"off");
         items[RENDERERS.length+2]="Dynamic shadows from lights: "+(GpuRenderer.shadows?"ON":"off");
         items[RENDERERS.length+3]="3D models for characters and objects: "+(GpuRenderer.models3d?"ON":"off (sprites)");
         host.choose("3D renderer",items,cur,k->{
             if(k==RENDERERS.length+2){GpuRenderer.shadows=!GpuRenderer.shadows;Renderer.savePrefs(getContext());hint(GpuRenderer.shadows?"Shadows on · walls, doors and monsters block torchlight":"Shadows off");invalidate();return;}
-            if(k==RENDERERS.length){GpuRenderer.ps1=!GpuRenderer.ps1;Renderer.savePrefs(getContext());hint(GpuRenderer.ps1?"PS1 look on · wobbling vertices, warped textures, 15-bit dithered colour":"PS1 look off · steady, smooth picture");invalidate();return;}
+            if(k==RENDERERS.length){GpuRenderer.dither=!GpuRenderer.dither;Renderer.savePrefs(getContext());hint(GpuRenderer.dither?"Dithering on · 15-bit colour with an ordered dither":"Dithering off · full colour");invalidate();return;}
+            if(k==RENDERERS.length+4){GpuRenderer.relief=!GpuRenderer.relief;Renderer.savePrefs(getContext());hint(GpuRenderer.relief?"Parallax relief on · bricks and stones stand out of the walls":"Parallax relief off · flat normal-mapped surfaces");invalidate();return;}
             if(k==RENDERERS.length+3){GpuRenderer.models3d=!GpuRenderer.models3d;Renderer.savePrefs(getContext());hint(GpuRenderer.models3d?"3D models on · built-in characters and objects are low-poly models":"3D models off · sprites");invalidate();return;}
             if(k==RENDERERS.length+1){GpuRenderer.gi=!GpuRenderer.gi;Renderer.savePrefs(getContext());hint(GpuRenderer.gi?"Sky light on · open-sky sectors light up and light spills through doorways":"Sky light off");invalidate();return;}
             if(k==4)Renderer.useGpu=false;else{Renderer.useGpu=true;Renderer.gpuLines=RENDER_LINES[k];}
