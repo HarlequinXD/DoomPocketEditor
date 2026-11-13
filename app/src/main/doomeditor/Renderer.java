@@ -493,7 +493,10 @@ final class Renderer {
         for(int i=0;i<pix.length;i++)if(ids[i]==highlight){int c=pix[i];int r=(c>>16)&255,g=(c>>8)&255,b=c&255;pix[i]=0xff000000|((r*5/8+30)<<16)|((g*5/8+96)<<8)|(b*5/8+60);}
     }
     /** Draws the first-person weapon (and muzzle flash) into the frame. */
-    void weapon(int weapon,float bobX,float bobY,float raise,boolean attacking,int light){
+    void weapon(int weapon,float bobX,float bobY,float raise,boolean attacking,int light){weapon(weapon,bobX,bobY,raise,attacking,light,attacking?.4f:-1,-1,0,-1);}
+    /** First-person hands and weapon: real 3D on the GPU (lit like the room), the rendered sprite otherwise. */
+    void weapon(int weapon,float bobX,float bobY,float raise,boolean attacking,int light,float attack,float cast,float time,int sector){
+        if(gpu!=null){try{gpu.viewModel(weapon,attack,cast,bobX,bobY,Math.max(0,raise),time,lightLevel(light),sector);return;}catch(Throwable t){android.util.Log.w("Renderer","3D hands failed",t);}}
         if(pix==null&&gpu==null)return;
         Sprites.Sprite s=Sprites.fpSprite(weapon,attacking);
         // model sprites are sized by their real dimensions: one world unit is ~60% of the screen height

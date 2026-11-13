@@ -35,6 +35,8 @@ final class World {
     int weapon=Rpg.FP_FIST;
     /** True while a dialogue, the inventory or another menu has paused the game. */
     boolean paused;
+    /** First-person hands: progress 0..1 through an attack and a spell cast (-1 when not), and their lengths in seconds. */
+    float attackAnim=-1,castAnim=-1,attackLen=.45f,viewTime;
     float weaponCooldown,weaponFlash,weaponRaise,bobPhase,viewZ,damageFlash,pickupFlash,shakeTime,shakeStrength;
     int flashColor=0xffff0000;
     String message="",center="";
@@ -296,6 +298,7 @@ final class World {
         for(int i=actors.size()-1;i>=0;i--)if(actors.get(i).removed)actors.remove(i);
         // weapon & view
         if(weaponCooldown>0)weaponCooldown-=dt;if(weaponFlash>0)weaponFlash-=dt;if(weaponRaise>0)weaponRaise-=dt*3;
+        viewTime+=dt;if(attackAnim>=0){attackAnim+=dt/attackLen;if(attackAnim>=1)attackAnim=-1;}if(castAnim>=0){castAnim+=dt/.6f;if(castAnim>=1)castAnim=-1;}
         float speed=(float)Math.hypot(player.vx,player.vy);
         if(player.onGround)bobPhase+=dt*speed*1.6f;
         float target=player.z+EYE*(player.alive?1:.25f);
@@ -664,7 +667,7 @@ final class World {
         if(hero==null)return FIRE_NO_TARGET;
         if(camMode==CAM_THIRD&&camStyle==CS_ORBIT)player.angle=camYaw;   // attack where the camera looks
         Rpg.Item w=hero.weaponOrFists();
-        weaponCooldown=w.cooldown;weaponFlash=.22f;player.attackTimer=.25f;
+        weaponCooldown=w.cooldown;weaponFlash=.22f;player.attackTimer=.25f;attackAnim=0;attackLen=Math.max(.3f,Math.min(w.ranged?.7f:.5f,w.cooldown*.9f));
         if(w.ranged){
             Actor t=aimTarget(w.reach,.18f);sound(SoundFx.BOW,player);
             shoot(player,P_ARROW,t,player.angle,hero.attackBonus(w),new Rpg.Dice(w.damage.n,w.damage.sides,w.damage.bonus+hero.damageBonus(w)),w.damageType,false,0,0,22f);
@@ -705,7 +708,7 @@ final class World {
         int cost=free?0:Rpg.spellCost(sp.level);
         if(cost>hero.sp){message("Not enough spell points for "+sp.name,2);sound(SoundFx.OOF,player);return FIRE_NO_POWER;}
         if(camMode==CAM_THIRD&&camStyle==CS_ORBIT)player.angle=camYaw;
-        hero.sp-=cost;weaponCooldown=sp.level==0?.8f:1.1f;weaponFlash=.3f;player.attackTimer=.3f;
+        hero.sp-=cost;weaponCooldown=sp.level==0?.8f:1.1f;weaponFlash=.3f;player.attackTimer=.3f;castAnim=0;
         int atk=free?5+Math.max(hero.spellAttack(),0):hero.spellAttack(),dc=free?13:hero.saveDC(),mod=free?2:hero.castMod();
         sound(SoundFx.SPELL,player);
         // cantrips grow stronger at levels 5, 11 and 17

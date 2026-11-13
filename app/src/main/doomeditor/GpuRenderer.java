@@ -158,7 +158,7 @@ final class GpuRenderer {
         " for(int j=1;j<=6;j++){float s=float(j)/6.0;float hh=texture2D(uNorm,uv+dir*s).a;occ=max(occ,(hh-(h0+(1.0-h0)*s))*(1.0-s*0.6));}\n"+
         " return 1.0-clamp(occ*6.0,0.0,0.8);}\n"+
         "void main(){vec2 uv=vUv;vec3 V=uCamPos-vWorld;vec3 Vw=normalize(V);\n"+
-        " bool model=vKind>2.5;bool wall=vKind>0.5&&vKind<1.5;bool surf=vKind<1.5;\n"+
+        " bool model=vKind>2.5;bool vm=vKind>3.5;bool wall=vKind>0.5&&vKind<1.5;bool surf=vKind<1.5;\n"+
         " vec3 T=vec3(1.0,0.0,0.0);vec3 B=vec3(0.0,1.0,0.0);vec3 N=vec3(0.0,0.0,1.0);\n"+
         " if(model){N=normalize(vTan);if(dot(N,V)<0.0)N=-N;}\n"+
         " else if(wall){T=normalize(vec3(vTan.xy,0.0));N=vec3(T.y,-T.x,0.0);if(dot(N,V)<0.0)N=-N;B=vec3(0.0,0.0,-1.0);}\n"+
@@ -176,14 +176,14 @@ final class GpuRenderer {
         "   if(wall){if(vEdge.z>0.5&&vEdge.z<1.5&&uv.y<vEdge.x)discard;if(vEdge.z>1.5&&uv.y>vEdge.y)discard;}}\n"+
         "  vec4 nh=texture2D(uNorm,uv);h0=nh.a;vec3 nm=nh.rgb*2.0-1.0;Nw=normalize(T*nm.x+B*nm.y+N*nm.z);}\n"+
         " vec4 t=texture2D(uTex,uv);if(t.a<uAlphaCut)discard;vec3 alb=t.rgb;\n"+
-        " vec3 m=surf?texture2D(uMat,uv).rgb:vec3(model?0.3:0.15,0.0,1.0);float smo=m.r;float metal=m.g;float ao=m.b;\n"+
-        " vec3 emit=surf?texture2D(uEmit,uv).rgb:vec3(0.0);\n"+
+        " vec3 m=(surf||vm)?texture2D(uMat,uv).rgb:vec3(model?0.3:0.15,0.0,1.0);float smo=m.r;float metal=m.g;float ao=m.b;\n"+
+        " vec3 emit=(surf||vm)?texture2D(uEmit,uv).rgb:vec3(0.0);\n"+
         " float L=vLight.x;float li;if(vLight.y>0.5)li=31.0;else{li=floor(L+3.0-vZ*uFade);li=clamp(li,max(1.0,floor(L/4.0)),31.0);}\n"+
         " li=max(li,uDark*clamp(15.0-vZ*1.4,0.0,13.0));\n"+   // darkvision: nearby darkness seen as dim grey light
         " float k=pow(li/31.0,1.25)*1.06;\n"+
         // ambient: sector light + global illumination (sky and bounce), more from above, darkened in cavities
         " float hemi=0.55+0.45*Nw.z;vec3 amb=(vec3(k)+vGi*hemi)*ao;\n"+
-        " if(model)amb*=0.75+0.25*max(0.0,dot(Nw,normalize(vec3(-0.4,-0.3,0.85))))+0.1;\n"+
+        " if(model)amb*=0.75+0.25*max(0.0,dot(Nw,normalize(vec3(-0.4,-0.3,0.85))))+0.1;\n if(vm)amb+=vec3(0.06)*ao;\n"+
         " float rough=max(0.06,1.0-smo);float a2=rough*rough*rough*rough;float NdV=max(dot(Nw,Vw),0.001);\n"+
         " vec3 F0=mix(vec3(0.04),alb,metal);vec3 Fa=F0+(max(vec3(1.0-rough),F0)-F0)*pow(1.0-NdV,5.0);\n"+
         // reflected environment: up-facing reflections see the sky colour, the rest the room's bounce light
@@ -759,6 +759,39 @@ final class GpuRenderer {
         float m=mulv/256f;GLES20.glUniform4f(GLES20.glGetUniformLocation(progScreen,"uMul"),m,m,m,1);GLES20.glUniform1f(GLES20.glGetUniformLocation(progScreen,"uUseTex"),1);
         GLES20.glUniform1i(GLES20.glGetUniformLocation(progScreen,"uTex"),0);GLES20.glActiveTexture(GLES20.GL_TEXTURE0);GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,spriteTexture(s));
         quad(x0,y0,x0+w,y0+h,0,0,1,1);GLES20.glDisable(GLES20.GL_BLEND);
+    }
+    // ------------------------------------------------------------------ first-person hands (3D)
+    private final ViewModel vm=new ViewModel();private static int vmColor,vmMat,vmEmit;private FloatBuffer vmBuf;private float[] vmVerts=new float[0];
+    /**
+     * The hero's hands and weapon as real geometry: built in view space (ViewModel), placed in front of the camera in
+     * world space so the scene's lights, shadows, sky and bounce light shade them, and drawn last on a cleared depth
+     * buffer so they never sink into walls. They ignore the view's pitch, like classic first-person hands.
+     */
+    void viewModel(int weapon,float attack,float cast,float bobX,float bobY,float raise,float time,int L,int sector){
+        if(vmColor==0){ViewModel.initAtlas();int A=ViewModel.ATLAS;
+            vmColor=texture(ViewModel.color,A,A,false,true);mip(vmColor,false);vmMat=texture(ViewModel.material,A,A,false,true);mip(vmMat,true);vmEmit=texture(ViewModel.emissive,A,A,false,true);mip(vmEmit,true);}
+        vm.build(weapon,attack,cast,bobX,bobY,raise,time);int n=vm.count;if(n==0)return;
+        setGi(sector);float rx=-sn,ry=cs,fx=cs,fy=sn;
+        if(vmVerts.length<n*ST)vmVerts=new float[n*ST];float[] o=vmVerts;float[] v=vm.v;
+        for(int i=0;i<n;i++){int a=i*ViewModel.VS,k=i*ST;float x=v[a],y=v[a+1],z=v[a+2];
+            o[k]=cx+rx*x+fx*z;o[k+1]=cy+ry*x+fy*z;o[k+2]=eye+y;o[k+3]=v[a+6];o[k+4]=v[a+7];o[k+5]=L;o[k+6]=0;o[k+7]=o[k+8]=o[k+9]=o[k+10]=0;
+            float nx=v[a+3],ny=v[a+4],nz=v[a+5];o[k+11]=rx*nx+fx*nz;o[k+12]=ry*nx+fy*nz;o[k+13]=ny;o[k+14]=4;o[k+15]=0;o[k+16]=giR;o[k+17]=giG;o[k+18]=giB;o[k+19]=0;o[k+20]=o[k+21]=o[k+22]=o[k+23]=0;}
+        if(vmBuf==null||vmBuf.capacity()<n*ST)vmBuf=ByteBuffer.allocateDirect(Math.max(n*ST,ST*12000)*4).order(ByteOrder.nativeOrder()).asFloatBuffer();
+        vmBuf.clear();vmBuf.put(o,0,n*ST);vmBuf.flip();
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER,fbo);GLES20.glViewport(0,0,W,H);
+        GLES20.glDepthMask(true);GLES20.glClear(GLES20.GL_DEPTH_BUFFER_BIT);GLES20.glEnable(GLES20.GL_DEPTH_TEST);GLES20.glDepthFunc(GLES20.GL_LEQUAL);
+        GLES20.glDisable(GLES20.GL_BLEND);GLES20.glDisable(GLES20.GL_POLYGON_OFFSET_FILL);GLES20.glColorMask(true,true,true,false);
+        float keep=horizon;horizon=H*.5f;   // level with the eye whatever the pitch
+        GLES20.glUseProgram(progScene);sceneUniforms(progScene);
+        GLES20.glUniform1f(GLES20.glGetUniformLocation(progScene,"uAlphaCut"),-1f);GLES20.glUniform1f(GLES20.glGetUniformLocation(progScene,"uHeight"),0f);
+        GLES20.glUniform4f(GLES20.glGetUniformLocation(progScene,"uHi"),-1,-1,-1,-1);
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE2);GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,vmMat);
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE4);GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,vmEmit);
+        if(shadows&&nl>0){GLES20.glActiveTexture(GLES20.GL_TEXTURE3);GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,shadowTex);}
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0);GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,vmColor);
+        bindScene(progScene,vmBuf);
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLES,0,n);
+        horizon=keep;GLES20.glDisable(GLES20.GL_DEPTH_TEST);
     }
     void tint(int color,float a){
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER,fbo);GLES20.glViewport(0,0,W,H);GLES20.glDisable(GLES20.GL_DEPTH_TEST);
