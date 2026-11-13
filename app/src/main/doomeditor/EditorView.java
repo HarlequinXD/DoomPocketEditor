@@ -1334,7 +1334,7 @@ public class EditorView extends View implements Pointer.Aware {
             if(a.def==null||(!a.visible&&!a.isPlayer))continue;float[] g=Atmosphere.glowFor(a.def,a.sprite,a.lightOverride);if(g!=null)Atmosphere.addLight(renderer,a.x,a.y,a.z+a.height*.8f,g,world.time,a.thingIndex*7+3);}
         renderer.particles=world.particles;renderer.darkvision=world.hero!=null&&world.hero.darkvision();
         renderer.fx=world;renderer.renderScene(world.level,cx,cy,world.camZ(),world.camAngle(),world.camPitch(),w,h,spriteList);
-        if(pl.alive&&!tp){float b=world.bob();int si=world.sectorIndex(pl);renderer.weapon(world.weapon,(float)Math.cos(world.bobPhase*Math.PI*.5f)*Math.min(1,(float)Math.hypot(pl.vx,pl.vy)/6f),b*8,world.weaponRaise,world.weaponFlash>0,si<0?160:world.level.sectors.get(si).light);}
+        if(pl.alive&&!tp){float b=world.bob();int si=world.sectorIndex(pl);renderer.weapon(world.weapon,(float)Math.cos(world.bobPhase*Math.PI*.5f)*Math.min(1,(float)Math.hypot(pl.vx,pl.vy)/6f),b*8,world.weaponRaise,world.weaponFlash>0,si<0?160:world.level.sectors.get(si).light,world.attackAnim,world.castAnim,world.viewTime,si);}
         if(world.damageFlash>0)renderer.tint(0xffff2020,world.damageFlash*.6f);
         if(world.pickupFlash>0)renderer.tint(world.flashColor,world.pickupFlash*.35f);
         if(!pl.alive)renderer.tint(0xff800000,.35f);
