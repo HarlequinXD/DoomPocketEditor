@@ -338,7 +338,16 @@ final class ViewModel {
     private static float[][] axes(Pose p,boolean left){float[] z=p.F;float[] na=mul(p.U,-1);float[] x=norm(sub(na,mul(z,dot(na,z))));float[] y=cross(z,x);
         if(left)return new float[][]{mul(x,-1),mul(y,-1),z};return new float[][]{x,y,z};}
     /** The elbow: below, outside and behind the wrist, so forearms rise from the bottom corners. */
-    private static float[] elbow(Pose p,float side){float[] e=add(p.w,add(mul(p.F,-.1f),v3(side*.13f,-.3f,-.14f)));e[2]=Math.max(.1f,e[2]);return e;}
+    private static float[] elbow(Pose p,float side){float[] d=forearmDir(p.w,side);float[] e=sub(p.w,mul(d,.3f));e[2]=Math.max(.08f,e[2]);return e;}
+    /** Where the forearm points: from the shoulder (below and outside the view, just behind the eye) to the wrist. */
+    private static float[] forearmDir(float[] wrist,float side){return norm(sub(wrist,v3(side*.21f,-.44f,-.06f)));}
+    /**
+     * Keeps the wrist nearly straight: the hand carries on along the forearm (cocked up slightly) and the arm does the
+     * swinging. The grip / blade direction keeps the pose's roll, so turning the forearm rotates the weapon.
+     */
+    private static Pose armAligned(Pose p,float side,float bend){
+        float[] d=forearmDir(p.w,side);float[] F=norm(add(mix(d,p.F,bend),v3(0,.08f,0)));return new Pose(p.w,F,p.U);
+    }
 
     /**
      * Builds the frame's geometry. weapon: Rpg.FP_*. attack: 0..1 through a swing / shot / punch (or -1 at rest);
@@ -366,12 +375,12 @@ final class ViewModel {
             default:{   // sword, dagger: a diagonal slash right to left
                 Pose rest=P(.34f,-.8f,.48f,-.55f,.25f,.8f,-.25f,.95f,.25f);
                 // one continuous diagonal cut, upper right to lower left, the edge leading and the blade never rolling over
-                Pose wind=P(.5f,-.42f,.44f,-.6f,.1f,.8f,.15f,.9f,-.4f),mid=P(.14f,-.42f,.55f,-.5f,-.75f,.3f,-.75f,.55f,.35f),cut=P(-.22f,-.62f,.55f,-.3f,-.85f,-.2f,-.75f,-.3f,.6f);
+                Pose wind=P(.5f,-.42f,.44f,-.6f,.1f,.8f,.15f,.9f,-.4f),mid=P(.14f,-.42f,.55f,-.5f,-.75f,.3f,-.75f,.55f,.35f),cut=P(-.2f,-.55f,.55f,-.3f,-.85f,-.2f,-.85f,-.12f,.55f);
                 if(weapon==Rpg.FP_DAGGER){rest=P(.32f,-.82f,.46f,-.6f,.2f,.75f,-.15f,.9f,.35f);wind=P(.36f,-.75f,.4f,-.7f,.1f,.6f,-.1f,.3f,1);cut=P(.08f,-.45f,.62f,-.8f,-.5f,.1f,-.05f,.1f,1);}
                 if(weapon==Rpg.FP_DAGGER)rp=attack<0?rest:track(attack,new float[]{0,.22f,.5f,.62f,1},new Pose[]{rest,wind,cut,cut,rest});
                 else rp=attack<0?rest:track(attack,new float[]{0,.2f,.36f,.52f,.64f,1},new Pose[]{rest,wind,mid,cut,cut,rest});}
         }
-        rp=new Pose(add(rp.w,off),rp.F,rp.U);
+        rp=armAligned(new Pose(add(rp.w,off),rp.F,rp.U),1,weapon==Rpg.FP_BOW?.6f:.18f);
         float[][] ra=axes(rp,false);
         float[] relbow=elbow(rp,1);
         forearm(relbow,rp.w,staff);
@@ -388,7 +397,7 @@ final class ViewModel {
         else lp=P(-.46f,-1.35f,.45f,.3f,.3f,.9f,.4f,.8f,.2f);lg=HOLD;
         if(cast>=0){Pose out=P(-.16f,-.3f,.55f,.1f,.95f,.3f,1,0,0);lg=cast>.15f&&cast<.75f?OPEN:RELAX;
             lp=track(cast,new float[]{0,.2f,.6f,1},new Pose[]{lp,out,out,lp});}
-        lp=new Pose(add(lp.w,off),lp.F,lp.U);
+        lp=armAligned(new Pose(add(lp.w,off),lp.F,lp.U),-1,weapon==Rpg.FP_BOW?.5f:.25f);
         float[][] la=axes(lp,true);
         boolean lHidden=weapon!=Rpg.FP_BOW&&weapon!=Rpg.FP_FIST&&cast<0&&raise<.01f;
         if(!lHidden||true){
