@@ -301,7 +301,32 @@ final class ViewModel {
      * curl) and the grip axis toward A (out of the thumb side of the fist: where a held blade or shaft points).
      */
     static Pose P(float sx,float sy,float z,float fx,float fy,float fz,float ax,float ay,float az){z*=.8f;return new Pose(v3(sx*z,sy*.5625f*z,z),norm(v3(fx,fy,fz)),norm(v3(ax,ay,az)));}
-    static Pose lerp(Pose a,Pose b,float t){return new Pose(mix(a.w,b.w,t),norm(mix(a.F,b.F,t)),norm(mix(a.U,b.U,t)));}
+    /**
+     * Blends two poses as one rotation (quaternion slerp along the shortest way), so a hand and its weapon turn
+     * smoothly through a swing instead of their directions being blended separately, which could flip the blade over.
+     */
+    static Pose lerp(Pose a,Pose b,float t){
+        float[] qa=quat(a),qb=quat(b);float d=qa[0]*qb[0]+qa[1]*qb[1]+qa[2]*qb[2]+qa[3]*qb[3];
+        if(d<0){for(int i=0;i<4;i++)qb[i]=-qb[i];d=-d;}
+        float[] q=new float[4];
+        if(d>.9995f){for(int i=0;i<4;i++)q[i]=qa[i]+(qb[i]-qa[i])*t;}
+        else{float th=(float)Math.acos(d),sn=(float)Math.sin(th),ka=(float)Math.sin((1-t)*th)/sn,kb=(float)Math.sin(t*th)/sn;for(int i=0;i<4;i++)q[i]=qa[i]*ka+qb[i]*kb;}
+        float l=(float)Math.sqrt(q[0]*q[0]+q[1]*q[1]+q[2]*q[2]+q[3]*q[3]);for(int i=0;i<4;i++)q[i]/=l;
+        float w=q[0],x=q[1],y=q[2],z=q[3];
+        float[] X=v3(1-2*(y*y+z*z),2*(x*y+w*z),2*(x*z-w*y)),Z=v3(2*(x*z+w*y),2*(y*z-w*x),1-2*(x*x+y*y));
+        return new Pose(mix(a.w,b.w,t),Z,mul(X,-1));
+    }
+    /** The pose's hand rotation as a quaternion (w, x, y, z) from its axes (x = -grip axis, z = fingers). */
+    private static float[] quat(Pose p){
+        float[][] ax=axes(p,false);float[] X=ax[0],Y=ax[1],Z=ax[2];
+        float m00=X[0],m11=Y[1],m22=Z[2],tr=m00+m11+m22;float w,x,y,z;
+        // matrix with columns X, Y, Z: m[r][c]
+        if(tr>0){float s=(float)Math.sqrt(tr+1)*2;w=.25f*s;x=(Y[2]-Z[1])/s;y=(Z[0]-X[2])/s;z=(X[1]-Y[0])/s;}
+        else if(m00>m11&&m00>m22){float s=(float)Math.sqrt(1+m00-m11-m22)*2;w=(Y[2]-Z[1])/s;x=.25f*s;y=(Y[0]+X[1])/s;z=(Z[0]+X[2])/s;}
+        else if(m11>m22){float s=(float)Math.sqrt(1+m11-m00-m22)*2;w=(Z[0]-X[2])/s;x=(Y[0]+X[1])/s;y=.25f*s;z=(Z[1]+Y[2])/s;}
+        else{float s=(float)Math.sqrt(1+m22-m00-m11)*2;w=(X[1]-Y[0])/s;x=(Z[0]+X[2])/s;y=(Z[1]+Y[2])/s;z=.25f*s;}
+        return new float[]{w,x,y,z};
+    }
     private static float smooth(float t){t=Math.max(0,Math.min(1,t));return t*t*(3-2*t);}
     /** Pose along keyframes {time, pose} at t (0..1). */
     private static Pose track(float t,float[] times,Pose[] keys){
@@ -340,9 +365,11 @@ final class ViewModel {
                 rp=attack<0?rest:track(attack,new float[]{0,.2f,.45f,.6f,1},new Pose[]{rest,up,hit,hit,rest});break;}
             default:{   // sword, dagger: a diagonal slash right to left
                 Pose rest=P(.34f,-.8f,.48f,-.55f,.25f,.8f,-.25f,.95f,.25f);
-                Pose wind=P(.5f,-.35f,.42f,-.2f,.6f,.75f,.5f,.7f,-.5f),cut=P(-.15f,-.8f,.55f,-.9f,-.2f,.4f,-.6f,-.6f,.55f);
+                // one continuous diagonal cut, upper right to lower left, the edge leading and the blade never rolling over
+                Pose wind=P(.5f,-.42f,.44f,-.6f,.1f,.8f,.15f,.9f,-.4f),mid=P(.14f,-.42f,.55f,-.5f,-.75f,.3f,-.75f,.55f,.35f),cut=P(-.22f,-.62f,.55f,-.3f,-.85f,-.2f,-.75f,-.3f,.6f);
                 if(weapon==Rpg.FP_DAGGER){rest=P(.32f,-.82f,.46f,-.6f,.2f,.75f,-.15f,.9f,.35f);wind=P(.36f,-.75f,.4f,-.7f,.1f,.6f,-.1f,.3f,1);cut=P(.08f,-.45f,.62f,-.8f,-.5f,.1f,-.05f,.1f,1);}
-                rp=attack<0?rest:track(attack,new float[]{0,.22f,.5f,.62f,1},new Pose[]{rest,wind,cut,cut,rest});}
+                if(weapon==Rpg.FP_DAGGER)rp=attack<0?rest:track(attack,new float[]{0,.22f,.5f,.62f,1},new Pose[]{rest,wind,cut,cut,rest});
+                else rp=attack<0?rest:track(attack,new float[]{0,.2f,.36f,.52f,.64f,1},new Pose[]{rest,wind,mid,cut,cut,rest});}
         }
         rp=new Pose(add(rp.w,off),rp.F,rp.U);
         float[][] ra=axes(rp,false);
