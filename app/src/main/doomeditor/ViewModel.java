@@ -294,6 +294,23 @@ final class ViewModel {
     }
 
     // ------------------------------------------------------------------ poses and animation
+    /** The cut's turning axis: along the view, tilted so the blade sweeps down across the screen and a little away. */
+    private static final float[] SWING_AXIS=norm(v3(.2f,.35f,1));
+    /**
+     * A downward cut: the hand rises to the upper right (wind), then travels along one arc to the lower left (strike)
+     * while the weapon turns about a single fixed axis, so the blade sweeps down like a real cut with no twist of the
+     * wrist or forearm. up / down: how far it turns back and through, in radians; wind / end: where the hand goes.
+     */
+    private static Pose chop(Pose rest,float t,float up,float down,float[] wind,float[] end){
+        Pose r=armAligned(rest,1,.18f);if(t<0)return r;
+        float[] W=add(r.w,wind),E=add(r.w,end);float a;float[] pos;
+        if(t<.25f){float k=smooth(t/.25f);a=-up*k;pos=mix(r.w,W,k);}
+        else if(t<.45f){float k=(t-.25f)/.2f;k=k*k*(3-2*k);a=-up+(up+down)*k;
+            float[] c=add(mix(W,E,.5f),v3(.03f,.05f,.06f));pos=mix(mix(W,c,k),mix(c,E,k),k);}   // an arc, bowed out and away
+        else if(t<.6f){a=down;pos=E;}
+        else{float k=smooth((t-.6f)/.4f);a=down*(1-k);pos=mix(E,r.w,k);}
+        return new Pose(pos,rot(r.F,SWING_AXIS,a),rot(r.U,SWING_AXIS,a));
+    }
     /** A hand placement: wrist position, finger direction, back-of-hand direction (view space). */
     static final class Pose{float[] w,F,U;Pose(float[] w,float[] F,float[] U){this.w=w;this.F=F;this.U=U;}}
     /**
@@ -359,7 +376,7 @@ final class ViewModel {
         float[] off=v3(bobX*.02f+sway,-Math.abs(bobY)*.025f-raise*.42f+breathe,0);
         boolean staff=weapon==Rpg.FP_STAFF;
         // ---- right hand (weapon hand)
-        Pose rp;Grip rg=HOLD;
+        Pose rp;Grip rg=HOLD;boolean rigid=false;
         switch(weapon){
             case Rpg.FP_FIST:{Pose rest=P(.34f,-.72f,.46f,-.25f,.35f,.9f,-.6f,.8f,0);rg=FIST;
                 Pose hit=P(.05f,-.3f,.62f,-.08f,.1f,1,-.45f,.9f,0);
@@ -369,18 +386,17 @@ final class ViewModel {
                 rp=attack<0?rest:track(attack,new float[]{0,.25f,.5f,1},new Pose[]{rest,thrust,thrust,rest});break;}
             case Rpg.FP_BOW:{Pose drawn=P(.3f,-.6f,.42f,-1,0,.25f,0,1,0),loose=P(.16f,-.5f,.58f,-.9f,0,.45f,0,1,0);rg=PINCH;
                 rp=attack<0?drawn:track(attack,new float[]{0,.1f,.55f,1},new Pose[]{drawn,P(.42f,-.55f,.38f,-1,.1f,.2f,0,1,0),loose,drawn});break;}
-            case Rpg.FP_MACE:case Rpg.FP_AXE:{Pose rest=P(.36f,-.86f,.5f,-.55f,.25f,.8f,-.45f,.35f,.85f);
-                Pose up=P(.42f,-.15f,.42f,-.3f,.7f,.6f,-.15f,.45f,-.9f),hit=P(.05f,-.85f,.6f,-.6f,-.75f,.25f,-.1f,0,1);
-                rp=attack<0?rest:track(attack,new float[]{0,.2f,.45f,.6f,1},new Pose[]{rest,up,hit,hit,rest});break;}
+            case Rpg.FP_MACE:case Rpg.FP_AXE:{Pose rest=P(.36f,-.86f,.5f,-.55f,.25f,.8f,-.3f,.85f,.45f);
+                rp=chop(rest,attack,.45f,1.6f,v3(.05f,.16f,.02f),v3(-.2f,.0f,.06f));rigid=true;break;}
             default:{   // sword, dagger: a diagonal slash right to left
                 Pose rest=P(.34f,-.8f,.48f,-.55f,.25f,.8f,-.25f,.95f,.25f);
                 // one continuous diagonal cut, upper right to lower left, the edge leading and the blade never rolling over
                 Pose wind=P(.5f,-.42f,.44f,-.6f,.1f,.8f,.15f,.9f,-.4f),mid=P(.14f,-.42f,.55f,-.5f,-.75f,.3f,-.75f,.55f,.35f),cut=P(-.2f,-.55f,.55f,-.3f,-.85f,-.2f,-.85f,-.12f,.55f);
                 if(weapon==Rpg.FP_DAGGER){rest=P(.32f,-.82f,.46f,-.6f,.2f,.75f,-.15f,.9f,.35f);wind=P(.36f,-.75f,.4f,-.7f,.1f,.6f,-.1f,.3f,1);cut=P(.08f,-.45f,.62f,-.8f,-.5f,.1f,-.05f,.1f,1);}
                 if(weapon==Rpg.FP_DAGGER)rp=attack<0?rest:track(attack,new float[]{0,.22f,.5f,.62f,1},new Pose[]{rest,wind,cut,cut,rest});
-                else rp=attack<0?rest:track(attack,new float[]{0,.2f,.36f,.52f,.64f,1},new Pose[]{rest,wind,mid,cut,cut,rest});}
+                else{rp=chop(rest,attack,.35f,1.7f,v3(.05f,.16f,.02f),v3(-.2f,.0f,.06f));rigid=true;}}
         }
-        rp=armAligned(new Pose(add(rp.w,off),rp.F,rp.U),1,weapon==Rpg.FP_BOW?.6f:.18f);
+        rp=rigid?new Pose(add(rp.w,off),rp.F,rp.U):armAligned(new Pose(add(rp.w,off),rp.F,rp.U),1,weapon==Rpg.FP_BOW?.6f:.18f);
         float[][] ra=axes(rp,false);
         float[] relbow=elbow(rp,1);
         forearm(relbow,rp.w,staff);
